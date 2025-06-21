@@ -29,21 +29,53 @@ impl NotificationHints {
             .into_iter()
             .fold(NotificationHints::default(), |mut nh, (k, v)| {
                 match k {
-                    "action-icons" => nh.action_icons = bool::try_from(v).unwrap_or_default(),
+                    "action-icons" => {
+                        nh.action_icons = match v {
+                            zbus::zvariant::Value::Bool(b) => b,
+                            zbus::zvariant::Value::I32(n) => n != 0,
+                            zbus::zvariant::Value::U32(n) => n != 0,
+                            zbus::zvariant::Value::Str(s) => s.eq_ignore_ascii_case("true"),
+                            _ => false,
+                        };
+                    }
                     "category" => nh.category = Str::try_from(v).ok().map(|s| s.as_str().into()),
                     "value" => nh.value = i32::try_from(v).ok(),
                     "desktop-entry" => {
                         nh.desktop_entry = Str::try_from(v).ok().map(|s| s.as_str().into())
                     }
-                    "resident" => nh.resident = bool::try_from(v).unwrap_or_default(),
+                    "resident" => {
+                        nh.resident = match v {
+                            zbus::zvariant::Value::Bool(b) => b,
+                            zbus::zvariant::Value::I32(n) => n != 0,
+                            zbus::zvariant::Value::U32(n) => n != 0,
+                            zbus::zvariant::Value::Str(s) => s.eq_ignore_ascii_case("true"),
+                            _ => false,
+                        };
+                    }
                     "sound-file" => {
                         nh.sound_file = Str::try_from(v).ok().map(|s| Path::new(s.as_str()).into())
                     }
                     "sound-name" => {
                         nh.sound_name = Str::try_from(v).ok().map(|s| s.as_str().into())
                     }
-                    "suppress-sound" => nh.suppress_sound = bool::try_from(v).unwrap_or_default(),
-                    "transient" => nh.transient = bool::try_from(v).unwrap_or_default(),
+                    "suppress-sound" => {
+                        nh.suppress_sound = match v {
+                            zbus::zvariant::Value::Bool(b) => b,
+                            zbus::zvariant::Value::I32(n) => n != 0,
+                            zbus::zvariant::Value::U32(n) => n != 0,
+                            zbus::zvariant::Value::Str(s) => s.eq_ignore_ascii_case("true"),
+                            _ => false,
+                        };
+                    }
+                    "transient" => {
+                        nh.transient = match v {
+                            zbus::zvariant::Value::Bool(b) => b,
+                            zbus::zvariant::Value::I32(n) => n != 0,
+                            zbus::zvariant::Value::U32(n) => n != 0,
+                            zbus::zvariant::Value::Str(s) => s.eq_ignore_ascii_case("true"),
+                            _ => false,
+                        };
+                    }
                     "x" => nh.x = i32::try_from(v).unwrap_or_default(),
                     "y" => nh.y = i32::try_from(v).ok(),
                     "urgency" => {

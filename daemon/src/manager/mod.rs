@@ -406,6 +406,7 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) -> anyhow::Result<()> {
+        let a = std::time::Instant::now();
         let new_notifications: Vec<Notification> = data
             .into_par_iter()
             .map_init(
@@ -421,6 +422,7 @@ impl NotificationManager {
                 },
             )
             .collect();
+        println!("{:?}", a.elapsed());
 
         self.notifications.extend(new_notifications);
 

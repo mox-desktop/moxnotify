@@ -7,7 +7,6 @@
   libxkbcommon,
   wayland,
   vulkan-loader,
-  libpulseaudio,
   alsa-lib,
 }:
 
