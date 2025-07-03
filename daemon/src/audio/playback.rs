@@ -1,6 +1,4 @@
-use crate::audio::tinyaudio::SoundDevice;
-
-use super::tinyaudio::OutputDeviceParameters;
+use super::sound_device::{OutputDeviceParameters, SoundDevice};
 use std::{
     fs,
     path::Path,
@@ -145,15 +143,16 @@ impl Playback {
             let rx = rx.clone();
             move || {
                 let index = AtomicUsize::new(0);
-                let mut device = SoundDevice::new(params, move |data| {
-                    data.iter_mut().for_each(|sample| {
-                        let current_index = index.fetch_add(1, Ordering::Relaxed);
-                        *sample = *buffer.get(current_index).unwrap_or(&0.0);
-                    });
-                })
-                .unwrap();
+                let mut device = SoundDevice::new(params).unwrap();
 
-                device.run().unwrap();
+                device
+                    .run(move |data| {
+                        data.iter_mut().for_each(|sample| {
+                            let current_index = index.fetch_add(1, Ordering::Relaxed);
+                            *sample = *buffer.get(current_index).unwrap_or(&0.0);
+                        });
+                    })
+                    .unwrap();
                 let _ = rx.recv_timeout(duration);
                 device.stop().unwrap();
             }

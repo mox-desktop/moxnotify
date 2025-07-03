@@ -1,5 +1,5 @@
 mod playback;
-pub mod tinyaudio;
+pub mod sound_device;
 
 use std::{collections::BTreeMap, path::Path};
 
