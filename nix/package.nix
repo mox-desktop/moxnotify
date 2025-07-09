@@ -1,5 +1,4 @@
 {
-  moxctl,
   rustPlatform,
   lib,
   pkg-config,
@@ -53,9 +52,9 @@ rustPlatform.buildRustPackage rec {
   '';
 
   installPhase = ''
-    install -Dm755 target/release/daemon $out/bin/moxnotify
-    install -Dm755 target/release/ctl $out/bin/moxnotifyctl
-    install -Dm755 ${moxctl}/bin/mox $out/bin/mox  
+    install -Dm755 target/release/daemon $out/bin/moxnotifyd
+    install -Dm755 target/release/ctl $out/bin/moxnotify
+    ln -s moxnotify $out/bin/moxnotifyctl
   '';
 
   postFixup = ''
@@ -78,7 +77,7 @@ rustPlatform.buildRustPackage rec {
 
   meta = with lib; {
     description = "Mox desktop environment notification system";
-    homepage = "https://github.com/unixpariah/moxnotify";
+    homepage = "https://github.com/mox-desktop/moxnotify";
     license = licenses.mit;
     maintainers = [ maintainers.unixpariah ];
     platforms = platforms.linux;

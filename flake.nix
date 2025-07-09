@@ -5,19 +5,10 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    moxctl = {
-      url = "github:unixpariah/moxctl";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
-    {
-      nixpkgs,
-      rust-overlay,
-      moxctl,
-      ...
-    }:
+    { nixpkgs, rust-overlay, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -67,7 +58,7 @@
       });
 
       packages = forAllSystems (pkgs: {
-        default = pkgs.callPackage ./nix/package.nix { moxctl = moxctl.packages.${pkgs.system}.default; };
+        default = pkgs.callPackage ./nix/package.nix { };
       });
 
       homeManagerModules = {
