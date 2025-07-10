@@ -69,7 +69,7 @@ rustPlatform.buildRustPackage rec {
     substitute $src/pl.mox.notify.service.in $out/share/dbus-1/services/pl.mox.notify.service --replace-fail '@bindir@' "$out/bin"
     chmod 0644 $out/share/dbus-1/services/pl.mox.notify.service
 
-    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/bin/moxnotify
+    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/bin/moxnotifyd
   '';
 
   dontPatchELF = false;

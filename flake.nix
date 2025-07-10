@@ -28,37 +28,50 @@
     {
       devShells = forAllSystems (pkgs: {
         default =
-          with pkgs;
-          mkShell.override { stdenv = pkgs.clang12Stdenv; } rec {
-            buildInputs = [
-              (rust-bin.selectLatestNightlyWith (
-                toolchain:
-                toolchain.default.override {
+          let
+            inherit (pkgs) lib;
+            buildInputs =
+              [
+                (pkgs.rust-bin.stable.latest.default.override {
                   extensions = [
                     "rust-src"
                     "rustfmt"
                   ];
-                }
-              ))
-              rust-analyzer-unwrapped
-              nixd
-              pkg-config
-              lua5_4
-              libxkbcommon
-              vulkan-loader
-              vulkan-headers
-              vulkan-validation-layers
-              wgsl-analyzer
-              wayland
-              alsa-lib
-            ];
-
+                })
+              ]
+              ++ builtins.attrValues {
+                inherit (pkgs)
+                  rust-analyzer-unwrapped
+                  nixd
+                  pkg-config
+                  lua5_4
+                  libxkbcommon
+                  vulkan-loader
+                  vulkan-headers
+                  vulkan-validation-layers
+                  wgsl-analyzer
+                  wayland
+                  alsa-lib
+                  ;
+              };
+          in
+          pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
+            inherit buildInputs;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
           };
       });
 
       packages = forAllSystems (pkgs: {
-        default = pkgs.callPackage ./nix/package.nix { };
+        default = pkgs.callPackage ./nix/package.nix {
+          rustPlatform =
+            let
+              rust-bin = pkgs.rust-bin.stable.latest.default;
+            in
+            pkgs.makeRustPlatform {
+              cargo = rust-bin;
+              rustc = rust-bin;
+            };
+        };
       });
 
       homeManagerModules = {
