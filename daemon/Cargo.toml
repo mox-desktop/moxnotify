@@ -4,39 +4,39 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-calloop = { version = "0.14.2", features = [ "executor" ] }
+calloop = { version = "0.14.2", features = ["executor"] }
 calloop-wayland-source = "0.4.0"
-env_logger = "0.11.6"
-mlua = { version = "0.10.3", features = [ "lua54", "serialize" ] }
-serde = { version = "1.0.217", features = [ "rc", "derive" ] }
+env_logger = { version = "0.11.6", default-features = false }
+mlua = { version = "0.10.3", features = ["lua54", "serialize"] }
+serde = { version = "1.0.217", features = ["rc"], default-features = false }
 wayland-client = "0.31.7"
-wayland-protocols = { version = "0.32.5", features = ["staging", "client", "unstable" ] }
-futures-lite = "2.6.0"
-zbus = { version = "5.5.0", features = ["tokio", "p2p", "async-io"], default-features = false }
-tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread", "sync"] }
+wayland-protocols = { version = "0.32.5", features = ["staging", "unstable"] }
+futures-lite = { version = "2.6.0", default-features = false }
+zbus = { version = "5.5.0", features = ["tokio"], default-features = false }
+tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
 clap = { version = "4.5.27", features = ["derive"] }
-bytemuck = { version = "1.19.0", features = ["derive"] }
+bytemuck = "1.19.0"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
 wayland-backend = { version = "0.3.7", features = ["client_system"] }
 raw-window-handle = "0.6.2"
-anyhow = "1.0.95"
+anyhow = { version = "1.0.95", default-features = false }
 xkbcommon = "0.8.0"
-image = { version = "0.25.5", default-features = false, features = ["png", "jpeg"] }
-fast_image_resize = { version = "5.1.1", features = ["only_u8x4", "rayon"] }
-wgpu = { version = "25.0.0", default-features = false, features = [ "wgsl", "vulkan" ] }
+image = { version = "0.25.6", default-features = false, features = ["jpeg", "ico", "webp", "rayon"] }
+fast_image_resize = "5.1.1"
+wgpu = { version = "25.0.0", features = ["wgsl", "vulkan"], default-features = false }
 glyphon = "0.9.0"
-url = "2.5.4"
+url = { version = "2.5.4", default-features = false }
 freedesktop-icons = "0.4.0"
-symphonia = { version = "0.5.4", features = [ "mp3" ] }
+symphonia = { version = "0.5.4", features = ["wav", "pcm", "mp3", "vorbis", "ogg"], default-features = false }
 freedesktop-sound = "0.1.0"
 serde_json = "1.0.140"
 rusqlite = { version = "0.35.0", features = ["bundled"] }
-tracing = "0.1.41"
+tracing = { version = "0.1.41", default-features = false }
 log = "0.4.27"
-inotify = "0.11.0"
-resvg = "0.45.1"
-tiny-skia = "0.11.4"
+inotify = { version = "0.11.0", default-features = false }
+resvg = { version = "0.45.1", default-features = false }
+tiny-skia = { version = "0.11.4", default-features = false }
 crossbeam-channel = "0.5.15"
-atomic_float = "1.1.0"
+atomic_float = { version = "1.1.0", default-features = false }
 rayon = "1.10.0"
 alsa-sys = "0.3.1"
