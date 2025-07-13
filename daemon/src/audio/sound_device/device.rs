@@ -3,7 +3,6 @@ use alsa_sys::*;
 use std::{
     ffi::{CStr, CString},
     os::raw::c_int,
-    sync::{Arc, Mutex},
 };
 
 pub fn err_code_to_string(err_code: c_int) -> String {
@@ -23,18 +22,13 @@ pub fn check(err_code: c_int) -> anyhow::Result<()> {
     }
 }
 
-struct AlsaHandle(*mut snd_pcm_t);
+pub struct Device(*mut snd_pcm_t);
 
-// SAFETY: ALSA PCM handles are thread-safe when properly synchronized
-// The Mutex provides the necessary synchronization
-unsafe impl Send for AlsaHandle {}
-unsafe impl Sync for AlsaHandle {}
-
-#[derive(Clone)]
-pub struct Device(Arc<Mutex<AlsaHandle>>);
+unsafe impl Send for Device {}
+unsafe impl Sync for Device {}
 
 impl Device {
-    pub fn new(name: &str, params: OutputDeviceParameters) -> anyhow::Result<Self> {
+    pub fn new(name: &str, params: &OutputDeviceParameters) -> anyhow::Result<Self> {
         let mut playback_device = std::ptr::null_mut();
         let name = CString::new(name).unwrap();
         let frame_count = params.channel_sample_count;
@@ -122,14 +116,13 @@ impl Device {
             check(snd_pcm_prepare(playback_device))?;
         }
 
-        Ok(Self(Arc::new(Mutex::new(AlsaHandle(playback_device)))))
+        Ok(Self(playback_device))
     }
 
     pub fn writei(&self, output_buffer: &[i16], channel_sample_count: usize) -> anyhow::Result<()> {
-        let pcm = self.0.lock().unwrap();
         unsafe {
             let err = snd_pcm_writei(
-                pcm.0,
+                self.0,
                 output_buffer.as_ptr() as *const _,
                 channel_sample_count as ::std::os::raw::c_ulong,
             ) as i32;
@@ -137,7 +130,7 @@ impl Device {
             'try_loop: for _ in 0..10 {
                 if err < 0 {
                     // Try to recover from error
-                    snd_pcm_recover(pcm.0, err, 1);
+                    snd_pcm_recover(self.0, err, 1);
                 } else {
                     break 'try_loop;
                 }
@@ -150,9 +143,8 @@ impl Device {
 
 impl Drop for Device {
     fn drop(&mut self) {
-        let pcm = self.0.lock().unwrap();
         unsafe {
-            snd_pcm_close(pcm.0);
+            snd_pcm_close(self.0);
         }
     }
 }

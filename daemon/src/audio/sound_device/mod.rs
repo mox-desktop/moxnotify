@@ -17,30 +17,17 @@ pub struct OutputDeviceParameters {
 
 pub struct SoundDevice {
     params: OutputDeviceParameters,
-    playback_device: device::Device,
+    playback_device: Arc<device::Device>,
     thread_handle: Option<JoinHandle<()>>,
     is_running: Arc<AtomicBool>,
 }
-
-impl Clone for SoundDevice {
-    fn clone(&self) -> Self {
-        Self {
-            params: self.params,
-            playback_device: self.playback_device.clone(),
-            thread_handle: None,
-            is_running: Arc::clone(&self.is_running),
-        }
-    }
-}
-
-unsafe impl Send for SoundDevice {}
 
 impl SoundDevice {
     pub fn new(params: OutputDeviceParameters) -> anyhow::Result<Self> {
         let is_running = Arc::new(AtomicBool::new(false));
 
         Ok(Self {
-            playback_device: device::Device::new("device", params)?,
+            playback_device: Arc::new(device::Device::new("default", &params)?),
             is_running,
             thread_handle: None,
             params,
@@ -54,7 +41,7 @@ impl SoundDevice {
         self.is_running.store(true, Ordering::SeqCst);
 
         let thread_handle = DataSender {
-            playback_device: self.playback_device.clone(),
+            playback_device: Arc::clone(&self.playback_device),
             callback: data_callback,
             data_buffer: vec![
                 0.0f32;
@@ -91,7 +78,7 @@ impl Drop for SoundDevice {
 }
 
 struct DataSender<C> {
-    playback_device: device::Device,
+    playback_device: Arc<device::Device>,
     callback: C,
     data_buffer: Vec<f32>,
     output_buffer: Vec<i16>,
