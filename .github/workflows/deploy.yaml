@@ -2,8 +2,10 @@ name: "Push to cachix"
 on:
   pull_request:
   push:
+    branches:
+      - master
 jobs:
-  tests:
+  push-to-cachix:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
