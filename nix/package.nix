@@ -16,7 +16,12 @@ rustPlatform.buildRustPackage rec {
   pname = "moxnotify";
   inherit (cargoToml.package) version;
 
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock = {
+    lockFile = ../Cargo.lock;
+    outputHashes = {
+      "moxui-0.1.0" = "sha256-v/4a0+ljKu8vag9suBxZIi12CKwT7xorYy/Am03xtY0=";
+    };
+  };
 
   src = lib.cleanSourceWith {
     src = ../.;
@@ -73,7 +78,6 @@ rustPlatform.buildRustPackage rec {
   '';
 
   dontPatchELF = false;
-  autoPatchelf = true;
 
   meta = with lib; {
     description = "Mox desktop environment notification system";

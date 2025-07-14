@@ -41,3 +41,4 @@ atomic_float = { version = "1.1.0", default-features = false }
 rayon = "1.10.0"
 alsa-sys = "0.3.1"
 alsa = "0.9.1"
+moxui = { git = "https://github.com/mox-desktop/moxui", rev = "0b037435cd8af03a15230672a31da2622611a340" }
