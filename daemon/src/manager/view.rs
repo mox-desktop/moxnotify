@@ -1,16 +1,16 @@
 use super::UiState;
 use crate::{
-    components::{notification::Notification, text::Text, Component},
-    config::Config,
-    utils::buffers,
     NotificationData,
+    components::{Component, notification::Notification, text::Text},
+    config::Config,
 };
 use glyphon::{FontSystem, TextArea};
+use moxui::shape_renderer;
 use std::{
     cell::RefCell,
     ops::Range,
     rc::Rc,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
 
 pub struct NotificationView {
@@ -141,11 +141,14 @@ impl NotificationView {
         }
     }
 
-    pub fn prev_data(&self, total_width: f32) -> Option<(buffers::Instance, TextArea<'_>)> {
+    pub fn prev_data(
+        &self,
+        total_width: f32,
+    ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
         if let Some(prev) = self.prev.as_ref() {
             let extents = prev.get_render_bounds();
             let style = &self.config.styles.prev;
-            let instance = buffers::Instance {
+            let instance = shape_renderer::ShapeInstance {
                 rect_pos: [extents.x, extents.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,
@@ -170,11 +173,14 @@ impl NotificationView {
         None
     }
 
-    pub fn next_data(&self, total_width: f32) -> Option<(buffers::Instance, TextArea<'_>)> {
+    pub fn next_data(
+        &self,
+        total_width: f32,
+    ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
         if let Some(next) = self.next.as_ref() {
             let extents = next.get_render_bounds();
             let style = &self.config.styles.prev;
-            let instance = buffers::Instance {
+            let instance = shape_renderer::ShapeInstance {
                 rect_pos: [extents.x, extents.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,

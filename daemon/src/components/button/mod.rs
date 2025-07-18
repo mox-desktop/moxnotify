@@ -4,23 +4,22 @@ mod dismiss;
 
 use super::text::body;
 use crate::{
+    Urgency,
     components::{Bounds, Component, Data},
     config::{
-        self,
+        self, Config,
         button::ButtonState,
         keymaps::{self},
-        Config,
     },
     manager::UiState,
-    rendering::{text_renderer, texture_renderer},
-    utils::buffers,
-    Urgency,
+    rendering::text_renderer,
 };
 use action::ActionButton;
 use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
-use std::sync::{atomic::Ordering, Arc};
+use moxui::{shape_renderer, texture_renderer};
+use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Copy, Debug)]
 pub enum State {
@@ -254,7 +253,7 @@ impl ButtonManager<Finished> {
         }
     }
 
-    pub fn instances(&self) -> Vec<buffers::Instance> {
+    pub fn instances(&self) -> Vec<shape_renderer::ShapeInstance> {
         let mut buttons = self
             .buttons
             .iter()
@@ -525,11 +524,11 @@ impl Component for Hint {
         }
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = &self.config.styles.hover.hint;
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.to_linear(urgency),
@@ -594,7 +593,7 @@ impl Component for Hint {
 #[cfg(test)]
 mod tests {
     use super::ButtonManager;
-    use crate::{manager::UiState, Urgency};
+    use crate::{Urgency, manager::UiState};
     use glyphon::FontSystem;
     use std::sync::Arc;
 

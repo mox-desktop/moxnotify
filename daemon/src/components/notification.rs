@@ -1,23 +1,22 @@
 use super::button::{ButtonManager, ButtonType, Finished};
 use super::icons::Icons;
 use super::progress::Progress;
+use super::text::Text;
 use super::text::body::Body;
 use super::text::summary::Summary;
-use super::text::Text;
 use super::{Bounds, UiState};
 use crate::manager::Reason;
-use crate::rendering::texture_renderer;
 use crate::{
+    Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
     config::{Size, StyleState},
-    utils::buffers,
-    Config, Moxnotify, NotificationData, Urgency,
 };
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{LoopHandle, RegistrationToken};
 use glyphon::FontSystem;
-use std::sync::atomic::Ordering;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub type NotificationId = u32;
@@ -101,11 +100,11 @@ impl Component for Notification {
         }
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
             rect_size: [
                 extents.width - style.border.size.left - style.border.size.right,

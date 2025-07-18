@@ -1,5 +1,5 @@
 use super::math::{Mat4, Matrix};
-use wgpu::{util::DeviceExt, Texture, TextureView};
+use wgpu::{Texture, TextureView, util::DeviceExt};
 
 pub trait DataDescription {
     const ATTRIBS: &'static [wgpu::VertexAttribute];
@@ -102,33 +102,6 @@ impl DataDescription for TextureInstance {
     const ATTRIBS: &'static [wgpu::VertexAttribute] = &wgpu::vertex_attr_array![
         2 => Float32x2,
         3 => Float32x2,
-        4 => Float32x4,
-        5 => Float32x4,
-        6 => Float32x4,
-        7 => Float32,
-        8 => Float32,
-    ];
-    const STEP_MODE: wgpu::VertexStepMode = wgpu::VertexStepMode::Instance;
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, Debug)]
-pub struct Instance {
-    pub rect_pos: [f32; 2],
-    pub rect_size: [f32; 2],
-    pub rect_color: [f32; 4],
-    pub border_radius: [f32; 4],
-    pub border_size: [f32; 4],
-    pub border_color: [f32; 4],
-    pub scale: f32,
-    pub depth: f32,
-}
-
-impl DataDescription for Instance {
-    const ATTRIBS: &'static [wgpu::VertexAttribute] = &wgpu::vertex_attr_array![
-        1 => Float32x2,
-        2 => Float32x2,
-        3 => Float32x4,
         4 => Float32x4,
         5 => Float32x4,
         6 => Float32x4,

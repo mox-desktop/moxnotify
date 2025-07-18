@@ -1,13 +1,13 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
-    components::{Bounds, Component},
-    config::{button::ButtonState, Config},
-    manager::UiState,
-    rendering::{text_renderer, texture_renderer},
-    utils::buffers,
     Urgency,
+    components::{Bounds, Component},
+    config::{Config, button::ButtonState},
+    manager::UiState,
+    rendering::text_renderer,
 };
-use std::sync::{atomic::Ordering, Arc};
+use moxui::{shape_renderer, texture_renderer};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct ActionButton {
     pub id: u32,
@@ -43,11 +43,11 @@ impl Component for ActionButton {
         &self.ui_state
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [
                 bounds.width - style.border.size.left - style.border.size.right,
@@ -214,11 +214,11 @@ impl Button for ActionButton {
 #[cfg(test)]
 mod tests {
     use crate::{
+        Event,
         components::button::{Button, Hint, State},
         config::Config,
         manager::UiState,
         rendering::text_renderer::Text,
-        Event,
     };
     use glyphon::FontSystem;
     use std::sync::Arc;

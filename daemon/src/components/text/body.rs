@@ -1,16 +1,16 @@
 use super::{
-    markup::{Parser, Tag},
     Text,
+    markup::{Parser, Tag},
 };
 use crate::{
-    components::{notification::NotificationId, Bounds, Component, Data},
+    Urgency,
+    components::{Bounds, Component, Data, notification::NotificationId},
     config::{self, Config},
     manager::UiState,
-    utils::buffers,
-    Urgency,
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
-use std::sync::{atomic::Ordering, Arc};
+use moxui::{shape_renderer, texture_renderer};
+use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Debug)]
 pub struct Anchor {
@@ -364,11 +364,11 @@ impl Component for Body {
         &self.get_notification_style().body
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.to_linear(urgency),
@@ -415,7 +415,7 @@ impl Component for Body {
         }]
     }
 
-    fn get_textures(&self) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -507,8 +507,8 @@ mod tests {
     use super::*;
     use crate::{
         components::text::{
-            markup::{Parser, Tag},
             Text,
+            markup::{Parser, Tag},
         },
         config::Config,
         manager::UiState,

@@ -1,14 +1,15 @@
 use crate::{
     config::Config,
-    rendering::{shape_renderer, text_renderer, texture_renderer},
+    rendering::text_renderer,
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,
 };
 use anyhow::Context;
+use moxui::{shape_renderer, texture_renderer};
 use raw_window_handle::{RawWindowHandle, WaylandWindowHandle};
 
 use std::ptr::NonNull;
-use wayland_client::{protocol::wl_surface, Proxy};
+use wayland_client::{Proxy, protocol::wl_surface};
 
 pub struct WgpuSurface {
     pub texture_renderer: texture_renderer::TextureRenderer,
@@ -63,9 +64,10 @@ impl WgpuSurface {
         };
 
         let texture_renderer = texture_renderer::TextureRenderer::new(
+            config.general.icon_size,
+            config.general.icon_size,
             &wgpu_state.device,
             *surface_format,
-            config.general.icon_size,
         );
 
         let shape_renderer =

@@ -1,17 +1,19 @@
 use crate::{
+    Image,
     components::{Bounds, Component},
     config::{Config, StyleState},
     manager::UiState,
-    rendering::texture_renderer::{self, TextureArea, TextureBounds},
-    utils::buffers,
     utils::image_data::ImageData,
-    Image,
+};
+use moxui::{
+    shape_renderer,
+    texture_renderer::{self, TextureArea, TextureBounds},
 };
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{atomic::Ordering, Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex, atomic::Ordering},
 };
 
 use super::Data;
@@ -189,7 +191,7 @@ impl Component for Icons {
         }
     }
 
-    fn get_instances(&self, _: &crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, _: &crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
         Vec::new()
     }
 
@@ -214,22 +216,26 @@ impl Component for Icons {
         let mut bounds = self.get_render_bounds();
 
         if let Some(icon) = self.icon.as_ref() {
+            let mut buffer = texture_renderer::Buffer::new();
+            buffer.set_bytes(icon.data());
+            buffer.set_size(Some(bounds.width), Some(bounds.height));
+
             texture_areas.push(TextureArea {
                 left: bounds.x,
                 top: bounds.y,
-                width: bounds.width,
-                height: bounds.height,
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
-                border_size: style.icon.border.size.into(),
+                //border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
                     right: (bounds.x + bounds.width) as u32,
                     bottom: (bounds.y + bounds.height) as u32,
                 },
-                data: icon.data(),
+                buffer,
                 radius: style.icon.border.radius.into(),
-                depth: 0.9,
+                rotation: 0.,
+                skew: [0., 0.],
+                //depth: 0.8,
             });
 
             bounds.x += bounds.height - self.config.general.app_icon_size as f32;
@@ -238,23 +244,26 @@ impl Component for Icons {
 
         if let Some(app_icon) = self.app_icon.as_ref() {
             let app_icon_size = self.config.general.app_icon_size as f32;
+            let mut buffer = texture_renderer::Buffer::new();
+            buffer.set_bytes(app_icon.data());
+            buffer.set_size(Some(app_icon_size), Some(app_icon_size));
 
             texture_areas.push(TextureArea {
                 left: bounds.x,
                 top: bounds.y,
-                width: app_icon_size,
-                height: app_icon_size,
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
-                border_size: style.icon.border.size.into(),
+                //border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
                     right: (bounds.x + app_icon_size) as u32,
                     bottom: (bounds.y + app_icon_size) as u32,
                 },
-                data: app_icon.data(),
+                buffer,
                 radius: style.app_icon.border.radius.into(),
-                depth: 0.8,
+                rotation: 0.,
+                skew: [0., 0.],
+                //depth: 0.8,
             });
         }
 

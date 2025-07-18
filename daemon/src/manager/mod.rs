@@ -1,20 +1,19 @@
 mod view;
 
 use crate::{
+    EmitEvent, History, Moxnotify, NotificationData,
     components::{
+        Component, Data,
         button::ButtonType,
         notification::{Notification, NotificationId},
         text::Text,
-        Component, Data,
     },
-    config::{keymaps, Config, Queue},
-    rendering::texture_renderer::TextureArea,
-    utils::buffers,
-    EmitEvent, History, Moxnotify, NotificationData,
+    config::{Config, Queue, keymaps},
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
 use glyphon::{FontSystem, TextArea};
+use moxui::{shape_renderer, texture_renderer::TextureArea};
 use rayon::prelude::*;
 use rusqlite::params;
 use std::{
@@ -22,8 +21,8 @@ use std::{
     fmt,
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 use view::NotificationView;
@@ -105,7 +104,7 @@ impl NotificationManager {
     pub fn data(
         &self,
     ) -> (
-        Vec<buffers::Instance>,
+        Vec<shape_renderer::ShapeInstance>,
         Vec<TextArea<'_>>,
         Vec<TextureArea<'_>>,
     ) {
@@ -990,67 +989,95 @@ mod tests {
         let (left, right, top, bottom) = (x, x + width, y, y + height);
         let epsilon = 0.1;
 
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top + height / 2.0)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top + height / 2.0)
+                .is_some()
+        );
 
         // Left edge
-        assert!(manager
-            .get_by_coordinates(left - epsilon, top + height / 2.0)
-            .is_none());
-        assert!(manager
-            .get_by_coordinates(left + epsilon, top + height / 2.0)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, top + height / 2.0)
+                .is_none()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + epsilon, top + height / 2.0)
+                .is_some()
+        );
 
         // Right edge
-        assert!(manager
-            .get_by_coordinates(right - epsilon, top + height / 2.0)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, top + height / 2.0)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right - epsilon, top + height / 2.0)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, top + height / 2.0)
+                .is_none()
+        );
 
         // Top edge
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top - epsilon)
-            .is_none());
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top - epsilon)
+                .is_none()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top)
+                .is_some()
+        );
 
         // Bottom edge
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, bottom)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, bottom + 30.00)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, bottom)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, bottom + 30.00)
+                .is_some()
+        );
 
         // Top-left corner
-        assert!(manager
-            .get_by_coordinates(left - epsilon, top - epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, top - epsilon)
+                .is_none()
+        );
         assert!(manager.get_by_coordinates(left + epsilon, top).is_some());
 
         // Top-right corner
         assert!(manager.get_by_coordinates(right - epsilon, top).is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, top - epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, top - epsilon)
+                .is_none()
+        );
 
         // Bottom-left corner
         assert!(manager.get_by_coordinates(left + epsilon, bottom).is_some());
-        assert!(manager
-            .get_by_coordinates(left - epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, bottom + epsilon)
+                .is_none()
+        );
 
         // Bottom-right corner
-        assert!(manager
-            .get_by_coordinates(right - epsilon, bottom)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right - epsilon, bottom)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, bottom + epsilon)
+                .is_none()
+        );
 
         let center_notification =
             manager.get_by_coordinates(left + width / 2.0, top + height / 2.0);
@@ -1059,8 +1086,10 @@ mod tests {
         assert!(manager.get_by_coordinates(15.0, 25.0).is_some());
         assert!(manager.get_by_coordinates(9.9, 25.0).is_none());
         assert!(manager.get_by_coordinates(right, bottom).is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, bottom + epsilon)
+                .is_none()
+        );
     }
 }

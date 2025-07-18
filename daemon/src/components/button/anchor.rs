@@ -1,11 +1,11 @@
 use super::{Button, Component, Hint, State};
 use crate::{
-    components::{text::body::Anchor, Bounds},
-    config::{button::ButtonState, Config},
+    components::{Bounds, text::body::Anchor},
+    config::{Config, button::ButtonState},
     manager::UiState,
-    rendering::{text_renderer::Text, texture_renderer},
-    utils::buffers,
+    rendering::text_renderer::Text,
 };
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
 pub struct AnchorButton {
@@ -45,10 +45,10 @@ impl Component for AnchorButton {
         &self.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: &crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.to_linear(urgency),

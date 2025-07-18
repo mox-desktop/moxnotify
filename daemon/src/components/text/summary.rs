@@ -1,14 +1,13 @@
 use super::Text;
 use crate::{
-    components::{notification::NotificationId, Bounds, Component, Data},
+    Urgency,
+    components::{Bounds, Component, Data, notification::NotificationId},
     config::{self, Config},
     manager::UiState,
-    rendering::texture_renderer,
-    utils::buffers,
-    Urgency,
 };
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
-use std::sync::{atomic::Ordering, Arc};
+use moxui::{shape_renderer, texture_renderer};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {
     id: NotificationId,
@@ -69,11 +68,11 @@ impl Component for Summary {
         &self.get_notification_style().summary
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.to_linear(urgency),
@@ -223,7 +222,7 @@ impl Summary {
 #[cfg(test)]
 mod tests {
     use crate::{
-        components::text::{summary::Summary, Text},
+        components::text::{Text, summary::Summary},
         config::Config,
         manager::UiState,
     };

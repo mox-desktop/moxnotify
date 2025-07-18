@@ -1,12 +1,11 @@
 use crate::{
-    components::{Bounds, Component},
-    config::{self, border::BorderRadius, Config, Insets, Size},
-    manager::UiState,
-    rendering::texture_renderer,
-    utils::buffers,
     Urgency,
+    components::{Bounds, Component},
+    config::{self, Config, Insets, Size, border::BorderRadius},
+    manager::UiState,
 };
-use std::sync::{atomic::Ordering, Arc};
+use moxui::{shape_renderer, texture_renderer};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct Progress {
     id: u32,
@@ -127,7 +126,7 @@ impl Component for Progress {
         vec![]
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: &Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
 
         let progress_ratio = (self.value as f32 / 100.0).min(1.0);
@@ -157,7 +156,7 @@ impl Component for Progress {
                 style.border.radius
             };
 
-            instances.push(buffers::Instance {
+            instances.push(shape_renderer::ShapeInstance {
                 rect_pos: [extents.x, extents.y],
                 rect_size: [complete_width, extents.height],
                 rect_color: style.complete_color.to_linear(urgency),
@@ -192,7 +191,7 @@ impl Component for Progress {
                     style.border.radius
                 };
 
-                instances.push(buffers::Instance {
+                instances.push(shape_renderer::ShapeInstance {
                     rect_pos: [extents.x + complete_width, extents.y],
                     rect_size: [incomplete_width, extents.height],
                     rect_color: style.incomplete_color.to_linear(urgency),
@@ -243,8 +242,8 @@ mod tests {
     use super::*;
     use crate::Urgency;
     use std::sync::{
-        atomic::{AtomicBool, AtomicU32},
         Arc,
+        atomic::{AtomicBool, AtomicU32},
     };
 
     fn create_test_progress(value: i32) -> Progress {

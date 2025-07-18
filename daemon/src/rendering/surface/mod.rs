@@ -1,19 +1,21 @@
 pub mod wgpu_surface;
 
 use crate::{
+    Moxnotify, Output,
     config::{self, Anchor, Config},
     manager::NotificationManager,
     utils::buffers,
-    wgpu_state, Moxnotify, Output,
+    wgpu_state,
 };
 use glyphon::FontSystem;
+use moxui::texture_renderer::viewport::{Resolution, Viewport};
 use std::{
     cell::RefCell,
     fmt,
     rc::Rc,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
-use wayland_client::{delegate_noop, protocol::wl_surface, Connection, Dispatch, QueueHandle};
+use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop, protocol::wl_surface};
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2;
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1,
@@ -45,6 +47,7 @@ pub struct Surface {
     pub token: Option<Arc<str>>,
     pub focus_reason: Option<FocusReason>,
     font_system: Rc<RefCell<FontSystem>>,
+    viewport: Viewport,
 }
 
 impl Surface {
@@ -123,6 +126,7 @@ impl Surface {
             wl_surface,
             layer_surface,
             font_system,
+            viewport: Viewport::new(&wgpu_state.device),
         })
     }
 
@@ -174,10 +178,10 @@ impl Surface {
 
         self.wgpu_surface
             .shape_renderer
-            .prepare(device, queue, &instances);
+            .prepare(device, queue, &self.viewport, &instances);
         self.wgpu_surface
             .texture_renderer
-            .prepare(device, queue, &textures);
+            .prepare(device, queue, &self.viewport, &textures);
         self.wgpu_surface.text_ctx.prepare(
             device,
             queue,
@@ -186,10 +190,13 @@ impl Surface {
         )?;
 
         self.wgpu_surface.shape_renderer.render(&mut render_pass);
-        self.wgpu_surface.texture_renderer.render(&mut render_pass);
         self.wgpu_surface.text_ctx.render(&mut render_pass)?;
 
         drop(render_pass); // Drop renderpass and release mutable borrow on encoder
+
+        self.wgpu_surface
+            .texture_renderer
+            .render(&texture_view, &mut encoder);
 
         queue.submit(Some(encoder.finish()));
         surface_texture.present();
@@ -205,6 +212,7 @@ impl Surface {
         {
             return;
         }
+        self.viewport.update(queue, Resolution { width, height });
         self.wgpu_surface.depth_buffer = buffers::DepthBuffer::new(device, width, height);
         self.wgpu_surface.config.width = width;
         self.wgpu_surface.config.height = height;
@@ -215,12 +223,6 @@ impl Surface {
             .text_ctx
             .viewport
             .update(queue, glyphon::Resolution { width, height });
-        self.wgpu_surface
-            .shape_renderer
-            .resize(queue, width as f32, height as f32);
-        self.wgpu_surface
-            .texture_renderer
-            .resize(queue, width as f32, height as f32);
     }
 
     pub fn focus(&mut self, focus_reason: FocusReason) {
