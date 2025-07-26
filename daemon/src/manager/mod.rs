@@ -177,7 +177,12 @@ impl NotificationManager {
         self.notification_view.visible.clone().any(|index| {
             self.notifications
                 .get_mut(index)
-                .map(|notification| notification.buttons.click(x, y))
+                .and_then(|notification| {
+                    notification
+                        .buttons
+                        .as_mut()
+                        .map(|buttons| buttons.click(x, y))
+                })
                 .unwrap_or_default()
         })
     }
@@ -186,7 +191,12 @@ impl NotificationManager {
         self.notification_view.visible.clone().any(|index| {
             self.notifications
                 .get_mut(index)
-                .map(|notification| notification.buttons.hover(x, y))
+                .and_then(|notification| {
+                    notification
+                        .buttons
+                        .as_mut()
+                        .map(|buttons| buttons.hover(x, y))
+                })
                 .unwrap_or_default()
         })
     }
@@ -261,11 +271,15 @@ impl NotificationManager {
 
             let dismiss_button = notification
                 .buttons
-                .buttons()
-                .iter()
-                .find(|button| button.button_type() == ButtonType::Dismiss)
-                .map(|button| button.get_render_bounds().width)
-                .unwrap_or(0.0);
+                .as_ref()
+                .and_then(|buttons| {
+                    buttons
+                        .buttons()
+                        .iter()
+                        .find(|button| button.button_type() == ButtonType::Dismiss)
+                        .map(|button| button.get_render_bounds().width)
+                })
+                .unwrap_or_default();
 
             notification.body.set_size(
                 &mut self.font_system.borrow_mut(),

@@ -1,23 +1,23 @@
 use super::button::{ButtonManager, ButtonType, Finished};
 use super::icons::Icons;
 use super::progress::Progress;
+use super::text::Text;
 use super::text::body::Body;
 use super::text::summary::Summary;
-use super::text::Text;
 use super::{Bounds, UiState};
 use crate::manager::Reason;
 use crate::rendering::texture_renderer;
 use crate::{
+    Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
     config::{Size, StyleState},
     utils::buffers,
-    Config, Moxnotify, NotificationData, Urgency,
 };
 use calloop::timer::{TimeoutAction, Timer};
 use calloop::{LoopHandle, RegistrationToken};
 use glyphon::FontSystem;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 pub type NotificationId = u32;
@@ -30,7 +30,7 @@ pub struct Notification {
     pub icons: Option<Icons>,
     progress: Option<Progress>,
     pub registration_token: Option<RegistrationToken>,
-    pub buttons: ButtonManager<Finished>,
+    pub buttons: Option<ButtonManager<Finished>>,
     pub data: NotificationData,
     ui_state: UiState,
     pub summary: Summary,
@@ -142,18 +142,27 @@ impl Component for Notification {
         // Get action buttons for reuse
         let action_buttons_count = self
             .buttons
-            .buttons()
-            .iter()
-            .filter(|button| button.button_type() == ButtonType::Action)
-            .count();
+            .as_ref()
+            .map(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .filter(|button| button.button_type() == ButtonType::Action)
+                    .count()
+            })
+            .unwrap_or_default();
 
         let max_action_button_height = self
             .buttons
-            .buttons()
-            .iter()
-            .filter(|button| button.button_type() == ButtonType::Action)
-            .map(|button| button.get_bounds().height)
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .as_ref()
+            .and_then(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .filter(|button| button.button_type() == ButtonType::Action)
+                    .map(|button| button.get_bounds().height)
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+            })
             .unwrap_or_default();
 
         // Position icons
@@ -219,27 +228,34 @@ impl Component for Notification {
 
         let dismiss_bottom_y = self
             .buttons
-            .buttons_mut()
-            .iter_mut()
-            .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map(|button| {
-                let dismiss_x = extents.x + extents.width
-                    - style.border.size.right
-                    - style.padding.right
-                    - button.get_bounds().width;
+            .as_mut()
+            .and_then(|buttons| {
+                buttons
+                    .buttons_mut()
+                    .iter_mut()
+                    .find(|button| button.button_type() == ButtonType::Dismiss)
+                    .map(|button| {
+                        let dismiss_x = extents.x + extents.width
+                            - style.border.size.right
+                            - style.padding.right
+                            - button.get_bounds().width;
 
-                let dismiss_y =
-                    extents.y + style.margin.top + style.border.size.top + style.padding.top;
+                        let dismiss_y = extents.y
+                            + style.margin.top
+                            + style.border.size.top
+                            + style.padding.top;
 
-                button.set_position(dismiss_x, dismiss_y);
-                button.get_bounds().y + button.get_bounds().height
+                        button.set_position(dismiss_x, dismiss_y);
+                        button.get_bounds().y + button.get_bounds().height
+                    })
             })
-            .unwrap_or(0.0);
+            .unwrap_or_default();
 
         // Position action buttons
-        if action_buttons_count > 0 {
-            let button_style = self
-                .buttons
+        if let Some(buttons) = self.buttons.as_mut()
+            && action_buttons_count > 0
+        {
+            let button_style = buttons
                 .buttons()
                 .iter()
                 .find(|button| button.button_type() == ButtonType::Action)
@@ -258,7 +274,7 @@ impl Component for Notification {
             let total_spacing = (action_buttons_f32 - 1.0) * button_margin;
             let button_width = (available_width - total_spacing) / action_buttons_f32;
 
-            self.buttons.set_action_widths(button_width);
+            buttons.set_action_widths(button_width);
 
             let progress_height = self
                 .progress
@@ -269,7 +285,7 @@ impl Component for Notification {
             let base_x = extents.x + style.border.size.left + style.padding.left;
             let bottom_padding = style.border.size.bottom + style.padding.bottom + progress_height;
 
-            self.buttons
+            buttons
                 .buttons_mut()
                 .iter_mut()
                 .filter(|b| b.button_type() == ButtonType::Action)
@@ -285,16 +301,18 @@ impl Component for Notification {
         }
 
         // Position anchor buttons
-        self.buttons
-            .buttons_mut()
-            .iter_mut()
-            .filter(|b| b.button_type() == ButtonType::Anchor)
-            .for_each(|button| {
-                button.set_position(
-                    self.body.get_render_bounds().x,
-                    self.body.get_render_bounds().y,
-                )
-            });
+        if let Some(buttons) = self.buttons.as_mut() {
+            buttons
+                .buttons_mut()
+                .iter_mut()
+                .filter(|b| b.button_type() == ButtonType::Anchor)
+                .for_each(|button| {
+                    button.set_position(
+                        self.body.get_render_bounds().x,
+                        self.body.get_render_bounds().y,
+                    )
+                });
+        }
 
         // Position body
         let bounds = self.get_render_bounds();
@@ -325,7 +343,9 @@ impl Component for Notification {
         if let Some(icons) = self.icons.as_ref() {
             data.extend(icons.get_data(urgency));
         }
-        data.extend(self.buttons.data());
+        if let Some(buttons) = self.buttons.as_ref() {
+            data.extend(buttons.data());
+        }
         data.extend(self.summary.get_data(urgency));
         data.extend(self.body.get_data(urgency));
 
@@ -350,16 +370,7 @@ impl Notification {
             y: 0.,
             x: 0.,
             icons: None,
-            buttons: ButtonManager::new(
-                0,
-                Urgency::Low,
-                "".into(),
-                UiState::default(),
-                None,
-                Arc::clone(&config),
-            )
-            .add_dismiss(&mut font_system)
-            .finish(&mut font_system),
+            buttons: None,
             data: NotificationData::default(),
             config: Arc::clone(&config),
             hovered: false,
@@ -409,16 +420,7 @@ impl Notification {
                 icons: None,
                 progress: None,
                 registration_token: None,
-                buttons: ButtonManager::new(
-                    data.id,
-                    data.hints.urgency,
-                    Arc::clone(&data.app_name),
-                    ui_state.clone(),
-                    sender,
-                    Arc::clone(&config),
-                )
-                .add_dismiss(font_system)
-                .finish(font_system),
+                buttons: None,
                 ui_state: ui_state.clone(),
                 summary,
                 body,
@@ -500,9 +502,11 @@ impl Notification {
             y: 0.,
             x: 0.,
             icons,
-            buttons: buttons
-                .add_anchors(&body.anchors, font_system)
-                .finish(font_system),
+            buttons: Some(
+                buttons
+                    .add_anchors(&body.anchors, font_system)
+                    .finish(font_system),
+            ),
             data,
             config,
             hovered: false,
@@ -577,24 +581,32 @@ impl Notification {
 
         let dismiss_button = self
             .buttons
-            .buttons()
-            .iter()
-            .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map(|b| b.get_bounds().height)
-            .unwrap_or(0.0);
+            .as_ref()
+            .and_then(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .find(|button| button.button_type() == ButtonType::Dismiss)
+                    .map(|b| b.get_bounds().height)
+            })
+            .unwrap_or_default();
 
         let action_button = self
             .buttons
-            .buttons()
-            .iter()
-            .filter_map(|button| match button.button_type() {
-                ButtonType::Action => Some(button.get_bounds()),
-                _ => None,
-            })
-            .max_by(|a, b| {
-                a.height
-                    .partial_cmp(&b.height)
-                    .unwrap_or(std::cmp::Ordering::Equal)
+            .as_ref()
+            .and_then(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .filter_map(|button| match button.button_type() {
+                        ButtonType::Action => Some(button.get_bounds()),
+                        _ => None,
+                    })
+                    .max_by(|a, b| {
+                        a.height
+                            .partial_cmp(&b.height)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    })
             })
             .unwrap_or_default();
 

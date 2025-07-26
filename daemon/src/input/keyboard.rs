@@ -1,16 +1,16 @@
 use crate::{
+    History, Moxnotify,
     config::keymaps::{self, Key, KeyAction, KeyWithModifiers, Keys, Modifiers},
     manager::Reason,
-    History, Moxnotify,
 };
 use calloop::{
-    timer::{TimeoutAction, Timer},
     RegistrationToken,
+    timer::{TimeoutAction, Timer},
 };
 use std::{sync::atomic::Ordering, time::Duration};
 use wayland_client::{
-    protocol::{wl_keyboard, wl_seat},
     Connection, Dispatch, QueueHandle, WEnum,
+    protocol::{wl_keyboard, wl_seat},
 };
 use xkbcommon::xkb::{Context, Keymap, State};
 
@@ -319,8 +319,10 @@ impl Moxnotify {
             }
         } else {
             let combination = self.seat.keyboard.key_combination.to_string();
-            if let Some(notification) = self.notifications.selected_notification_mut() {
-                notification.buttons.hint(&combination);
+            if let Some(notification) = self.notifications.selected_notification_mut()
+                && let Some(buttons) = notification.buttons.as_mut()
+            {
+                buttons.hint(&combination);
             }
         }
 
