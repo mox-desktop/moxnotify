@@ -76,7 +76,7 @@ mod tests {
     #[tokio::test]
     async fn image_test() {
         let mut hints = HashMap::new();
-        hints.insert("image-path", "zen-beta".into());
+        hints.insert("image-path", "chromium".into());
         let notification = Notification {
             summary: "image-path test",
             hints,
@@ -86,16 +86,16 @@ mod tests {
 
         let notification = Notification {
             summary: "app_icon test",
-            app_icon: "zen-beta",
+            app_icon: "chromium",
             ..Default::default()
         };
         assert!(emit(notification).await.is_ok());
 
         let mut hints = HashMap::new();
-        hints.insert("image-path", "zen-beta".into());
+        hints.insert("image-path", "chromium".into());
         let notification = Notification {
             summary: "app_icon and image-path test",
-            app_icon: "zen-beta",
+            app_icon: "chromium",
             hints,
             ..Default::default()
         };
@@ -240,7 +240,7 @@ mod tests {
     async fn everything_test() {
         let mut hints = HashMap::new();
         hints.insert("value", zbus::zvariant::Value::I32(25));
-        hints.insert("image-path", "zen-beta".into());
+        hints.insert("image-path", "chromium".into());
 
         let body = "<u>underline</u>\n<i>italic</i>\n<b>bold</b>\n<a href=\"https://github.com/unixpariah/moxnotify\">github</a>\n<img alt=\"image\" href=\"\"/>";
 
@@ -266,7 +266,7 @@ mod tests {
         let notification = Notification {
             summary: "actions icon test",
             actions: ["default", "OK"].into(),
-            app_icon: "zen-beta",
+            app_icon: "chromium",
             ..Default::default()
         };
         assert!(emit(notification).await.is_ok());

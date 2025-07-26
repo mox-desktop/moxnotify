@@ -271,7 +271,11 @@ impl NotificationManager {
                 &mut self.font_system.borrow_mut(),
                 Some(
                     notification.get_style().width
-                        - notification.icons.get_bounds().width
+                        - notification
+                            .icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
                         - dismiss_button,
                 ),
                 None,
@@ -281,7 +285,11 @@ impl NotificationManager {
                 &mut self.font_system.borrow_mut(),
                 Some(
                     notification.get_style().width
-                        - notification.icons.get_bounds().width
+                        - notification
+                            .icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
                         - dismiss_button,
                 ),
                 None,

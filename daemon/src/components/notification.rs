@@ -27,7 +27,7 @@ pub struct Notification {
     pub x: f32,
     hovered: bool,
     config: Arc<Config>,
-    pub icons: Icons,
+    pub icons: Option<Icons>,
     progress: Option<Progress>,
     pub registration_token: Option<RegistrationToken>,
     pub buttons: ButtonManager<Finished>,
@@ -157,7 +157,7 @@ impl Component for Notification {
             .unwrap_or_default();
 
         // Position icons
-        {
+        if let Some(icons) = self.icons.as_mut() {
             let progress_height = self
                 .progress
                 .as_ref()
@@ -176,12 +176,18 @@ impl Component for Notification {
             let icon_x = extents.x + x_offset;
             let icon_y = extents.y + y_offset + vertical_offset;
 
-            self.icons.set_position(icon_x, icon_y);
+            icons.set_position(icon_x, icon_y);
         }
 
         // Position summary
         self.summary.set_position(
-            extents.x + x_offset + self.icons.get_bounds().width,
+            extents.x
+                + x_offset
+                + self
+                    .icons
+                    .as_ref()
+                    .map(|icons| icons.get_bounds().width)
+                    .unwrap_or_default(),
             extents.y + y_offset,
         );
 
@@ -293,7 +299,13 @@ impl Component for Notification {
         // Position body
         let bounds = self.get_render_bounds();
         self.body.set_position(
-            bounds.x + x_offset + self.icons.get_bounds().width,
+            bounds.x
+                + x_offset
+                + self
+                    .icons
+                    .as_ref()
+                    .map(|icons| icons.get_bounds().width)
+                    .unwrap_or_default(),
             bounds.y + y_offset + self.summary.get_bounds().height,
         );
     }
@@ -310,7 +322,9 @@ impl Component for Notification {
             data.extend(progress.get_data(urgency));
         }
 
-        data.extend(self.icons.get_data(urgency));
+        if let Some(icons) = self.icons.as_ref() {
+            data.extend(icons.get_data(urgency));
+        }
         data.extend(self.buttons.data());
         data.extend(self.summary.get_data(urgency));
         data.extend(self.body.get_data(urgency));
@@ -320,6 +334,47 @@ impl Component for Notification {
 }
 
 impl Notification {
+    pub fn new_empty() -> Self {
+        let mut font_system = FontSystem::new();
+        let config = Arc::new(Config::default());
+
+        Self {
+            summary: Summary::new(
+                0,
+                Arc::new(Config::default()),
+                "".into(),
+                UiState::default(),
+                &mut font_system,
+            ),
+            progress: None,
+            y: 0.,
+            x: 0.,
+            icons: None,
+            buttons: ButtonManager::new(
+                0,
+                Urgency::Low,
+                "".into(),
+                UiState::default(),
+                None,
+                Arc::clone(&config),
+            )
+            .add_dismiss(&mut font_system)
+            .finish(&mut font_system),
+            data: NotificationData::default(),
+            config: Arc::clone(&config),
+            hovered: false,
+            registration_token: None,
+            ui_state: UiState::default(),
+            body: Body::new(
+                0,
+                Arc::clone(&config),
+                "".into(),
+                UiState::default(),
+                &mut font_system,
+            ),
+        }
+    }
+
     pub fn new(
         config: Arc<Config>,
         font_system: &mut FontSystem,
@@ -351,14 +406,7 @@ impl Notification {
                 x: 0.,
                 hovered: false,
                 config: Arc::clone(&config),
-                icons: Icons::new(
-                    data.id,
-                    None,
-                    None,
-                    Arc::clone(&config),
-                    ui_state.clone(),
-                    Arc::clone(&data.app_name),
-                ),
+                icons: None,
                 progress: None,
                 registration_token: None,
                 buttons: ButtonManager::new(
@@ -378,14 +426,17 @@ impl Notification {
             };
         }
 
-        let icons = Icons::new(
-            data.id,
-            data.hints.image.as_ref(),
-            data.app_icon.as_deref(),
-            Arc::clone(&config),
-            ui_state.clone(),
-            Arc::clone(&data.app_name),
-        );
+        let icons = match (data.hints.image.as_ref(), data.app_icon.as_deref()) {
+            (None, None) => None,
+            (image, app_icon) => Some(Icons::new(
+                data.id,
+                image,
+                app_icon,
+                Arc::clone(&config),
+                ui_state.clone(),
+                Arc::clone(&data.app_name),
+            )),
+        };
 
         let buttons = ButtonManager::new(
             data.id,
@@ -411,13 +462,27 @@ impl Notification {
         let style = config.find_style(&data.app_name, false);
         body.set_size(
             font_system,
-            Some(style.width - icons.get_bounds().width - dismiss_button),
+            Some(
+                style.width
+                    - icons
+                        .as_ref()
+                        .map(|icons| icons.get_bounds().width)
+                        .unwrap_or_default()
+                    - dismiss_button,
+            ),
             None,
         );
 
         summary.set_size(
             font_system,
-            Some(style.width - icons.get_bounds().width - dismiss_button),
+            Some(
+                style.width
+                    - icons
+                        .as_ref()
+                        .map(|icons| icons.get_bounds().width)
+                        .unwrap_or_default()
+                    - dismiss_button,
+            ),
             None,
         );
 
@@ -554,7 +619,12 @@ impl Notification {
             Size::Auto => {
                 let text_height =
                     self.body.get_bounds().height + self.summary.get_bounds().height + progress;
-                let icon_height = self.icons.get_bounds().height + progress;
+                let icon_height = self
+                    .icons
+                    .as_ref()
+                    .map(|icons| icons.get_bounds().height)
+                    .unwrap_or_default()
+                    + progress;
                 let base_height = (text_height.max(icon_height).max(dismiss_button)
                     + action_button.height)
                     .max(dismiss_button + action_button.height)
