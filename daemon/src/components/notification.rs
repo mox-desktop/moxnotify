@@ -33,8 +33,8 @@ pub struct Notification {
     pub buttons: Option<ButtonManager<Finished>>,
     pub data: NotificationData,
     ui_state: UiState,
-    pub summary: Summary,
-    pub body: Body,
+    pub summary: Option<Summary>,
+    pub body: Option<Body>,
 }
 
 impl PartialEq for Notification {
@@ -189,16 +189,18 @@ impl Component for Notification {
         }
 
         // Position summary
-        self.summary.set_position(
-            extents.x
-                + x_offset
-                + self
-                    .icons
-                    .as_ref()
-                    .map(|icons| icons.get_bounds().width)
-                    .unwrap_or_default(),
-            extents.y + y_offset,
-        );
+        if let Some(summary) = self.summary.as_mut() {
+            summary.set_position(
+                extents.x
+                    + x_offset
+                    + self
+                        .icons
+                        .as_ref()
+                        .map(|icons| icons.get_bounds().width)
+                        .unwrap_or_default(),
+                extents.y + y_offset,
+            );
+        }
 
         // Position progress indicator if present
         if let Some(progress) = self.progress.as_mut() {
@@ -308,24 +310,38 @@ impl Component for Notification {
                 .filter(|b| b.button_type() == ButtonType::Anchor)
                 .for_each(|button| {
                     button.set_position(
-                        self.body.get_render_bounds().x,
-                        self.body.get_render_bounds().y,
+                        self.body
+                            .as_ref()
+                            .map(|body| body.get_render_bounds().y)
+                            .unwrap_or_default(),
+                        self.body
+                            .as_ref()
+                            .map(|body| body.get_render_bounds().y)
+                            .unwrap_or_default(),
                     )
                 });
         }
 
         // Position body
         let bounds = self.get_render_bounds();
-        self.body.set_position(
-            bounds.x
-                + x_offset
-                + self
-                    .icons
-                    .as_ref()
-                    .map(|icons| icons.get_bounds().width)
-                    .unwrap_or_default(),
-            bounds.y + y_offset + self.summary.get_bounds().height,
-        );
+        if let Some(body) = self.body.as_mut() {
+            body.set_position(
+                bounds.x
+                    + x_offset
+                    + self
+                        .icons
+                        .as_ref()
+                        .map(|icons| icons.get_bounds().width)
+                        .unwrap_or_default(),
+                bounds.y
+                    + y_offset
+                    + self
+                        .summary
+                        .as_ref()
+                        .map(|summary| summary.get_bounds().height)
+                        .unwrap_or_default(),
+            )
+        }
     }
 
     fn get_data(&self, urgency: &Urgency) -> Vec<Data<'_>> {
@@ -344,10 +360,14 @@ impl Component for Notification {
             data.extend(icons.get_data(urgency));
         }
         if let Some(buttons) = self.buttons.as_ref() {
-            data.extend(buttons.data());
+            data.extend(buttons.get_data());
         }
-        data.extend(self.summary.get_data(urgency));
-        data.extend(self.body.get_data(urgency));
+        if let Some(summary) = self.summary.as_ref() {
+            data.extend(summary.get_data(urgency));
+        }
+        if let Some(body) = self.body.as_ref() {
+            data.extend(body.get_data(urgency));
+        }
 
         data
     }
@@ -355,17 +375,10 @@ impl Component for Notification {
 
 impl Notification {
     pub fn new_empty() -> Self {
-        let mut font_system = FontSystem::new();
         let config = Arc::new(Config::default());
 
         Self {
-            summary: Summary::new(
-                0,
-                Arc::new(Config::default()),
-                "".into(),
-                UiState::default(),
-                &mut font_system,
-            ),
+            summary: None,
             progress: None,
             y: 0.,
             x: 0.,
@@ -376,13 +389,7 @@ impl Notification {
             hovered: false,
             registration_token: None,
             ui_state: UiState::default(),
-            body: Body::new(
-                0,
-                Arc::clone(&config),
-                "".into(),
-                UiState::default(),
-                &mut font_system,
-            ),
+            body: None,
         }
     }
 
@@ -393,22 +400,6 @@ impl Notification {
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Self {
-        let mut body = Body::new(
-            data.id,
-            Arc::clone(&config),
-            Arc::clone(&data.app_name),
-            ui_state.clone(),
-            font_system,
-        );
-
-        let mut summary = Summary::new(
-            data.id,
-            Arc::clone(&config),
-            Arc::clone(&data.app_name),
-            ui_state.clone(),
-            font_system,
-        );
-
         if data.app_name == "next_notification_count".into()
             || data.app_name == "prev_notification_count".into()
         {
@@ -422,8 +413,8 @@ impl Notification {
                 registration_token: None,
                 buttons: None,
                 ui_state: ui_state.clone(),
-                summary,
-                body,
+                summary: None,
+                body: None,
                 data,
             };
         }
@@ -440,7 +431,7 @@ impl Notification {
             )),
         };
 
-        let buttons = ButtonManager::new(
+        let mut buttons = ButtonManager::new(
             data.id,
             data.hints.urgency,
             Arc::clone(&data.app_name),
@@ -451,9 +442,6 @@ impl Notification {
         .add_dismiss(font_system)
         .add_actions(&data.actions, font_system);
 
-        body.set_text(font_system, &data.body);
-        summary.set_text(font_system, &data.summary);
-
         let dismiss_button = buttons
             .buttons()
             .iter()
@@ -462,31 +450,64 @@ impl Notification {
             .unwrap_or(0.0);
 
         let style = config.find_style(&data.app_name, false);
-        body.set_size(
-            font_system,
-            Some(
-                style.width
-                    - icons
-                        .as_ref()
-                        .map(|icons| icons.get_bounds().width)
-                        .unwrap_or_default()
-                    - dismiss_button,
-            ),
-            None,
-        );
 
-        summary.set_size(
-            font_system,
-            Some(
-                style.width
-                    - icons
-                        .as_ref()
-                        .map(|icons| icons.get_bounds().width)
-                        .unwrap_or_default()
-                    - dismiss_button,
-            ),
-            None,
-        );
+        let body = match data.body.is_empty() {
+            true => None,
+            false => {
+                let mut body = Body::new(
+                    data.id,
+                    Arc::clone(&config),
+                    Arc::clone(&data.app_name),
+                    ui_state.clone(),
+                    font_system,
+                );
+                body.set_text(font_system, &data.body);
+                body.set_size(
+                    font_system,
+                    Some(
+                        style.width
+                            - icons
+                                .as_ref()
+                                .map(|icons| icons.get_bounds().width)
+                                .unwrap_or_default()
+                            - dismiss_button,
+                    ),
+                    None,
+                );
+
+                buttons = buttons.add_anchors(&body.anchors, font_system);
+
+                Some(body)
+            }
+        };
+
+        let summary = match data.summary.is_empty() {
+            true => None,
+            false => {
+                let mut summary = Summary::new(
+                    data.id,
+                    Arc::clone(&config),
+                    Arc::clone(&data.app_name),
+                    ui_state.clone(),
+                    font_system,
+                );
+                summary.set_text(font_system, &data.summary);
+                summary.set_size(
+                    font_system,
+                    Some(
+                        style.width
+                            - icons
+                                .as_ref()
+                                .map(|icons| icons.get_bounds().width)
+                                .unwrap_or_default()
+                            - dismiss_button,
+                    ),
+                    None,
+                );
+
+                Some(summary)
+            }
+        };
 
         Self {
             summary,
@@ -502,11 +523,7 @@ impl Notification {
             y: 0.,
             x: 0.,
             icons,
-            buttons: Some(
-                buttons
-                    .add_anchors(&body.anchors, font_system)
-                    .finish(font_system),
-            ),
+            buttons: Some(buttons.finish(font_system)),
             data,
             config,
             hovered: false,
@@ -629,8 +646,17 @@ impl Notification {
         match style.height {
             Size::Value(height) => height.clamp(min_height, max_height),
             Size::Auto => {
-                let text_height =
-                    self.body.get_bounds().height + self.summary.get_bounds().height + progress;
+                let text_height = self
+                    .body
+                    .as_ref()
+                    .map(|body| body.get_bounds().height)
+                    .unwrap_or_default()
+                    + self
+                        .summary
+                        .as_ref()
+                        .map(|summary| summary.get_bounds().height)
+                        .unwrap_or_default()
+                    + progress;
                 let icon_height = self
                     .icons
                     .as_ref()

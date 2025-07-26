@@ -1,16 +1,16 @@
 mod view;
 
 use crate::{
+    EmitEvent, History, Moxnotify, NotificationData,
     components::{
+        Component, Data,
         button::ButtonType,
         notification::{Notification, NotificationId},
         text::Text,
-        Component, Data,
     },
-    config::{keymaps, Config, Queue},
+    config::{Config, Queue, keymaps},
     rendering::texture_renderer::TextureArea,
     utils::buffers,
-    EmitEvent, History, Moxnotify, NotificationData,
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -22,8 +22,8 @@ use std::{
     fmt,
     rc::Rc,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
 use view::NotificationView;
@@ -113,21 +113,16 @@ impl NotificationManager {
         let mut text_areas = Vec::new();
         let mut textures = Vec::new();
 
-        let all_data: Vec<Data> = self
-            .notifications
+        self.notifications
             .iter()
             .enumerate()
             .filter(|(i, _)| self.notification_view.visible.contains(i))
             .flat_map(|(_, notification)| notification.get_data(notification.urgency()))
-            .collect();
-
-        for data_item in all_data {
-            match data_item {
+            .for_each(|data_item| match data_item {
                 Data::Instance(instance) => instances.push(instance),
                 Data::TextArea(text_area) => text_areas.push(text_area),
                 Data::Texture(texture) => textures.push(texture),
-            }
-        }
+            });
 
         let total_width = self
             .notifications
@@ -281,33 +276,35 @@ impl NotificationManager {
                 })
                 .unwrap_or_default();
 
-            notification.body.set_size(
-                &mut self.font_system.borrow_mut(),
-                Some(
-                    notification.get_style().width
-                        - notification
-                            .icons
-                            .as_ref()
-                            .map(|icons| icons.get_bounds().width)
-                            .unwrap_or_default()
-                        - dismiss_button,
-                ),
-                None,
-            );
+            let style_width = notification.get_style().width;
+            let icons_width = notification
+                .icons
+                .as_ref()
+                .map(|icons| icons.get_bounds().width)
+                .unwrap_or_default();
 
-            notification.summary.set_size(
-                &mut self.font_system.borrow_mut(),
-                Some(
-                    notification.get_style().width
-                        - notification
-                            .icons
-                            .as_ref()
-                            .map(|icons| icons.get_bounds().width)
-                            .unwrap_or_default()
-                        - dismiss_button,
-                ),
-                None,
-            );
+            if let Some(body) = notification.body.as_mut() {
+                body.set_size(
+                    &mut self.font_system.borrow_mut(),
+                    Some(style_width - icons_width - dismiss_button),
+                    None,
+                );
+            }
+
+            let style_width = notification.get_style().width;
+            let icons_width = notification
+                .icons
+                .as_ref()
+                .map(|icons| icons.get_bounds().width)
+                .unwrap_or_default();
+
+            if let Some(summary) = notification.summary.as_mut() {
+                summary.set_size(
+                    &mut self.font_system.borrow_mut(),
+                    Some(style_width - icons_width - dismiss_button),
+                    None,
+                );
+            }
         }
     }
 
@@ -428,7 +425,6 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) -> anyhow::Result<()> {
-        let a = std::time::Instant::now();
         let new_notifications: Vec<Notification> = data
             .into_par_iter()
             .map_init(
@@ -444,7 +440,6 @@ impl NotificationManager {
                 },
             )
             .collect();
-        println!("{:?}", a.elapsed());
 
         self.notifications.extend(new_notifications);
 
@@ -961,15 +956,20 @@ mod tests {
 
         let data = NotificationData {
             id: 123,
+            body: "body".into(),
+            summary: "summary".into(),
             ..Default::default()
         };
         manager.add(data).unwrap();
 
         let data = manager.data();
+        // Instances
         // Body, summary, notification and dismiss button
         assert_eq!(data.0.len(), 4);
-        // Body and summary
-        assert_eq!(data.1.len(), 2);
+        // Text areas
+        // Body and summary and dismiss button
+        assert_eq!(data.1.len(), 3);
+        // No icons
         assert_eq!(data.2.len(), 0);
     }
 
@@ -1012,67 +1012,95 @@ mod tests {
         let (left, right, top, bottom) = (x, x + width, y, y + height);
         let epsilon = 0.1;
 
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top + height / 2.0)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top + height / 2.0)
+                .is_some()
+        );
 
         // Left edge
-        assert!(manager
-            .get_by_coordinates(left - epsilon, top + height / 2.0)
-            .is_none());
-        assert!(manager
-            .get_by_coordinates(left + epsilon, top + height / 2.0)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, top + height / 2.0)
+                .is_none()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + epsilon, top + height / 2.0)
+                .is_some()
+        );
 
         // Right edge
-        assert!(manager
-            .get_by_coordinates(right - epsilon, top + height / 2.0)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, top + height / 2.0)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right - epsilon, top + height / 2.0)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, top + height / 2.0)
+                .is_none()
+        );
 
         // Top edge
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top - epsilon)
-            .is_none());
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, top)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top - epsilon)
+                .is_none()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, top)
+                .is_some()
+        );
 
         // Bottom edge
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, bottom)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(left + width / 2.0, bottom + 30.00)
-            .is_some());
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, bottom)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(left + width / 2.0, bottom + 30.00)
+                .is_some()
+        );
 
         // Top-left corner
-        assert!(manager
-            .get_by_coordinates(left - epsilon, top - epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, top - epsilon)
+                .is_none()
+        );
         assert!(manager.get_by_coordinates(left + epsilon, top).is_some());
 
         // Top-right corner
         assert!(manager.get_by_coordinates(right - epsilon, top).is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, top - epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, top - epsilon)
+                .is_none()
+        );
 
         // Bottom-left corner
         assert!(manager.get_by_coordinates(left + epsilon, bottom).is_some());
-        assert!(manager
-            .get_by_coordinates(left - epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(left - epsilon, bottom + epsilon)
+                .is_none()
+        );
 
         // Bottom-right corner
-        assert!(manager
-            .get_by_coordinates(right - epsilon, bottom)
-            .is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right - epsilon, bottom)
+                .is_some()
+        );
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, bottom + epsilon)
+                .is_none()
+        );
 
         let center_notification =
             manager.get_by_coordinates(left + width / 2.0, top + height / 2.0);
@@ -1081,8 +1109,10 @@ mod tests {
         assert!(manager.get_by_coordinates(15.0, 25.0).is_some());
         assert!(manager.get_by_coordinates(9.9, 25.0).is_none());
         assert!(manager.get_by_coordinates(right, bottom).is_some());
-        assert!(manager
-            .get_by_coordinates(right + epsilon, bottom + epsilon)
-            .is_none());
+        assert!(
+            manager
+                .get_by_coordinates(right + epsilon, bottom + epsilon)
+                .is_none()
+        );
     }
 }

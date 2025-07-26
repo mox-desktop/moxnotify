@@ -1,16 +1,16 @@
 use super::UiState;
 use crate::{
-    components::{notification::Notification, text::Text, Component},
+    NotificationData,
+    components::{Component, notification::Notification, text::Text},
     config::Config,
     utils::buffers,
-    NotificationData,
 };
 use glyphon::{FontSystem, TextArea};
 use std::{
     cell::RefCell,
     ops::Range,
     rc::Rc,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
 
 pub struct NotificationView {
@@ -77,9 +77,13 @@ impl NotificationView {
                 .next
                 .format
                 .replace("{}", &self.visible.start.to_string());
-            if let Some(notification) = &mut self.prev {
+            if let Some(notification) = self.prev.as_mut() {
                 let mut font_system = self.font_system.borrow_mut();
-                notification.summary.set_text(&mut font_system, &summary);
+                notification
+                    .summary
+                    .as_mut()
+                    .expect("Something went horribly wrong")
+                    .set_text(&mut font_system, &summary);
                 notification.set_position(0., 0.);
             } else {
                 self.prev = Some(Notification::new(
@@ -117,7 +121,11 @@ impl NotificationView {
             );
             if let Some(notification) = &mut self.next {
                 let mut font_system = self.font_system.borrow_mut();
-                notification.summary.set_text(&mut font_system, &summary);
+                notification
+                    .summary
+                    .as_mut()
+                    .expect("Something went horribly wrong")
+                    .set_text(&mut font_system, &summary);
                 notification.set_position(
                     notification.x,
                     total_height - notification.get_bounds().height,
@@ -162,6 +170,8 @@ impl NotificationView {
             return Some((
                 instance,
                 prev.summary
+                    .as_ref()
+                    .expect("Something went horribly wrong")
                     .get_text_areas(&crate::Urgency::Low)
                     .swap_remove(0),
             ));
@@ -191,6 +201,8 @@ impl NotificationView {
             return Some((
                 instance,
                 next.summary
+                    .as_ref()
+                    .expect("Something went horribly wrong")
                     .get_text_areas(&crate::Urgency::Low)
                     .swap_remove(0),
             ));

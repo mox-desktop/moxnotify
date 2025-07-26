@@ -4,23 +4,22 @@ mod dismiss;
 
 use super::text::body;
 use crate::{
+    Urgency,
     components::{Bounds, Component, Data},
     config::{
-        self,
+        self, Config,
         button::ButtonState,
         keymaps::{self},
-        Config,
     },
     manager::UiState,
     rendering::{text_renderer, texture_renderer},
     utils::buffers,
-    Urgency,
 };
 use action::ActionButton;
 use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Copy, Debug)]
 pub enum State {
@@ -297,7 +296,7 @@ impl ButtonManager<Finished> {
         text_areas
     }
 
-    pub fn data(&self) -> Vec<Data<'_>> {
+    pub fn get_data(&self) -> Vec<Data<'_>> {
         let mut data = self
             .buttons
             .iter()
@@ -594,7 +593,7 @@ impl Component for Hint {
 #[cfg(test)]
 mod tests {
     use super::ButtonManager;
-    use crate::{manager::UiState, Urgency};
+    use crate::{Urgency, manager::UiState};
     use glyphon::FontSystem;
     use std::sync::Arc;
 
