@@ -13,16 +13,31 @@ use crate::{
     config::{Size, StyleState},
     utils::buffers,
 };
-use calloop::timer::{TimeoutAction, Timer};
-use calloop::{LoopHandle, RegistrationToken};
+use calloop::{
+    LoopHandle, RegistrationToken,
+    timer::{TimeoutAction, Timer},
+};
 use glyphon::FontSystem;
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
 use std::time::Duration;
+
+pub enum NotificationState {
+    Empty(Notification<Empty>),
+    Ready(Notification<Ready>),
+}
+
+impl NotificationState {
+    pub fn id(&self) -> NotificationId {
+        match self {
+            Self::Empty(n) => n.id(),
+            Self::Ready(n) => n.id(),
+        }
+    }
+}
 
 pub type NotificationId = u32;
 
-pub struct Notification {
+pub struct Notification<State> {
     pub y: f32,
     pub x: f32,
     hovered: bool,
@@ -35,15 +50,16 @@ pub struct Notification {
     ui_state: UiState,
     pub summary: Option<Summary>,
     pub body: Option<Body>,
+    _state: std::marker::PhantomData<State>,
 }
 
-impl PartialEq for Notification {
+impl<State> PartialEq for Notification<State> {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
 }
 
-impl Component for Notification {
+impl Component for Notification<Ready> {
     type Style = StyleState;
 
     fn get_config(&self) -> &Config {
@@ -373,23 +389,29 @@ impl Component for Notification {
     }
 }
 
-impl Notification {
-    pub fn new_empty() -> Self {
-        let config = Arc::new(Config::default());
+pub struct Empty;
+pub struct Ready;
 
-        Self {
+impl<State> Notification<State> {
+    pub fn new_empty(
+        config: Arc<Config>,
+        data: NotificationData,
+        ui_state: UiState,
+    ) -> Notification<Empty> {
+        Notification {
             summary: None,
             progress: None,
             y: 0.,
             x: 0.,
             icons: None,
             buttons: None,
-            data: NotificationData::default(),
+            data,
             config: Arc::clone(&config),
             hovered: false,
             registration_token: None,
-            ui_state: UiState::default(),
+            ui_state,
             body: None,
+            _state: std::marker::PhantomData,
         }
     }
 
@@ -399,11 +421,11 @@ impl Notification {
         data: NotificationData,
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
-    ) -> Self {
+    ) -> Notification<Ready> {
         if data.app_name == "next_notification_count".into()
             || data.app_name == "prev_notification_count".into()
         {
-            return Self {
+            return Notification {
                 y: 0.,
                 x: 0.,
                 hovered: false,
@@ -416,6 +438,7 @@ impl Notification {
                 summary: None,
                 body: None,
                 data,
+                _state: std::marker::PhantomData,
             };
         }
 
@@ -509,7 +532,7 @@ impl Notification {
             }
         };
 
-        Self {
+        Notification {
             summary,
             progress: data.hints.value.map(|value| {
                 Progress::new(
@@ -530,6 +553,7 @@ impl Notification {
             registration_token: None,
             ui_state: ui_state.clone(),
             body,
+            _state: std::marker::PhantomData,
         }
     }
 
@@ -593,6 +617,164 @@ impl Notification {
         }
     }
 
+    pub fn width(&self) -> f32 {
+        match self.hovered() {
+            true => self.config.styles.hover.width.resolve(0.),
+            false => self.config.styles.default.width.resolve(0.),
+        }
+    }
+
+    pub fn urgency(&self) -> &Urgency {
+        &self.data.hints.urgency
+    }
+
+    pub fn hovered(&self) -> bool {
+        self.hovered
+    }
+
+    pub fn hover(&mut self) {
+        self.hovered = true;
+    }
+
+    pub fn unhover(&mut self) {
+        self.hovered = false;
+    }
+
+    pub fn id(&self) -> NotificationId {
+        self.data.id
+    }
+}
+
+impl Notification<Empty> {
+    pub fn promote(
+        self,
+        font_system: &mut FontSystem,
+        sender: Option<calloop::channel::Sender<crate::Event>>,
+    ) -> Notification<Ready> {
+        let icons = match (
+            self.data.hints.image.as_ref(),
+            self.data.app_icon.as_deref(),
+        ) {
+            (None, None) => None,
+            (image, app_icon) => Some(Icons::new(
+                self.data.id,
+                image,
+                app_icon,
+                Arc::clone(&self.config),
+                self.ui_state.clone(),
+                Arc::clone(&self.data.app_name),
+            )),
+        };
+
+        let mut buttons = ButtonManager::new(
+            self.data.id,
+            self.data.hints.urgency,
+            Arc::clone(&self.data.app_name),
+            self.ui_state.clone(),
+            sender,
+            Arc::clone(&self.config),
+        )
+        .add_dismiss(font_system)
+        .add_actions(&self.data.actions, font_system);
+
+        let dismiss_button = buttons
+            .buttons()
+            .iter()
+            .find(|button| button.button_type() == ButtonType::Dismiss)
+            .map(|button| button.get_render_bounds().width)
+            .unwrap_or(0.0);
+
+        let style = self.config.find_style(&self.data.app_name, false);
+
+        let body = match self.data.body.is_empty() {
+            true => None,
+            false => {
+                let mut body = Body::new(
+                    self.data.id,
+                    Arc::clone(&self.config),
+                    Arc::clone(&self.data.app_name),
+                    self.ui_state.clone(),
+                    font_system,
+                );
+                body.set_text(font_system, &self.data.body);
+                body.set_size(
+                    font_system,
+                    Some(
+                        style.width
+                            - icons
+                                .as_ref()
+                                .map(|icons| icons.get_bounds().width)
+                                .unwrap_or_default()
+                            - dismiss_button,
+                    ),
+                    None,
+                );
+
+                buttons = buttons.add_anchors(&body.anchors, font_system);
+
+                Some(body)
+            }
+        };
+
+        let summary = match self.data.summary.is_empty() {
+            true => None,
+            false => {
+                let mut summary = Summary::new(
+                    self.data.id,
+                    Arc::clone(&self.config),
+                    Arc::clone(&self.data.app_name),
+                    self.ui_state.clone(),
+                    font_system,
+                );
+                summary.set_text(font_system, &self.data.summary);
+                summary.set_size(
+                    font_system,
+                    Some(
+                        style.width
+                            - icons
+                                .as_ref()
+                                .map(|icons| icons.get_bounds().width)
+                                .unwrap_or_default()
+                            - dismiss_button,
+                    ),
+                    None,
+                );
+
+                Some(summary)
+            }
+        };
+
+        Notification {
+            summary,
+            progress: self.data.hints.value.map(|value| {
+                Progress::new(
+                    self.data.id,
+                    value,
+                    self.ui_state.clone(),
+                    Arc::clone(&self.config),
+                    Arc::clone(&self.data.app_name),
+                )
+            }),
+            y: 0.,
+            x: 0.,
+            icons,
+            buttons: Some(buttons.finish(font_system)),
+            data: self.data,
+            config: self.config,
+            hovered: false,
+            registration_token: None,
+            ui_state: self.ui_state,
+            body,
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn height(&self) -> f32 {
+        0.
+    }
+}
+
+impl Notification<Ready> {
     pub fn height(&self) -> f32 {
         let style = self.get_style();
 
@@ -670,32 +852,5 @@ impl Notification {
                 base_height.clamp(min_height, max_height)
             }
         }
-    }
-
-    pub fn width(&self) -> f32 {
-        match self.hovered() {
-            true => self.config.styles.hover.width.resolve(0.),
-            false => self.config.styles.default.width.resolve(0.),
-        }
-    }
-
-    pub fn urgency(&self) -> &Urgency {
-        &self.data.hints.urgency
-    }
-
-    pub fn hovered(&self) -> bool {
-        self.hovered
-    }
-
-    pub fn hover(&mut self) {
-        self.hovered = true;
-    }
-
-    pub fn unhover(&mut self) {
-        self.hovered = false;
-    }
-
-    pub fn id(&self) -> NotificationId {
-        self.data.id
     }
 }

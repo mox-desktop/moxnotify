@@ -1,7 +1,11 @@
 use super::UiState;
 use crate::{
     NotificationData,
-    components::{Component, notification::Notification, text::Text},
+    components::{
+        Component,
+        notification::{Notification, Ready},
+        text::Text,
+    },
     config::Config,
     utils::buffers,
 };
@@ -15,8 +19,8 @@ use std::{
 
 pub struct NotificationView {
     pub visible: Range<usize>,
-    pub prev: Option<Notification>,
-    pub next: Option<Notification>,
+    pub prev: Option<Notification<Ready>>,
+    pub next: Option<Notification<Ready>>,
     font_system: Rc<RefCell<FontSystem>>,
     config: Arc<Config>,
     ui_state: UiState,
