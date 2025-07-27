@@ -18,8 +18,10 @@ use calloop::{
     timer::{TimeoutAction, Timer},
 };
 use glyphon::FontSystem;
-use std::sync::{Arc, atomic::Ordering};
-use std::time::Duration;
+use std::{
+    sync::{Arc, atomic::Ordering},
+    time::Duration,
+};
 
 pub enum NotificationState {
     Empty(Notification<Empty>),
@@ -31,6 +33,94 @@ impl NotificationState {
         match self {
             Self::Empty(n) => n.id(),
             Self::Ready(n) => n.id(),
+        }
+    }
+
+    pub fn data(&self) -> &NotificationData {
+        match self {
+            Self::Empty(n) => &n.data,
+            Self::Ready(n) => &n.data,
+        }
+    }
+
+    pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+        match self {
+            Self::Empty(n) => n.start_timer(loop_handle),
+            Self::Ready(n) => n.start_timer(loop_handle),
+        }
+    }
+
+    pub fn stop_timer(&self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+        match self {
+            Self::Empty(_) => panic!("There's no reason to stop timer on an empty notification"),
+            Self::Ready(n) => n.stop_timer(loop_handle),
+        }
+    }
+
+    pub fn set_position(&mut self, x: f32, y: f32) {
+        match self {
+            Self::Empty(_) => panic!("There's no reason to set position on an empty notification"),
+            Self::Ready(n) => n.set_position(x, y),
+        }
+    }
+
+    pub fn hovered(&self) -> bool {
+        match self {
+            Self::Empty(_) => panic!("There's no reason to check if empty notification is hovered"),
+            Self::Ready(n) => n.hovered(),
+        }
+    }
+
+    pub fn get_bounds(&self) -> Bounds {
+        match self {
+            Self::Empty(_) => {
+                panic!("There's no reason to retrieve bounds if notification is empty")
+            }
+            Self::Ready(n) => n.get_bounds(),
+        }
+    }
+
+    pub fn get_render_bounds(&self) -> Bounds {
+        match self {
+            Self::Empty(_) => {
+                panic!("There's no reason to retrieve render bounds if notification is empty")
+            }
+            Self::Ready(n) => n.get_render_bounds(),
+        }
+    }
+
+    pub fn unhover(&mut self) {
+        match self {
+            Self::Empty(_) => {
+                panic!("There's no reason to unhover an empty notification")
+            }
+            Self::Ready(n) => n.unhover(),
+        }
+    }
+
+    pub fn replace(
+        &mut self,
+        font_system: &mut FontSystem,
+        data: NotificationData,
+        sender: Option<calloop::channel::Sender<crate::Event>>,
+    ) {
+        match self {
+            Self::Empty(n) => n.replace(font_system, data, sender),
+            Self::Ready(n) => n.replace(font_system, data, sender),
+        }
+    }
+
+    pub fn buttons(&self) -> Option<&ButtonManager<Finished>> {
+        match self {
+            Self::Empty(n) => n.buttons.as_ref(),
+            Self::Ready(n) => n.buttons.as_ref(),
+        }
+    }
+
+    pub fn buttons_mut(&mut self) -> Option<&mut ButtonManager<Finished>> {
+        match self {
+            Self::Empty(n) => n.buttons.as_mut(),
+            Self::Ready(n) => n.buttons.as_mut(),
         }
     }
 }
@@ -557,7 +647,83 @@ impl<State> Notification<State> {
         }
     }
 
+    pub fn replace(
+        &mut self,
+        font_system: &mut FontSystem,
+        data: NotificationData,
+        sender: Option<calloop::channel::Sender<crate::Event>>,
+    ) {
+        match (
+            self.progress.as_mut(),
+            data.hints.value,
+            self.data.hints.value == data.hints.value,
+        ) {
+            (Some(progress), Some(value), false) => progress.set_value(value),
+            (None, Some(value), _) => {
+                self.progress = Some(Progress::new(
+                    data.id,
+                    value,
+                    self.ui_state.clone(),
+                    Arc::clone(&self.config),
+                    Arc::clone(&data.app_name),
+                ))
+            }
+            _ => {}
+        }
+
+        match (self.body.as_mut(), self.data.body == data.body) {
+            (Some(body), false) => body.set_text(font_system, &data.body),
+            (None, _) => {
+                self.body = Some(Body::new(
+                    data.id,
+                    Arc::clone(&self.config),
+                    Arc::clone(&data.app_name),
+                    self.ui_state.clone(),
+                    font_system,
+                ));
+            }
+            _ => {}
+        }
+
+        if self.data.actions != data.actions || self.data.body != data.body {
+            let mut buttons = ButtonManager::new(
+                data.id,
+                *self.urgency(),
+                Arc::clone(&data.app_name),
+                self.ui_state.clone(),
+                sender,
+                Arc::clone(&self.config),
+            )
+            .add_dismiss(font_system)
+            .add_actions(&data.actions, font_system);
+
+            if let Some(body) = &self.body {
+                buttons = buttons.add_anchors(&body.anchors, font_system);
+            }
+
+            self.buttons = Some(buttons.finish(font_system));
+        }
+
+        match (self.summary.as_mut(), self.data.summary == data.summary) {
+            (Some(summary), false) => summary.set_text(font_system, &data.summary),
+            (None, _) => {
+                self.summary = Some(Summary::new(
+                    data.id,
+                    Arc::clone(&self.config),
+                    Arc::clone(&data.app_name),
+                    self.ui_state.clone(),
+                    font_system,
+                ));
+            }
+            _ => {}
+        }
+
+        self.data = data;
+    }
+
     pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+        self.stop_timer(loop_handle);
+
         if let Some(timeout) = self.timeout() {
             log::debug!(
                 "Expiration timer started for notification, id: {}, timeout: {}",

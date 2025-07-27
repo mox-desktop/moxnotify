@@ -320,7 +320,7 @@ impl Moxnotify {
         } else {
             let combination = self.seat.keyboard.key_combination.to_string();
             if let Some(notification) = self.notifications.selected_notification_mut()
-                && let Some(buttons) = notification.buttons.as_mut()
+                && let Some(buttons) = notification.buttons_mut()
             {
                 buttons.hint(&combination);
             }

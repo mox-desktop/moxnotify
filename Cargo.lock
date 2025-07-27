@@ -568,7 +568,6 @@ dependencies = [
  "inotify",
  "log",
  "mlua",
- "moxui",
  "raw-window-handle",
  "rayon",
  "resvg",
@@ -1551,14 +1550,6 @@ dependencies = [
  "cc",
  "cfg-if",
  "pkg-config",
-]
-
-[[package]]
-name = "moxui"
-version = "0.1.0"
-source = "git+https://github.com/mox-desktop/moxui?rev=0b037435cd8af03a15230672a31da2622611a340#0b037435cd8af03a15230672a31da2622611a340"
-dependencies = [
- "wgpu",
 ]
 
 [[package]]

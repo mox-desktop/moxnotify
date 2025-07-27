@@ -1,12 +1,12 @@
 use crate::{
+    Urgency,
     components::{Bounds, Component},
-    config::{self, border::BorderRadius, Config, Insets, Size},
+    config::{self, Config, Insets, Size, border::BorderRadius},
     manager::UiState,
     rendering::texture_renderer,
     utils::buffers,
-    Urgency,
 };
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct Progress {
     id: u32,
@@ -236,6 +236,10 @@ impl Progress {
     pub fn set_width(&mut self, width: f32) {
         self.width = width;
     }
+
+    pub fn set_value(&mut self, value: i32) {
+        self.value = value;
+    }
 }
 
 #[cfg(test)]
@@ -243,8 +247,8 @@ mod tests {
     use super::*;
     use crate::Urgency;
     use std::sync::{
-        atomic::{AtomicBool, AtomicU32},
         Arc,
+        atomic::{AtomicBool, AtomicU32},
     };
 
     fn create_test_progress(value: i32) -> Progress {

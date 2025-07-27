@@ -5,7 +5,7 @@ use crate::{
     components::{
         Component, Data,
         button::ButtonType,
-        notification::{Notification, NotificationId, NotificationState, Ready},
+        notification::{Empty, Notification, NotificationId, NotificationState, Ready},
         text::Text,
     },
     config::{Config, Queue, keymaps},
@@ -154,7 +154,7 @@ impl NotificationManager {
         (instances, text_areas, textures)
     }
 
-    pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&Notification<Ready>> {
+    pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
         self.notification_view
             .visible
             .clone()
@@ -182,7 +182,7 @@ impl NotificationManager {
                 .get_mut(index)
                 .and_then(|notification| {
                     notification
-                        .buttons
+                        .buttons_mut()
                         .as_mut()
                         .map(|buttons| buttons.click(x, y))
                 })
@@ -196,8 +196,7 @@ impl NotificationManager {
                 .get_mut(index)
                 .and_then(|notification| {
                     notification
-                        .buttons
-                        .as_mut()
+                        .buttons_mut()
                         .map(|buttons| buttons.hover(x, y))
                 })
                 .unwrap_or_default()
@@ -234,8 +233,8 @@ impl NotificationManager {
                 .iter()
                 .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
                     let extents = notification.get_bounds();
-                    let left = extents.x + notification.data.hints.x as f32;
-                    let right = extents.x + extents.width + notification.data.hints.x as f32;
+                    let left = extents.x + notification.data().hints.x as f32;
+                    let right = extents.x + extents.width + notification.data().hints.x as f32;
                     (min_x.min(left), max_x.max(right))
                 });
 
@@ -253,7 +252,7 @@ impl NotificationManager {
         }
     }
 
-    pub fn selected_notification_mut(&mut self) -> Option<&mut Notification<Ready>> {
+    pub fn selected_notification_mut(&mut self) -> Option<&mut NotificationState> {
         let id = self.selected_id();
         self.notifications
             .iter_mut()
@@ -350,7 +349,7 @@ impl NotificationManager {
                 .unwrap_or(0.),
             |acc, i| {
                 if let Some(notification) = self.notifications.get_mut(i) {
-                    notification.set_position(notification.x, acc);
+                    notification.set_position(notification.get_bounds().x, acc);
                     acc + notification.get_bounds().height
                 } else {
                     acc
@@ -398,7 +397,7 @@ impl NotificationManager {
                 .unwrap_or(0.),
             |acc, i| {
                 if let Some(notification) = self.notifications.get_mut(i) {
-                    notification.set_position(notification.x, acc);
+                    notification.set_position(notification.get_bounds().x, acc);
                     acc + notification.get_bounds().height
                 } else {
                     acc
@@ -435,18 +434,18 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) -> anyhow::Result<()> {
-        let new_notifications: Vec<Notification> = data
+        let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
             .map_init(
                 FontSystem::new, // Initialize font system once per thread
                 |font_system, data| {
-                    Notification::new(
+                    NotificationState::Ready(Notification::<Ready>::new(
                         Arc::clone(&self.config),
                         font_system,
                         data,
                         self.ui_state.clone(),
                         None,
-                    )
+                    ))
                 },
             )
             .collect();
@@ -456,7 +455,7 @@ impl NotificationManager {
         let mut y = self
             .notifications
             .last()
-            .map(|notification| notification.y)
+            .map(|notification| notification.get_bounds().y)
             .unwrap_or_default();
         self.notifications.iter_mut().for_each(|notification| {
             notification.set_position(0.0, y);
@@ -473,14 +472,14 @@ impl NotificationManager {
         let x_offset = self
             .notifications
             .iter()
-            .map(|n| n.data.hints.x)
+            .map(|n| n.data().hints.x)
             .min()
             .unwrap_or_default()
             .abs() as f32;
 
         self.notifications
             .iter_mut()
-            .for_each(|n| n.set_position(x_offset, n.y));
+            .for_each(|n| n.set_position(x_offset, n.get_bounds().y));
         Ok(())
     }
 
@@ -490,68 +489,65 @@ impl NotificationManager {
             return Ok(());
         }
 
-        let id = data.id;
-        let (y, existing_index) =
-            if let Some(index) = self.notifications.iter().position(|n| n.id() == id) {
-                let y = self.notifications[index].get_bounds().y;
-                (y, Some(index))
-            } else {
-                (self.height(), None)
-            };
+        if let Some((i, notification)) = self
+            .notifications
+            .iter_mut()
+            .enumerate()
+            .find(|(_, n)| n.id() == data.id)
+        {
+            let old_height = notification.get_bounds().height;
 
-        let mut notification = Notification::new(
-            Arc::clone(&self.config),
-            &mut self.font_system.borrow_mut(),
-            data,
-            self.ui_state.clone(),
-            Some(self.sender.clone()),
-        );
-        notification.set_position(0.0, y);
-
-        match self.config.general.queue {
-            Queue::FIFO if self.notifications.is_empty() => {
-                notification.start_timer(&self.loop_handle)
+            notification.replace(
+                &mut self.font_system.borrow_mut(),
+                data,
+                Some(self.sender.clone()),
+            );
+            match self.config.general.queue {
+                Queue::FIFO if i == 0 => notification.start_timer(&self.loop_handle),
+                Queue::Unordered => notification.start_timer(&self.loop_handle),
+                _ => {}
             }
 
-            Queue::Unordered => notification.start_timer(&self.loop_handle),
-            _ => {}
-        }
+            let new_height = notification.get_bounds().height;
 
-        match existing_index {
-            Some(index) => {
-                if let Some(notification) = self.notifications.get(index) {
-                    notification.stop_timer(&self.loop_handle);
-                }
-
-                let replaced_height_differs = self.notifications[index].get_bounds().height
-                    != notification.get_bounds().height;
-
-                self.notifications[index] = notification;
-
-                if replaced_height_differs {
-                    self.notification_view.visible.clone().fold(
-                        self.notification_view
-                            .prev
-                            .as_ref()
-                            .map(|p| p.get_bounds().height)
-                            .unwrap_or(0.),
-                        |acc, i| {
-                            if let Some(notification) = self.notifications.get_mut(i) {
-                                notification.set_position(notification.x, acc);
-                                acc + notification.get_bounds().height
-                            } else {
-                                acc
-                            }
-                        },
-                    );
-                }
+            if old_height != new_height {
+                self.notification_view.visible.clone().fold(
+                    self.notification_view
+                        .prev
+                        .as_ref()
+                        .map(|p| p.get_bounds().height)
+                        .unwrap_or(0.),
+                    |acc, i| {
+                        if let Some(notification) = self.notifications.get_mut(i) {
+                            notification.set_position(notification.get_bounds().x, acc);
+                            acc + notification.get_bounds().height
+                        } else {
+                            acc
+                        }
+                    },
+                );
             }
-            None => self.notifications.push(notification),
-        }
+        } else {
+            let y = self.height();
+            let mut notification = Notification::<Ready>::new(
+                Arc::clone(&self.config),
+                &mut self.font_system.borrow_mut(),
+                data,
+                self.ui_state.clone(),
+                Some(self.sender.clone()),
+            );
+            notification.set_position(0.0, y);
 
-        // Maintain selection if replaced
-        if let Some(id) = self.selected_id() {
-            self.select(id);
+            match self.config.general.queue {
+                Queue::FIFO if self.notifications.is_empty() => {
+                    notification.start_timer(&self.loop_handle)
+                }
+                Queue::Unordered => notification.start_timer(&self.loop_handle),
+                _ => {}
+            }
+
+            self.notifications
+                .push(NotificationState::Ready(notification));
         }
 
         if self.notification_view.visible.end < self.notifications.len() {
@@ -562,14 +558,14 @@ impl NotificationManager {
         let x_offset = self
             .notifications
             .iter()
-            .map(|n| n.data.hints.x)
+            .map(|n| n.data().hints.x)
             .min()
             .unwrap_or_default()
             .abs() as f32;
 
         self.notifications
             .iter_mut()
-            .for_each(|n| n.set_position(x_offset, n.y));
+            .for_each(|n| n.set_position(x_offset, n.get_bounds().y));
 
         Ok(())
     }
@@ -608,7 +604,7 @@ impl NotificationManager {
                 .unwrap_or(0.),
             |acc, i| {
                 if let Some(notification) = self.notifications.get_mut(i) {
-                    notification.set_position(notification.x, acc);
+                    notification.set_position(notification.get_bounds().x, acc);
                     acc + notification.get_bounds().height
                 } else {
                     acc
@@ -759,7 +755,7 @@ mod tests {
     use glyphon::FontSystem;
 
     use super::NotificationManager;
-    use crate::{components::Component, config::Config, dbus::xdg::NotificationData};
+    use crate::{config::Config, dbus::xdg::NotificationData};
 
     #[test]
     fn test_add() {

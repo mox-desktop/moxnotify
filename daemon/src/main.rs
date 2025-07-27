@@ -29,15 +29,14 @@ use std::{
     cell::RefCell,
     path::Path,
     rc::Rc,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
 use tokio::sync::broadcast;
 use utils::image_data::ImageData;
 use wayland_client::{
-    delegate_noop,
-    globals::{registry_queue_init, GlobalList, GlobalListContents},
+    Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
+    globals::{GlobalList, GlobalListContents, registry_queue_init},
     protocol::{wl_compositor, wl_output, wl_registry},
-    Connection, Dispatch, Proxy, QueueHandle,
 };
 use wayland_protocols::xdg::activation::v1::client::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
@@ -187,7 +186,7 @@ impl Moxnotify {
                     .notifications()
                     .iter()
                     .find(|notification| notification.id() == id)
-                    .map(|n| n.data.hints.resident)
+                    .map(|n| n.data().hints.resident)
                     .unwrap_or_default()
                 {
                     self.dismiss_by_id(id, None);
@@ -276,14 +275,14 @@ impl Moxnotify {
                         "INSERT INTO notifications (id, app_name, app_icon, timeout, summary, body, actions, hints)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                         params![
-                            notification.data.id,
-                            notification.data.app_name,
-                            notification.data.app_icon,
-                            notification.data.timeout,
-                            notification.data.summary,
-                            notification.data.body,
-                            serde_json::to_string(&notification.data.actions)?,
-                            serde_json::to_string(&notification.data.hints)?
+                            notification.data().id,
+                            notification.data().app_name,
+                            notification.data().app_icon,
+                            notification.data().timeout,
+                            notification.data().summary,
+                            notification.data().body,
+                            serde_json::to_string(&notification.data().actions)?,
+                            serde_json::to_string(&notification.data().hints)?
                         ],
                 )?;
                 }
@@ -327,7 +326,7 @@ impl Moxnotify {
                     .notifications
                     .notifications()
                     .iter()
-                    .map(|notification| serde_json::to_string(&notification.data).unwrap())
+                    .map(|notification| serde_json::to_string(&notification.data()).unwrap())
                     .collect::<Vec<_>>();
                 _ = self.emit_sender.send(EmitEvent::List(list));
 

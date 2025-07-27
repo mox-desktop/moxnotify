@@ -16,12 +16,7 @@ rustPlatform.buildRustPackage rec {
   pname = "moxnotify";
   inherit (cargoToml.package) version;
 
-  cargoLock = {
-    lockFile = ../Cargo.lock;
-    outputHashes = {
-      "moxui-0.1.0" = "sha256-v/4a0+ljKu8vag9suBxZIi12CKwT7xorYy/Am03xtY0=";
-    };
-  };
+  cargoLock.lockFile = ../Cargo.lock;
 
   src = lib.cleanSourceWith {
     src = ../.;

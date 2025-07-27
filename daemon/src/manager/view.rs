@@ -90,7 +90,7 @@ impl NotificationView {
                     .set_text(&mut font_system, &summary);
                 notification.set_position(0., 0.);
             } else {
-                self.prev = Some(Notification::new(
+                self.prev = Some(Notification::<Ready>::new(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -135,7 +135,7 @@ impl NotificationView {
                     total_height - notification.get_bounds().height,
                 );
             } else {
-                let mut next = Notification::new(
+                let mut next = Notification::<Ready>::new(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
