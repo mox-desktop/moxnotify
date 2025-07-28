@@ -228,15 +228,17 @@ impl NotificationManager {
     }
 
     pub fn width(&self) -> f32 {
-        let (min_x, max_x) =
-            self.notifications
-                .iter()
-                .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
-                    let extents = notification.get_bounds();
-                    let left = extents.x + notification.data().hints.x as f32;
-                    let right = extents.x + extents.width + notification.data().hints.x as f32;
-                    (min_x.min(left), max_x.max(right))
-                });
+        let (min_x, max_x) = self
+            .notification_view
+            .visible
+            .clone()
+            .filter_map(|i| self.notifications.get(i))
+            .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
+                let extents = notification.get_bounds();
+                let left = extents.x + notification.data().hints.x as f32;
+                let right = extents.x + extents.width + notification.data().hints.x as f32;
+                (min_x.min(left), max_x.max(right))
+            });
 
         if min_x == f32::MAX || max_x == f32::MIN {
             0.0
@@ -262,6 +264,7 @@ impl NotificationManager {
     pub fn select(&mut self, id: NotificationId) {
         self.deselect();
 
+        self.promote_notifications();
         if let Some(NotificationState::Ready(notification)) =
             self.notifications.iter_mut().find(|n| n.id() == id)
         {
@@ -333,12 +336,12 @@ impl NotificationManager {
         };
 
         if let Some(notification) = self.notifications.get(next_notification_index) {
-            self.select(notification.id());
             self.notification_view.next(
                 self.height(),
                 next_notification_index,
                 self.notifications.len(),
             );
+            self.select(notification.id());
         }
 
         self.notification_view.visible.clone().fold(
@@ -436,32 +439,32 @@ impl NotificationManager {
     pub fn add_many(&mut self, data: Vec<NotificationData>) -> anyhow::Result<()> {
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
-            .map_init(
-                FontSystem::new, // Initialize font system once per thread
-                |font_system, data| {
-                    NotificationState::Ready(Notification::<Ready>::new(
-                        Arc::clone(&self.config),
-                        font_system,
-                        data,
-                        self.ui_state.clone(),
-                        None,
-                    ))
-                },
-            )
+            .map(|data| {
+                NotificationState::Empty(Notification::<Empty>::new_empty(
+                    Arc::clone(&self.config),
+                    data,
+                    self.ui_state.clone(),
+                ))
+            })
             .collect();
-
-        self.notifications.extend(new_notifications);
 
         let mut y = self
             .notifications
             .last()
             .map(|notification| notification.get_bounds().y)
             .unwrap_or_default();
-        self.notifications.iter_mut().for_each(|notification| {
-            notification.set_position(0.0, y);
 
-            let height = notification.get_bounds().height;
-            y += height;
+        self.notifications.extend(new_notifications);
+
+        self.promote_notifications();
+
+        self.notification_view.visible.clone().for_each(|i| {
+            if let Some(notification) = self.notifications.get_mut(i) {
+                notification.set_position(0.0, y);
+
+                let height = notification.get_bounds().height;
+                y += height;
+            }
         });
 
         if self.notification_view.visible.end < self.notifications.len() {
@@ -477,9 +480,12 @@ impl NotificationManager {
             .unwrap_or_default()
             .abs() as f32;
 
-        self.notifications
-            .iter_mut()
-            .for_each(|n| n.set_position(x_offset, n.get_bounds().y));
+        self.notification_view.visible.clone().for_each(|i| {
+            if let Some(notification) = self.notifications.get_mut(i) {
+                notification.set_position(x_offset, notification.get_bounds().y);
+            }
+        });
+
         Ok(())
     }
 
@@ -619,18 +625,20 @@ impl NotificationManager {
             .clone()
             .for_each(|notification_idx| {
                 if let Some(notification_state) = self.notifications.get_mut(notification_idx) {
-                    if let NotificationState::Empty(notification) = std::mem::replace(
-                        notification_state,
-                        NotificationState::Empty(Notification::<Empty>::new_empty(
-                            Arc::clone(&self.config),
-                            NotificationData::default(),
-                            UiState::default(),
-                        )),
-                    ) {
-                        *notification_state = NotificationState::Ready(notification.promote(
-                            &mut self.font_system.borrow_mut(),
-                            Some(self.sender.clone()),
-                        ));
+                    if matches!(notification_state, NotificationState::Empty(_)) {
+                        if let NotificationState::Empty(notification) = std::mem::replace(
+                            notification_state,
+                            NotificationState::Empty(Notification::<Empty>::new_empty(
+                                Arc::clone(&self.config),
+                                NotificationData::default(),
+                                UiState::default(),
+                            )),
+                        ) {
+                            *notification_state = NotificationState::Ready(notification.promote(
+                                &mut self.font_system.borrow_mut(),
+                                Some(self.sender.clone()),
+                            ));
+                        }
                     }
                 }
             });
