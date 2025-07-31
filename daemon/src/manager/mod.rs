@@ -268,59 +268,86 @@ impl NotificationManager {
     pub fn select(&mut self, id: NotificationId) {
         self.deselect();
 
-        self.promote_notification(id);
-        if let Some(NotificationState::Ready(notification)) =
-            self.notifications.iter_mut().find(|n| n.id() == id)
-        {
-            notification.hover();
-            log::info!("Selected notification id: {id}");
+        let Some(i) = self.notifications.iter_mut().position(|n| n.id() == id) else {
+            return;
+        };
 
-            self.ui_state.selected_id.store(id, Ordering::Relaxed);
-            self.ui_state.selected.store(true, Ordering::Relaxed);
-
-            notification.stop_timer(&self.loop_handle);
-
-            let dismiss_button = notification
-                .buttons
-                .as_ref()
-                .and_then(|buttons| {
-                    buttons
-                        .buttons()
-                        .iter()
-                        .find(|button| button.button_type() == ButtonType::Dismiss)
-                        .map(|button| button.get_render_bounds().width)
-                })
-                .unwrap_or_default();
-
-            let style_width = notification.get_style().width;
-            let icons_width = notification
-                .icons
-                .as_ref()
-                .map(|icons| icons.get_bounds().width)
-                .unwrap_or_default();
-
-            if let Some(body) = notification.body.as_mut() {
-                body.set_size(
-                    &mut self.font_system.borrow_mut(),
-                    Some(style_width - icons_width - dismiss_button),
-                    None,
-                );
+        match (
+            self.selected_id()
+                .and_then(|id| self.notifications.iter().position(|n| n.id() == id)),
+            self.notifications
+                .iter()
+                .position(|n| n.id() == self.ui_state.selected_id.load(Ordering::Relaxed)),
+        ) {
+            (Some(old_index), Some(new_index)) if old_index.lt(&new_index) => {
+                self.notification_view.visible =
+                    new_index.saturating_sub(self.config.general.max_visible)..new_index;
             }
-
-            let style_width = notification.get_style().width;
-            let icons_width = notification
-                .icons
-                .as_ref()
-                .map(|icons| icons.get_bounds().width)
-                .unwrap_or_default();
-
-            if let Some(summary) = notification.summary.as_mut() {
-                summary.set_size(
-                    &mut self.font_system.borrow_mut(),
-                    Some(style_width - icons_width - dismiss_button),
-                    None,
-                );
+            (Some(old_index), Some(new_index)) if old_index.gt(&new_index) => {
+                self.notification_view.visible =
+                    new_index..new_index.saturating_add(self.config.general.max_visible);
             }
+            (None, Some(new_index)) => {
+                self.notification_view.visible =
+                    new_index..new_index.saturating_add(self.config.general.max_visible);
+            }
+            _ => todo!(),
+        }
+
+        self.promote_notifications();
+
+        let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(i) else {
+            return;
+        };
+
+        notification.hover();
+        log::info!("Selected notification id: {id}");
+
+        self.ui_state.selected_id.store(id, Ordering::Relaxed);
+        self.ui_state.selected.store(true, Ordering::Relaxed);
+
+        notification.stop_timer(&self.loop_handle);
+
+        let dismiss_button = notification
+            .buttons
+            .as_ref()
+            .and_then(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .find(|button| button.button_type() == ButtonType::Dismiss)
+                    .map(|button| button.get_render_bounds().width)
+            })
+            .unwrap_or_default();
+
+        let style_width = notification.get_style().width;
+        let icons_width = notification
+            .icons
+            .as_ref()
+            .map(|icons| icons.get_bounds().width)
+            .unwrap_or_default();
+
+        if let Some(body) = notification.body.as_mut() {
+            body.set_size(
+                &mut self.font_system.borrow_mut(),
+                Some(style_width - icons_width - dismiss_button),
+                None,
+            );
+        }
+
+        let style_width = notification.get_style().width;
+        let icons_width = notification
+            .icons
+            .as_ref()
+            .map(|icons| icons.get_bounds().width)
+            .unwrap_or_default();
+
+        if let Some(summary) = notification.summary.as_mut() {
+            summary.set_size(
+                &mut self.font_system.borrow_mut(),
+                Some(style_width - icons_width - dismiss_button),
+                None,
+            );
         }
     }
 
@@ -623,7 +650,7 @@ impl NotificationManager {
         );
     }
 
-    fn promote_notifications(&mut self) {
+    pub fn promote_notifications(&mut self) {
         self.notification_view
             .visible
             .clone()
