@@ -102,6 +102,10 @@ impl NotificationManager {
         &self.notifications
     }
 
+    pub fn notifications_mut(&mut self) -> &mut [NotificationState] {
+        &mut self.notifications
+    }
+
     pub fn data(
         &self,
     ) -> (
@@ -264,7 +268,7 @@ impl NotificationManager {
     pub fn select(&mut self, id: NotificationId) {
         self.deselect();
 
-        self.promote_notifications();
+        self.promote_notification(id);
         if let Some(NotificationState::Ready(notification)) =
             self.notifications.iter_mut().find(|n| n.id() == id)
         {
@@ -384,12 +388,12 @@ impl NotificationManager {
         };
 
         if let Some(notification) = self.notifications.get(notification_index) {
-            self.select(notification.id());
             self.notification_view.prev(
                 self.height(),
                 notification_index,
                 self.notifications.len(),
             );
+            self.select(notification.id());
         }
 
         self.notification_view.visible.clone().fold(
@@ -642,6 +646,30 @@ impl NotificationManager {
                     }
                 }
             });
+    }
+
+    fn promote_notification(&mut self, id: NotificationId) {
+        if let Some(notification_state) = self
+            .notifications
+            .iter_mut()
+            .find(|notification| notification.id() == id)
+        {
+            if matches!(notification_state, NotificationState::Empty(_)) {
+                if let NotificationState::Empty(notification) = std::mem::replace(
+                    notification_state,
+                    NotificationState::Empty(Notification::<Empty>::new_empty(
+                        Arc::clone(&self.config),
+                        NotificationData::default(),
+                        UiState::default(),
+                    )),
+                ) {
+                    *notification_state = NotificationState::Ready(notification.promote(
+                        &mut self.font_system.borrow_mut(),
+                        Some(self.sender.clone()),
+                    ));
+                }
+            }
+        }
     }
 }
 

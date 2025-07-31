@@ -1,5 +1,6 @@
 use crate::{
     History, Moxnotify,
+    components::Component,
     config::keymaps::{self, Key, KeyAction, KeyWithModifiers, Keys, Modifiers},
     manager::Reason,
 };
@@ -248,15 +249,38 @@ impl Moxnotify {
                 KeyAction::FirstNotification => {
                     if let Some(notification) = self.notifications.notifications().first() {
                         self.notifications.select(notification.id());
-                        self.notifications.prev();
-                        self.notifications.next();
+                        self.notifications.notification_view.visible = 0..5;
+
+                        self.notifications.notification_view.visible.clone().fold(
+                            self.notifications
+                                .notification_view
+                                .prev
+                                .as_ref()
+                                .map(|p| p.get_bounds().height)
+                                .unwrap_or(0.),
+                            |acc, i| {
+                                if let Some(notification) =
+                                    self.notifications.notifications_mut().get_mut(i)
+                                {
+                                    notification.set_position(notification.get_bounds().x, acc);
+                                    acc + notification.get_bounds().height
+                                } else {
+                                    acc
+                                }
+                            },
+                        );
+
+                        self.notifications
+                            .notification_view
+                            .update_notification_count(
+                                self.notifications.height(),
+                                self.notifications.notifications().len(),
+                            );
                     }
                 }
                 KeyAction::LastNotification => {
                     if let Some(notification) = self.notifications.notifications().last() {
                         self.notifications.select(notification.id());
-                        self.notifications.next();
-                        self.notifications.prev();
                     }
                 }
                 KeyAction::DismissNotification => {
