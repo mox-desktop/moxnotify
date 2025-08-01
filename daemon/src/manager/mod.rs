@@ -303,7 +303,6 @@ impl NotificationManager {
         }
 
         self.promote_notifications();
-        self.promote_notification(id);
 
         let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(new_index)
         else {
@@ -586,42 +585,22 @@ impl NotificationManager {
             if let Some(notification) = self.notifications.get(i) {
                 notification.stop_timer(&self.loop_handle);
 
-                if let Some(next_notification) = self.notifications.get(i + 1) {
-                    if self.selected_id() == Some(notification.id()) {
-                        self.select(next_notification.id());
-                    }
-                    self.notifications.remove(i);
+                if self.notifications.len() > i + 1 {
+                    self.next();
                 } else {
-                    self.notifications.remove(i);
                     self.prev();
                 }
             }
-        }
 
-        self.notification_view
-            .update_notification_count(self.height(), self.notifications.len());
+            self.notifications.remove(i);
+            self.promote_notifications();
+        }
 
         if let Queue::FIFO = self.config.general.queue {
             if let Some(notification) = self.notifications.first_mut().filter(|n| !n.hovered()) {
                 notification.start_timer(&self.loop_handle);
             }
         }
-
-        self.notification_view.visible.clone().fold(
-            self.notification_view
-                .prev
-                .as_ref()
-                .map(|p| p.get_bounds().height)
-                .unwrap_or(0.),
-            |acc, i| {
-                if let Some(notification) = self.notifications.get_mut(i) {
-                    notification.set_position(notification.get_bounds().x, acc);
-                    acc + notification.get_bounds().height
-                } else {
-                    acc
-                }
-            },
-        );
     }
 
     pub fn promote_notifications(&mut self) {
@@ -647,30 +626,6 @@ impl NotificationManager {
                     }
                 }
             });
-    }
-
-    fn promote_notification(&mut self, id: NotificationId) {
-        if let Some(notification_state) = self
-            .notifications
-            .iter_mut()
-            .find(|notification| notification.id() == id)
-        {
-            if matches!(notification_state, NotificationState::Empty(_)) {
-                if let NotificationState::Empty(notification) = std::mem::replace(
-                    notification_state,
-                    NotificationState::Empty(Notification::<Empty>::new_empty(
-                        Arc::clone(&self.config),
-                        NotificationData::default(),
-                        UiState::default(),
-                    )),
-                ) {
-                    *notification_state = NotificationState::Ready(notification.promote(
-                        &mut self.font_system.borrow_mut(),
-                        Some(self.sender.clone()),
-                    ));
-                }
-            }
-        }
     }
 }
 
@@ -732,37 +687,18 @@ impl Moxnotify {
                 self.notifications.dismiss(id);
             }
             History::Hidden => {
-                if let Some(index) = self
-                    .notifications
-                    .notifications
-                    .iter()
-                    .position(|n| n.id() == id)
-                {
-                    if self.notifications.selected_id() == Some(id) {
-                        self.notifications
-                            .ui_state
-                            .mode
-                            .store(keymaps::Mode::Normal, Ordering::Relaxed);
-                    }
+                if self.notifications.selected_id() == Some(id) {
+                    self.notifications
+                        .ui_state
+                        .mode
+                        .store(keymaps::Mode::Normal, Ordering::Relaxed);
+                }
 
-                    self.notifications.dismiss(id);
-                    if let Some(reason) = reason {
-                        _ = self
-                            .emit_sender
-                            .send(EmitEvent::NotificationClosed { id, reason });
-                    }
-                    if self.notifications.selected_id() == Some(id) {
-                        let new_index = if index >= self.notifications.notifications.len() {
-                            self.notifications.notifications.len().saturating_sub(1)
-                        } else {
-                            index
-                        };
-
-                        if let Some(notification) = self.notifications.notifications.get(new_index)
-                        {
-                            self.notifications.select(notification.id());
-                        }
-                    }
+                self.notifications.dismiss(id);
+                if let Some(reason) = reason {
+                    _ = self
+                        .emit_sender
+                        .send(EmitEvent::NotificationClosed { id, reason });
                 }
             }
         }
