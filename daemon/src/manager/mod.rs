@@ -266,37 +266,47 @@ impl NotificationManager {
     }
 
     pub fn select(&mut self, id: NotificationId) {
-        self.deselect();
-
-        let Some(i) = self.notifications.iter_mut().position(|n| n.id() == id) else {
+        let Some(new_index) = self.notifications.iter().position(|n| n.id() == id) else {
             return;
         };
 
-        match (
-            self.selected_id()
-                .and_then(|id| self.notifications.iter().position(|n| n.id() == id)),
-            self.notifications
-                .iter()
-                .position(|n| n.id() == self.ui_state.selected_id.load(Ordering::Relaxed)),
-        ) {
-            (Some(old_index), Some(new_index)) if old_index.lt(&new_index) => {
-                self.notification_view.visible =
-                    new_index.saturating_sub(self.config.general.max_visible)..new_index;
+        let current_selected = self
+            .selected_id()
+            .and_then(|current_id| self.notifications.iter().position(|n| n.id() == current_id));
+
+        self.deselect();
+
+        let current_view_start = self.notification_view.visible.start;
+        let current_view_end = self.notification_view.visible.end;
+        let max_visible = self.config.general.max_visible;
+
+        if new_index < current_view_start || new_index >= current_view_end {
+            match current_selected {
+                // Moving up
+                Some(old_index) if new_index > old_index => {
+                    let new_start = new_index.saturating_sub(max_visible.saturating_sub(1));
+                    self.notification_view.visible =
+                        new_start..new_start.saturating_add(max_visible);
+                }
+                // Moving down
+                Some(old_index) if new_index < old_index => {
+                    self.notification_view.visible =
+                        new_index..new_index.saturating_add(max_visible);
+                }
+                None => {
+                    let new_start = new_index.saturating_sub(max_visible / 2);
+                    self.notification_view.visible =
+                        new_start..new_start.saturating_add(max_visible);
+                }
+                _ => {}
             }
-            (Some(old_index), Some(new_index)) if old_index.gt(&new_index) => {
-                self.notification_view.visible =
-                    new_index..new_index.saturating_add(self.config.general.max_visible);
-            }
-            (None, Some(new_index)) => {
-                self.notification_view.visible =
-                    new_index..new_index.saturating_add(self.config.general.max_visible);
-            }
-            _ => todo!(),
         }
 
         self.promote_notifications();
+        self.promote_notification(id);
 
-        let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(i) else {
+        let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(new_index)
+        else {
             return;
         };
 
@@ -335,44 +345,12 @@ impl NotificationManager {
             );
         }
 
-        let style_width = notification.get_style().width;
-        let icons_width = notification
-            .icons
-            .as_ref()
-            .map(|icons| icons.get_bounds().width)
-            .unwrap_or_default();
-
         if let Some(summary) = notification.summary.as_mut() {
             summary.set_size(
                 &mut self.font_system.borrow_mut(),
                 Some(style_width - icons_width - dismiss_button),
                 None,
             );
-        }
-    }
-
-    pub fn next(&mut self) {
-        let next_notification_index = {
-            let id = self.ui_state.selected_id.load(Ordering::Relaxed);
-            self.notifications
-                .iter()
-                .position(|n| n.id() == id)
-                .map_or(0, |index| {
-                    if index + 1 < self.notifications.len() {
-                        index + 1
-                    } else {
-                        0
-                    }
-                })
-        };
-
-        if let Some(notification) = self.notifications.get(next_notification_index) {
-            self.notification_view.next(
-                self.height(),
-                next_notification_index,
-                self.notifications.len(),
-            );
-            self.select(notification.id());
         }
 
         self.notification_view.visible.clone().fold(
@@ -393,6 +371,26 @@ impl NotificationManager {
 
         self.notification_view
             .update_notification_count(self.height(), self.notifications.len());
+    }
+
+    pub fn next(&mut self) {
+        let next_notification_index = {
+            let id = self.ui_state.selected_id.load(Ordering::Relaxed);
+            self.notifications
+                .iter()
+                .position(|n| n.id() == id)
+                .map_or(0, |index| {
+                    if index + 1 < self.notifications.len() {
+                        index + 1
+                    } else {
+                        0
+                    }
+                })
+        };
+
+        if let Some(notification) = self.notifications.get(next_notification_index) {
+            self.select(notification.id());
+        }
     }
 
     pub fn prev(&mut self) {
@@ -415,32 +413,8 @@ impl NotificationManager {
         };
 
         if let Some(notification) = self.notifications.get(notification_index) {
-            self.notification_view.prev(
-                self.height(),
-                notification_index,
-                self.notifications.len(),
-            );
             self.select(notification.id());
         }
-
-        self.notification_view.visible.clone().fold(
-            self.notification_view
-                .prev
-                .as_ref()
-                .map(|p| p.get_bounds().height)
-                .unwrap_or(0.),
-            |acc, i| {
-                if let Some(notification) = self.notifications.get_mut(i) {
-                    notification.set_position(notification.get_bounds().x, acc);
-                    acc + notification.get_bounds().height
-                } else {
-                    acc
-                }
-            },
-        );
-
-        self.notification_view
-            .update_notification_count(self.height(), self.notifications.len());
     }
 
     pub fn deselect(&mut self) {

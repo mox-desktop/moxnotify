@@ -42,37 +42,6 @@ impl NotificationView {
         }
     }
 
-    pub fn prev(&mut self, total_height: f32, index: usize, notification_count: usize) {
-        if index + 1 == notification_count {
-            self.visible = (notification_count
-                .max(self.config.general.max_visible)
-                .saturating_sub(self.config.general.max_visible))
-                ..notification_count.max(self.config.general.max_visible);
-        } else {
-            let first_visible = self.visible.start;
-            if index < first_visible {
-                let start = index;
-                let end = index + self.config.general.max_visible;
-                self.visible = start..end;
-            }
-        }
-        self.update_notification_count(total_height, notification_count);
-    }
-
-    pub fn next(&mut self, total_height: f32, index: usize, notification_count: usize) {
-        if index == 0 {
-            self.visible = 0..self.config.general.max_visible;
-        } else {
-            let last_visible = self.visible.end.saturating_sub(1);
-            if index > last_visible {
-                let start = index + 1 - self.config.general.max_visible;
-                let end = index + 1;
-                self.visible = start..end;
-            }
-        }
-        self.update_notification_count(total_height, notification_count);
-    }
-
     pub fn update_notification_count(&mut self, mut total_height: f32, notification_count: usize) {
         if self.visible.start > 0 {
             let summary = self
