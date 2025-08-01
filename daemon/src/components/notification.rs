@@ -52,7 +52,7 @@ impl NotificationState {
 
     pub fn stop_timer(&self, loop_handle: &LoopHandle<'static, Moxnotify>) {
         match self {
-            Self::Empty(_) => panic!("There's no reason to stop timer on an empty notification"),
+            Self::Empty(n) => n.stop_timer(loop_handle),
             Self::Ready(n) => n.stop_timer(loop_handle),
         }
     }

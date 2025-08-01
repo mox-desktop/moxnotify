@@ -5,7 +5,7 @@ use crate::{
     components::{
         Component, Data,
         button::ButtonType,
-        notification::{Empty, Notification, NotificationId, NotificationState, Ready},
+        notification::{Empty, Notification, NotificationId, NotificationState},
         text::Text,
     },
     config::{Config, Queue, keymaps},
@@ -461,12 +461,10 @@ impl NotificationManager {
                 _ => {}
             }
         } else {
-            let mut notification = Notification::<Ready>::new(
+            let mut notification = Notification::<Empty>::new_empty(
                 Arc::clone(&self.config),
-                &mut self.font_system.borrow_mut(),
                 data,
                 self.ui_state.clone(),
-                Some(self.sender.clone()),
             );
 
             match self.config.general.queue {
@@ -478,9 +476,10 @@ impl NotificationManager {
             }
 
             self.notifications
-                .push(NotificationState::Ready(notification));
+                .push(NotificationState::Empty(notification));
         }
 
+        self.promote_notifications();
         self.update_size();
 
         Ok(())
@@ -536,8 +535,10 @@ impl NotificationManager {
 
     pub fn update_size(&mut self) {
         let x_offset = self
-            .notifications
-            .iter()
+            .notification_view
+            .visible
+            .clone()
+            .filter_map(|i| self.notifications.get(i))
             .map(|n| n.data().hints.x)
             .min()
             .unwrap_or_default()
@@ -556,7 +557,7 @@ impl NotificationManager {
 
         self.notification_view.visible.clone().for_each(|i| {
             if let Some(notification) = self.notifications.get_mut(i) {
-                notification.set_position(0., start);
+                notification.set_position(x_offset, start);
                 start += notification.get_bounds().height;
             }
         });
