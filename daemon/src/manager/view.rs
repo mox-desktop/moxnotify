@@ -42,7 +42,7 @@ impl NotificationView {
         }
     }
 
-    pub fn update_notification_count(&mut self, mut total_height: f32, notification_count: usize) {
+    pub fn update_notification_count(&mut self, notification_count: usize) {
         if self.visible.start > 0 {
             let summary = self
                 .config
@@ -57,7 +57,6 @@ impl NotificationView {
                     .as_mut()
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
-                notification.set_position(0., 0.);
             } else {
                 self.prev = Some(Notification::<Ready>::new(
                     Arc::clone(&self.config),
@@ -69,19 +68,8 @@ impl NotificationView {
                     self.ui_state.clone(),
                     None,
                 ));
-
-                total_height += self
-                    .prev
-                    .as_ref()
-                    .map(|p| p.get_bounds().height)
-                    .unwrap_or_default();
             }
         } else {
-            total_height -= self
-                .prev
-                .as_ref()
-                .map(|p| p.get_bounds().height)
-                .unwrap_or_default();
             self.prev = None;
         };
 
@@ -99,12 +87,8 @@ impl NotificationView {
                     .as_mut()
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
-                notification.set_position(
-                    notification.x,
-                    total_height - notification.get_bounds().height,
-                );
             } else {
-                let mut next = Notification::<Ready>::new(
+                self.next = Some(Notification::<Ready>::new(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -113,9 +97,7 @@ impl NotificationView {
                     },
                     self.ui_state.clone(),
                     None,
-                );
-                next.set_position(next.x, total_height);
-                self.next = Some(next);
+                ));
             }
         } else {
             self.next = None;

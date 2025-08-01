@@ -1,19 +1,20 @@
 pub mod wgpu_surface;
 
 use crate::{
+    Moxnotify, Output,
     config::{self, Anchor, Config},
     manager::NotificationManager,
     utils::buffers,
-    wgpu_state, Moxnotify, Output,
+    wgpu_state,
 };
 use glyphon::FontSystem;
 use std::{
     cell::RefCell,
     fmt,
     rc::Rc,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
 };
-use wayland_client::{delegate_noop, protocol::wl_surface, Connection, Dispatch, QueueHandle};
+use wayland_client::{Connection, Dispatch, QueueHandle, delegate_noop, protocol::wl_surface};
 use wayland_protocols::xdg::foreign::zv2::client::zxdg_exporter_v2;
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1,
@@ -307,6 +308,8 @@ delegate_noop!(Moxnotify: ignore wl_surface::WlSurface);
 
 impl Moxnotify {
     pub fn update_surface_size(&mut self) {
+        self.notifications.update_size();
+
         let total_height = self.notifications.height();
         let total_width = self.notifications.width();
 

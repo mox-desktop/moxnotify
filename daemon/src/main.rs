@@ -393,10 +393,7 @@ impl Moxnotify {
                     })?;
                     let notifications = rows.collect::<Result<Vec<_>, _>>()?;
                     log::info!("Loaded {} historical notifications", notifications.len());
-                    let a = std::time::Instant::now();
                     self.notifications.add_many(notifications)?;
-                    println!("{:?}", a.elapsed());
-                    drop(stmt);
                     log::debug!("History view completed");
                 } else {
                     log::debug!("History already shown");
