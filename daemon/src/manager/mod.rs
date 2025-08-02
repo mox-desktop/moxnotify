@@ -19,7 +19,9 @@ use rayon::prelude::*;
 use rusqlite::params;
 use std::{
     cell::RefCell,
+    collections::VecDeque,
     fmt,
+    ops::RangeBounds,
     rc::Rc,
     sync::{
         Arc,
@@ -48,7 +50,7 @@ impl Default for UiState {
 }
 
 pub struct NotificationManager {
-    notifications: Vec<NotificationState>,
+    notifications: VecDeque<NotificationState>,
     waiting: u32,
     config: Arc<Config>,
     loop_handle: LoopHandle<'static, Moxnotify>,
@@ -57,6 +59,7 @@ pub struct NotificationManager {
     sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     pub ui_state: UiState,
+    pub history: History,
 }
 
 impl NotificationManager {
@@ -79,9 +82,10 @@ impl NotificationManager {
             ),
             font_system,
             loop_handle,
-            notifications: Vec::new(),
+            notifications: VecDeque::new(),
             config,
             ui_state,
+            history: History::Hidden,
         }
     }
 
@@ -98,7 +102,7 @@ impl NotificationManager {
         self.inhibited
     }
 
-    pub fn notifications(&self) -> &[NotificationState] {
+    pub fn notifications(&self) -> &VecDeque<NotificationState> {
         &self.notifications
     }
 
@@ -471,8 +475,14 @@ impl NotificationManager {
                 _ => {}
             }
 
-            self.notifications
-                .push(NotificationState::Empty(notification));
+            match self.history {
+                History::Hidden => self
+                    .notifications
+                    .push_back(NotificationState::Empty(notification)),
+                History::Shown => self
+                    .notifications
+                    .push_front(NotificationState::Empty(notification)),
+            }
         }
 
         self.promote_notifications();
@@ -500,7 +510,7 @@ impl NotificationManager {
         }
 
         if let Queue::FIFO = self.config.general.queue {
-            if let Some(notification) = self.notifications.first_mut().filter(|n| !n.hovered()) {
+            if let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
                 notification.start_timer(&self.loop_handle);
             }
         }
@@ -592,10 +602,12 @@ impl fmt::Display for Reason {
 impl Moxnotify {
     pub fn dismiss_range<T>(&mut self, range: T, reason: Option<Reason>)
     where
-        T: std::slice::SliceIndex<[NotificationState], Output = [NotificationState]>,
+        T: RangeBounds<usize>,
     {
-        let ids: Vec<_> = self.notifications.notifications()[range]
-            .iter()
+        let ids: Vec<_> = self
+            .notifications
+            .notifications()
+            .range(range)
             .map(|notification| notification.id())
             .collect();
 
@@ -617,7 +629,7 @@ impl Moxnotify {
     }
 
     pub fn dismiss_by_id(&mut self, id: u32, reason: Option<Reason>) {
-        match self.history {
+        match self.notifications.history {
             History::Shown => {
                 _ = self
                     .db

@@ -84,7 +84,6 @@ pub struct Moxnotify {
     compositor: wl_compositor::WlCompositor,
     audio: Audio,
     db: rusqlite::Connection,
-    history: History,
     font_system: Rc<RefCell<FontSystem>>,
 }
 
@@ -128,7 +127,6 @@ impl Moxnotify {
         let font_system = Rc::new(RefCell::new(FontSystem::new()));
 
         Ok(Self {
-            history: History::Hidden,
             db,
             audio: Audio::new(),
             globals,
@@ -159,7 +157,7 @@ impl Moxnotify {
                     log::info!("Dismissing all notifications");
                     self.dismiss_range(.., Some(Reason::DismissedByUser));
                 } else if id == 0 {
-                    if let Some(notification) = self.notifications.notifications().first() {
+                    if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
                         self.dismiss_by_id(notification.id(), Some(Reason::DismissedByUser));
                     } else {
@@ -255,7 +253,7 @@ impl Moxnotify {
 
                 let suppress_sound = data.hints.suppress_sound;
 
-                let id = match self.history {
+                let id = match self.notifications.history {
                     History::Shown => self.db.last_insert_rowid() as u32,
                     History::Hidden => data.id,
                 };
@@ -269,7 +267,7 @@ impl Moxnotify {
                     self.audio.play(path)?;
                 }
 
-                if let Some(notification) = self.notifications.notifications().last() {
+                if let Some(notification) = self.notifications.notifications().back() {
                     self.db.execute(
                         "INSERT INTO notifications (id, app_name, app_icon, timeout, summary, body, actions, hints)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
@@ -356,7 +354,7 @@ impl Moxnotify {
                 return Ok(());
             }
             Event::ShowHistory => {
-                if self.history == History::Hidden {
+                if self.notifications.history == History::Hidden {
                     self.db.execute(
                         "DELETE FROM notifications WHERE rowid IN (
                             SELECT rowid FROM notifications 
@@ -367,10 +365,10 @@ impl Moxnotify {
                     )?;
 
                     log::info!("Showing notification history");
-                    self.history = History::Shown;
+                    self.notifications.history = History::Shown;
                     _ = self
                         .emit_sender
-                        .send(EmitEvent::HistoryStateChanged(self.history));
+                        .send(EmitEvent::HistoryStateChanged(self.notifications.history));
                     self.dismiss_range(.., Some(Reason::Expired));
                     let mut stmt = self.db.prepare("SELECT rowid, app_name, app_icon, summary, body, actions, hints FROM notifications ORDER BY rowid DESC")?;
                     let rows = stmt.query_map([], |row| {
@@ -400,7 +398,7 @@ impl Moxnotify {
                 }
             }
             Event::HideHistory => {
-                if self.history == History::Shown {
+                if self.notifications.history == History::Shown {
                     self.db.execute(
                         "DELETE FROM notifications WHERE rowid IN (
                         SELECT rowid FROM notifications ORDER BY rowid ASC LIMIT (
@@ -411,10 +409,10 @@ impl Moxnotify {
                     )?;
 
                     log::info!("Hiding notification history");
-                    self.history = History::Hidden;
+                    self.notifications.history = History::Hidden;
                     _ = self
                         .emit_sender
-                        .send(EmitEvent::HistoryStateChanged(self.history));
+                        .send(EmitEvent::HistoryStateChanged(self.notifications.history));
                     self.dismiss_range(.., None);
                     log::debug!("History view dismissed");
                 } else {
@@ -487,7 +485,9 @@ impl Moxnotify {
             }
             Event::GetHistory => {
                 log::debug!("Getting history state");
-                _ = self.emit_sender.send(EmitEvent::HistoryState(self.history));
+                _ = self
+                    .emit_sender
+                    .send(EmitEvent::HistoryState(self.notifications.history));
 
                 return Ok(());
             }

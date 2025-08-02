@@ -246,13 +246,13 @@ impl Moxnotify {
                 KeyAction::NextNotification => self.notifications.next(),
                 KeyAction::PreviousNotification => self.notifications.prev(),
                 KeyAction::FirstNotification => {
-                    if let Some(notification) = self.notifications.notifications().first() {
+                    if let Some(notification) = self.notifications.notifications().front() {
                         self.notifications.select(notification.id());
                         self.notifications.update_size();
                     }
                 }
                 KeyAction::LastNotification => {
-                    if let Some(notification) = self.notifications.notifications().last() {
+                    if let Some(notification) = self.notifications.notifications().back() {
                         self.notifications.select(notification.id());
                         self.notifications.update_size();
                     }
@@ -283,7 +283,7 @@ impl Moxnotify {
                     self.seat.keyboard.repeat.key = None;
                 }
                 KeyAction::ToggleHistory => {
-                    match self.history {
+                    match self.notifications.history {
                         History::Shown => {
                             self.handle_app_event(crate::Event::HideHistory)?;
                             self.seat.keyboard.key_combination.clear();
