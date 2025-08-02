@@ -248,15 +248,13 @@ impl Moxnotify {
                 KeyAction::FirstNotification => {
                     if let Some(notification) = self.notifications.notifications().first() {
                         self.notifications.select(notification.id());
-                        self.notifications.prev();
-                        self.notifications.next();
+                        self.notifications.update_size();
                     }
                 }
                 KeyAction::LastNotification => {
                     if let Some(notification) = self.notifications.notifications().last() {
                         self.notifications.select(notification.id());
-                        self.notifications.next();
-                        self.notifications.prev();
+                        self.notifications.update_size();
                     }
                 }
                 KeyAction::DismissNotification => {

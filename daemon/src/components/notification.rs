@@ -52,7 +52,7 @@ impl NotificationState {
 
     pub fn stop_timer(&self, loop_handle: &LoopHandle<'static, Moxnotify>) {
         match self {
-            Self::Empty(_) => panic!("There's no reason to stop timer on an empty notification"),
+            Self::Empty(n) => n.stop_timer(loop_handle),
             Self::Ready(n) => n.stop_timer(loop_handle),
         }
     }
@@ -928,7 +928,7 @@ impl Notification<Empty> {
             data: self.data,
             config: self.config,
             hovered: false,
-            registration_token: None,
+            registration_token: self.registration_token,
             ui_state: self.ui_state,
             body,
             _state: std::marker::PhantomData,

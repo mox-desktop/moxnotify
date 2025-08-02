@@ -30,30 +30,30 @@
         default =
           let
             inherit (pkgs) lib;
-            buildInputs =
-              [
-                (pkgs.rust-bin.stable.latest.default.override {
-                  extensions = [
-                    "rust-src"
-                    "rustfmt"
-                  ];
-                })
-              ]
-              ++ builtins.attrValues {
-                inherit (pkgs)
-                  rust-analyzer-unwrapped
-                  nixd
-                  pkg-config
-                  lua5_4
-                  libxkbcommon
-                  vulkan-loader
-                  vulkan-headers
-                  vulkan-validation-layers
-                  wgsl-analyzer
-                  wayland
-                  alsa-lib
-                  ;
-              };
+            buildInputs = [
+              (pkgs.rust-bin.stable.latest.default.override {
+                extensions = [
+                  "rust-src"
+                  "rustfmt"
+                ];
+              })
+            ]
+            ++ builtins.attrValues {
+              inherit (pkgs)
+                rust-analyzer-unwrapped
+                nixd
+                pkg-config
+                lua5_4
+                libxkbcommon
+                vulkan-loader
+                vulkan-headers
+                vulkan-validation-layers
+                wgsl-analyzer
+                wayland
+                alsa-lib
+                libnotify
+                ;
+            };
           in
           pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
             inherit buildInputs;

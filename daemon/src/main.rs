@@ -7,6 +7,7 @@ mod manager;
 mod rendering;
 pub mod utils;
 
+use crate::config::keymaps;
 use audio::Audio;
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
@@ -41,8 +42,6 @@ use wayland_client::{
 use wayland_protocols::xdg::activation::v1::client::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
 use zbus::zvariant::Type;
-
-use crate::config::keymaps;
 
 #[derive(Debug)]
 pub struct Output {
@@ -395,7 +394,6 @@ impl Moxnotify {
                     let notifications = rows.collect::<Result<Vec<_>, _>>()?;
                     log::info!("Loaded {} historical notifications", notifications.len());
                     self.notifications.add_many(notifications)?;
-                    drop(stmt);
                     log::debug!("History view completed");
                 } else {
                     log::debug!("History already shown");
