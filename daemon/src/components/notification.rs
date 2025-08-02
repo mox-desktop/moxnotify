@@ -928,7 +928,7 @@ impl Notification<Empty> {
             data: self.data,
             config: self.config,
             hovered: false,
-            registration_token: None,
+            registration_token: self.registration_token,
             ui_state: self.ui_state,
             body,
             _state: std::marker::PhantomData,

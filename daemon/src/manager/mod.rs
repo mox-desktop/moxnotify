@@ -302,7 +302,7 @@ impl NotificationManager {
 
         let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(new_index)
         else {
-            return;
+            unreachable!();
         };
 
         notification.hover();
@@ -372,10 +372,6 @@ impl NotificationManager {
     }
 
     pub fn prev(&mut self) {
-        if !self.ui_state.selected.load(Ordering::Relaxed) {
-            return;
-        }
-
         let notification_index = {
             let id = self.ui_state.selected_id.load(Ordering::Relaxed);
             self.notifications.iter().position(|n| n.id() == id).map_or(
@@ -486,15 +482,17 @@ impl NotificationManager {
     }
 
     pub fn dismiss(&mut self, id: NotificationId) {
-        if let Some(i) = self.notifications.iter().position(|n| n.id() == id) {
-            if let Some(notification) = self.notifications.get(i) {
-                notification.stop_timer(&self.loop_handle);
+        if let Some(i) = self.notifications.iter().position(|n| n.id() == id)
+            && let Some(notification) = self.notifications.get(i)
+        {
+            notification.stop_timer(&self.loop_handle);
 
-                if self.notifications.len() > i + 1 {
-                    self.next();
-                } else {
-                    self.prev();
+            if let Some(next_notification) = self.notifications.get(i + 1) {
+                if self.selected_id() == Some(notification.id()) {
+                    self.select(next_notification.id());
                 }
+            } else {
+                self.prev();
             }
 
             self.notifications.remove(i);
