@@ -5,10 +5,9 @@ use crate::Moxnotify;
 use keyboard::Keyboard;
 use pointer::Pointer;
 use wayland_client::{
-    delegate_noop,
+    Connection, Dispatch, QueueHandle, delegate_noop,
     globals::GlobalList,
     protocol::{wl_seat, wl_shm},
-    Connection, Dispatch, QueueHandle,
 };
 use wayland_protocols::xdg::activation::v1::client::xdg_activation_v1;
 

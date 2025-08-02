@@ -1,5 +1,5 @@
 use super::math::{Mat4, Matrix};
-use wgpu::{util::DeviceExt, Texture, TextureView};
+use wgpu::{Texture, TextureView, util::DeviceExt};
 
 pub trait DataDescription {
     const ATTRIBS: &'static [wgpu::VertexAttribute];

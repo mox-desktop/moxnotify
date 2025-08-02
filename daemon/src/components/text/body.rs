@@ -1,16 +1,16 @@
 use super::{
-    markup::{Parser, Tag},
     Text,
+    markup::{Parser, Tag},
 };
 use crate::{
-    components::{notification::NotificationId, Bounds, Component, Data},
+    Urgency,
+    components::{Bounds, Component, Data, notification::NotificationId},
     config::{self, Config},
     manager::UiState,
     utils::buffers,
-    Urgency,
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Debug)]
 pub struct Anchor {
@@ -507,8 +507,8 @@ mod tests {
     use super::*;
     use crate::{
         components::text::{
-            markup::{Parser, Tag},
             Text,
+            markup::{Parser, Tag},
         },
         config::Config,
         manager::UiState,

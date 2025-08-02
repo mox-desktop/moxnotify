@@ -8,7 +8,7 @@ use std::{
 };
 use symphonia::core::{
     audio::SampleBuffer,
-    codecs::{DecoderOptions, CODEC_TYPE_NULL},
+    codecs::{CODEC_TYPE_NULL, DecoderOptions},
     formats::FormatOptions,
     io::MediaSourceStream,
     meta::MetadataOptions,

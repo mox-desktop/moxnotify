@@ -1,8 +1,8 @@
 use super::Size;
-use crate::config::color::{parse_hex, Color};
+use crate::config::color::{Color, parse_hex};
 use serde::{
-    de::{self, MapAccess, Visitor},
     Deserialize, Deserializer,
+    de::{self, MapAccess, Visitor},
 };
 use std::{fmt, str::FromStr, sync::Arc};
 
@@ -82,7 +82,7 @@ impl<'de> Deserialize<'de> for PartialColor {
                             return Err(de::Error::unknown_field(
                                 &key,
                                 &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ))
+                            ));
                         }
                     }
                 }
@@ -187,7 +187,7 @@ impl<'de> Deserialize<'de> for PartialInsets {
                             return Err(serde::de::Error::unknown_field(
                                 &key,
                                 &["left", "right", "top", "bottom"],
-                            ))
+                            ));
                         }
                     }
                 }
@@ -312,7 +312,7 @@ impl<'de> Deserialize<'de> for PartialBorderRadius {
                             return Err(serde::de::Error::unknown_field(
                                 &key,
                                 &["top_left", "top_right", "bottom_left", "bottom_right"],
-                            ))
+                            ));
                         }
                     }
                 }

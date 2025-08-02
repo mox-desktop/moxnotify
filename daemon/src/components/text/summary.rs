@@ -1,14 +1,14 @@
 use super::Text;
 use crate::{
-    components::{notification::NotificationId, Bounds, Component, Data},
+    Urgency,
+    components::{Bounds, Component, Data, notification::NotificationId},
     config::{self, Config},
     manager::UiState,
     rendering::texture_renderer,
     utils::buffers,
-    Urgency,
 };
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {
     id: NotificationId,
@@ -223,7 +223,7 @@ impl Summary {
 #[cfg(test)]
 mod tests {
     use crate::{
-        components::text::{summary::Summary, Text},
+        components::text::{Text, summary::Summary},
         config::Config,
         manager::UiState,
     };

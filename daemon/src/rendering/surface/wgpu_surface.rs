@@ -8,7 +8,7 @@ use anyhow::Context;
 use raw_window_handle::{RawWindowHandle, WaylandWindowHandle};
 
 use std::ptr::NonNull;
-use wayland_client::{protocol::wl_surface, Proxy};
+use wayland_client::{Proxy, protocol::wl_surface};
 
 pub struct WgpuSurface {
     pub texture_renderer: texture_renderer::TextureRenderer,

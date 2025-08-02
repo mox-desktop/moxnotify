@@ -1,4 +1,4 @@
-use super::{partial::PartialStyle, Border, BorderRadius, Color, Font, Insets, Size};
+use super::{Border, BorderRadius, Color, Font, Insets, Size, partial::PartialStyle};
 
 #[derive(Clone)]
 pub struct Buttons {

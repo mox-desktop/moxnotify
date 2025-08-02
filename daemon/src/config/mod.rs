@@ -80,7 +80,7 @@ impl<'de> Deserialize<'de> for SoundFile {
                             return Err(serde::de::Error::unknown_field(
                                 &key,
                                 &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ))
+                            ));
                         }
                     }
                 }
@@ -1210,7 +1210,7 @@ impl<'de> Deserialize<'de> for Timeout {
                             return Err(serde::de::Error::unknown_field(
                                 &key,
                                 &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ))
+                            ));
                         }
                     }
                 }

@@ -1,9 +1,9 @@
 name: Rust Tests
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+  push:
+    branches:
+      - master
 jobs:
   test:
     name: Test and Lint
@@ -11,25 +11,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config \
-            lua5.4 liblua5.4-dev \
-            libxkbcommon-dev \
-            libwayland-dev \
-            libvulkan-dev \
-            libasound2-dev
-
-      - name: Install Rust (Nightly)
-        uses: dtolnay/rust-toolchain@master
+      
+      - name: Install Nix
+        uses: cachix/install-nix-action@v25
         with:
-          toolchain: nightly
-          components: clippy, rustfmt
-
-      - name: Cache Dependencies
+          nix_path: nixpkgs=channel:nixos-unstable
+          
+      - name: Cache Nix store
+        uses: actions/cache@v3
+        with:
+          path: /nix/store
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock', 'flake.nix') }}
+          restore-keys: |
+            ${{ runner.os }}-nix-
+            
+      - name: Cache Cargo dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -39,19 +35,23 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
-
-      - name: Generate code coverage
-        run: cargo llvm-cov --all-features --workspace --bins --lcov --output-path lcov.info
-
-      - name: Check Formatting
-        run: cargo fmt -- --check
-
-      - name: Run Clippy
-        run: cargo clippy --all-targets -- -D warnings
-
+            
+      - name: Run tests and linting in Nix shell
+        run: |
+          nix develop --command bash -c "
+            # Install cargo-llvm-cov in the Nix environment
+            cargo install cargo-llvm-cov
+            
+            # Generate code coverage
+            cargo llvm-cov --all-features --workspace --bins --lcov --output-path lcov.info
+            
+            # Check formatting
+            cargo fmt -- --check
+            
+            # Run clippy
+            cargo clippy --all-targets -- -D warnings
+          "
+          
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

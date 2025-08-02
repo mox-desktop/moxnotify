@@ -1,17 +1,17 @@
 use crate::{
+    Image,
     components::{Bounds, Component},
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
     utils::buffers,
     utils::image_data::ImageData,
-    Image,
 };
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{atomic::Ordering, Arc, LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex, atomic::Ordering},
 };
 
 use super::Data;

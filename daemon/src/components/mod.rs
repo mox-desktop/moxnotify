@@ -7,11 +7,11 @@ pub mod text;
 use std::sync::atomic::Ordering;
 
 use crate::{
+    Urgency,
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer,
     utils::buffers,
-    Urgency,
 };
 
 pub enum Data<'a> {

@@ -1,4 +1,4 @@
-use super::{border::Border, partial::PartialStyle, Color, Insets};
+use super::{Color, Insets, border::Border, partial::PartialStyle};
 use std::sync::Arc;
 
 #[derive(Clone)]

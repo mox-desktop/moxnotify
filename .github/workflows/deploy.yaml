@@ -1,7 +1,9 @@
 name: "Push to cachix"
 on:
-  pull_request:
-  push:
+  workflow_run:
+    workflows: ["Rust Tests"]
+    types:
+      - completed
     branches:
       - master
 jobs:

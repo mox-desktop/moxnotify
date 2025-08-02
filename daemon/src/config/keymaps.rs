@@ -1,4 +1,4 @@
-use serde::{de, Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de};
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::sync::atomic::{AtomicU8, Ordering};

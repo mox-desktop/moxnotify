@@ -1,7 +1,7 @@
 use super::{
+    Insets, Size,
     color::Color,
     partial::{PartialBorder, PartialBorderRadius},
-    Insets, Size,
 };
 
 #[derive(Clone)]

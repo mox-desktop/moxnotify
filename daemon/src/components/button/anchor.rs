@@ -1,7 +1,7 @@
 use super::{Button, Component, Hint, State};
 use crate::{
-    components::{text::body::Anchor, Bounds},
-    config::{button::ButtonState, Config},
+    components::{Bounds, text::body::Anchor},
+    config::{Config, button::ButtonState},
     manager::UiState,
     rendering::{text_renderer::Text, texture_renderer},
     utils::buffers,

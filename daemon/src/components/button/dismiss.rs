@@ -1,14 +1,14 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
+    Urgency,
     components::{Bounds, Component},
-    config::{button::ButtonState, Config},
+    config::{Config, button::ButtonState},
     manager::UiState,
     rendering::text_renderer,
     rendering::texture_renderer,
     utils::buffers,
-    Urgency,
 };
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct DismissButton {
     pub id: u32,

@@ -1,4 +1,4 @@
-use crate::{utils::image_data::ImageData, EmitEvent, Event, Image, Urgency};
+use crate::{EmitEvent, Event, Image, Urgency, utils::image_data::ImageData};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, sync::Arc};
 use tokio::sync::broadcast;

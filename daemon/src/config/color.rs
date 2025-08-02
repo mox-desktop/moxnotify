@@ -1,8 +1,8 @@
 use super::partial::PartialColor;
 use crate::Urgency;
 use serde::{
-    de::{self, MapAccess, Visitor},
     Deserialize, Deserializer,
+    de::{self, MapAccess, Visitor},
 };
 use std::{fmt, str::FromStr};
 
@@ -70,7 +70,7 @@ impl<'de> Deserialize<'de> for Color {
                             return Err(de::Error::unknown_field(
                                 &key,
                                 &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ))
+                            ));
                         }
                     }
                 }

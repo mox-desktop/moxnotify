@@ -1,15 +1,14 @@
 use std::sync::atomic::Ordering;
 
 use crate::{
+    Moxnotify,
     config::keymaps::{self},
     rendering::surface::FocusReason,
-    Moxnotify,
 };
 use wayland_client::{
-    delegate_noop,
+    Connection, Dispatch, QueueHandle, WEnum, delegate_noop,
     globals::GlobalList,
     protocol::{wl_pointer, wl_seat},
-    Connection, Dispatch, QueueHandle, WEnum,
 };
 use wayland_protocols::wp::cursor_shape::v1::client::{
     wp_cursor_shape_device_v1::{self, Shape},

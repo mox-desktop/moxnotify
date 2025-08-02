@@ -1,13 +1,13 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
+    Urgency,
     components::{Bounds, Component},
-    config::{button::ButtonState, Config},
+    config::{Config, button::ButtonState},
     manager::UiState,
     rendering::{text_renderer, texture_renderer},
     utils::buffers,
-    Urgency,
 };
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 
 pub struct ActionButton {
     pub id: u32,
@@ -214,11 +214,11 @@ impl Button for ActionButton {
 #[cfg(test)]
 mod tests {
     use crate::{
+        Event,
         components::button::{Button, Hint, State},
         config::Config,
         manager::UiState,
         rendering::text_renderer::Text,
-        Event,
     };
     use glyphon::FontSystem;
     use std::sync::Arc;
