@@ -128,7 +128,7 @@ impl Moxnotify {
 
         Ok(Self {
             db,
-            audio: Audio::new(),
+            audio: Audio::try_new().unwrap(),
             globals,
             qh,
             notifications: NotificationManager::new(
