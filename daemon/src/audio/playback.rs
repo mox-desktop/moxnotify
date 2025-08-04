@@ -26,9 +26,9 @@ pub struct Playback<State = Ready> {
     thread_loop: pw::thread_loop::ThreadLoop,
     stream: pw::stream::Stream,
     duration: Duration,
-    state: State,
+    _state: State,
     data: Data,
-    listener: Option<pw::stream::StreamListener<Data>>,
+    _listener: Option<pw::stream::StreamListener<Data>>,
     pub cooldown: Option<std::time::Instant>,
 }
 
@@ -129,7 +129,7 @@ impl Playback {
         Ok(Self {
             stream,
             duration,
-            state: Ready,
+            _state: Ready,
             thread_loop: threadloop,
             data: Data {
                 buffer: audio_buffer,
@@ -137,7 +137,7 @@ impl Playback {
                 sample_rate,
                 position: 0,
             },
-            listener: None,
+            _listener: None,
             cooldown: None,
         })
     }
@@ -230,9 +230,9 @@ impl Playback {
             thread_loop: self.thread_loop,
             stream: self.stream,
             duration: self.duration,
-            state: Played,
+            _state: Played,
             data: self.data,
-            listener: Some(listener),
+            _listener: Some(listener),
             cooldown: Some(std::time::Instant::now()),
         }
     }

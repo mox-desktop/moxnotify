@@ -7,7 +7,7 @@ pub struct Audio {
     muted: bool,
     playback: Option<playback::Playback<playback::Played>>,
     thread_loop: pw::thread_loop::ThreadLoop,
-    context: pw::context::Context,
+    _context: pw::context::Context,
     core: pw::core::Core,
 }
 
@@ -38,7 +38,7 @@ impl Audio {
             muted: false,
             playback: None,
             thread_loop,
-            context,
+            _context: context,
             core,
         })
     }
