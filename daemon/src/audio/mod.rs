@@ -1,38 +1,46 @@
 mod playback;
-pub mod sound_device;
 
-use std::{collections::BTreeMap, path::Path};
+use pipewire::{self as pw, sys::PW_ID_CORE};
+use std::path::Path;
 
-#[derive(Default)]
-struct Cache(BTreeMap<Box<Path>, playback::Playback>);
-
-impl Cache {
-    fn insert<P>(&mut self, icon_path: &P, data: playback::Playback)
-    where
-        P: AsRef<Path>,
-    {
-        let entry = icon_path.as_ref();
-        self.0.insert(entry.into(), data);
-    }
-
-    fn get<P>(&self, icon_path: P) -> Option<playback::Playback>
-    where
-        P: AsRef<Path>,
-    {
-        self.0.get(icon_path.as_ref()).cloned()
-    }
-}
-
-#[derive(Default)]
 pub struct Audio {
-    cache: Cache,
     muted: bool,
     playback: Option<playback::Playback<playback::Played>>,
+    thread_loop: pw::thread_loop::ThreadLoop,
+    context: pw::context::Context,
+    core: pw::core::Core,
 }
 
 impl Audio {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn try_new() -> anyhow::Result<Self> {
+        pw::init();
+        let thread_loop = unsafe { pw::thread_loop::ThreadLoop::new(Some("audio-manager"), None)? };
+        let lock = thread_loop.lock();
+        thread_loop.start();
+        let context = pw::context::Context::new(&thread_loop)?;
+        let core = context.connect(None)?;
+
+        let thread_clone = thread_loop.clone();
+        let pending = core.sync(0).expect("sync failed");
+        let _listener_core = core
+            .add_listener_local()
+            .done(move |id, seq| {
+                if id == PW_ID_CORE && seq == pending {
+                    thread_clone.signal(false);
+                }
+            })
+            .register();
+
+        thread_loop.wait();
+        lock.unlock();
+
+        Ok(Self {
+            muted: false,
+            playback: None,
+            thread_loop,
+            context,
+            core,
+        })
     }
 
     pub fn play<T>(&mut self, path: T) -> anyhow::Result<()>
@@ -44,20 +52,20 @@ impl Audio {
         }
 
         if let Some(playback) = self.playback.take() {
-            playback.stop();
+            if let Some(cooldown) = playback.cooldown.as_ref()
+                && cooldown.elapsed() > std::time::Duration::from_millis(20)
+            {
+                let lock = self.thread_loop.lock();
+                playback.stop();
+                lock.unlock();
+            } else {
+                self.playback = Some(playback);
+                return Ok(());
+            }
         }
 
-        let playback = match self.cache.get(&path) {
-            Some(playback) => playback,
-            None => {
-                let playback = playback::Playback::new(&path).unwrap();
-                self.cache.insert(&path, playback.clone());
-                playback
-            }
-        };
-
+        let playback = playback::Playback::new(self.thread_loop.clone(), &self.core, &path)?;
         self.playback = Some(playback.start());
-
         Ok(())
     }
 

@@ -50,8 +50,9 @@
                 vulkan-validation-layers
                 wgsl-analyzer
                 wayland
-                alsa-lib
+                pipewire
                 libnotify
+                libclang
                 ;
             };
           in
