@@ -51,16 +51,20 @@ impl Audio {
             return Ok(());
         }
 
-        let lock = self.thread_loop.lock();
-
         if let Some(playback) = self.playback.take() {
-            playback.stop();
+            if let Some(cooldown) = playback.cooldown.as_ref()
+                && cooldown.elapsed() > std::time::Duration::from_millis(20)
+            {
+                let lock = self.thread_loop.lock();
+                playback.stop();
+                lock.unlock();
+            } else {
+                self.playback = Some(playback);
+                return Ok(());
+            }
         }
 
         let playback = playback::Playback::new(self.thread_loop.clone(), &self.core, &path)?;
-
-        lock.unlock();
-
         self.playback = Some(playback.start());
         Ok(())
     }

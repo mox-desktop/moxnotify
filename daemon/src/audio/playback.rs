@@ -29,6 +29,7 @@ pub struct Playback<State = Ready> {
     state: State,
     data: Data,
     listener: Option<pw::stream::StreamListener<Data>>,
+    pub cooldown: Option<std::time::Instant>,
 }
 
 impl Playback {
@@ -40,7 +41,6 @@ impl Playback {
     where
         T: AsRef<Path>,
     {
-        // Audio decoding (no changes needed here)
         let src = fs::File::open(&path)?;
         let mss = MediaSourceStream::new(Box::new(src), Default::default());
         let hint = Hint::new();
@@ -138,6 +138,7 @@ impl Playback {
                 position: 0,
             },
             listener: None,
+            cooldown: None,
         })
     }
 
@@ -232,15 +233,13 @@ impl Playback {
             state: Played,
             data: self.data,
             listener: Some(listener),
+            cooldown: Some(std::time::Instant::now()),
         }
     }
 }
 
 impl Playback<Played> {
     pub fn stop(self) {
-        let lock = self.thread_loop.lock();
         self.stream.disconnect().unwrap();
-        self.stream.flush(true).unwrap();
-        lock.unlock();
     }
 }
