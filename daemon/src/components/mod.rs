@@ -4,7 +4,7 @@ pub mod notification;
 pub mod progress;
 pub mod text;
 
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
 
 use crate::{
     Urgency,
@@ -14,13 +14,21 @@ use crate::{
     utils::buffers,
 };
 
+#[derive(Clone, Default)]
+pub struct Context {
+    pub id: u32,
+    pub app_name: Arc<str>,
+    pub config: Arc<Config>,
+    pub ui_state: UiState,
+}
+
 pub enum Data<'a> {
     Instance(buffers::Instance),
     TextArea(glyphon::TextArea<'a>),
     Texture(texture_renderer::TextureArea<'a>),
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Bounds {
     pub x: f32,
     pub y: f32,

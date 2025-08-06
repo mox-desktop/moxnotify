@@ -215,7 +215,10 @@ impl Button for ActionButton {
 mod tests {
     use crate::{
         Event,
-        components::button::{Button, Hint, State},
+        components::{
+            self,
+            button::{Button, Hint, State},
+        },
         config::Config,
         manager::UiState,
         rendering::text_renderer::Text,
@@ -227,16 +230,13 @@ mod tests {
 
     #[test]
     fn test_action_button() {
-        let config = Arc::new(Config::default());
-        let ui_state = UiState::default();
-        let hint = Hint::new(
-            0,
-            "",
-            "".into(),
-            Arc::clone(&config),
-            &mut FontSystem::new(),
-            ui_state.clone(),
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Config::default().into(),
+            ui_state: UiState::default(),
+        };
+        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
 
         let (tx, rx) = calloop::channel::channel();
         let test_id = 10;
@@ -246,10 +246,14 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(&config.styles.default.font, &mut FontSystem::new(), ""),
+            text: Text::new(
+                &context.config.styles.default.font,
+                &mut FontSystem::new(),
+                "",
+            ),
             state: State::Hovered,
-            config: Arc::clone(&config),
-            ui_state: ui_state.clone(),
+            config: Arc::clone(&context.config),
+            ui_state: context.ui_state.clone(),
             tx: Some(tx),
             width: 100.,
             action: Arc::clone(&test_action),
@@ -267,31 +271,31 @@ mod tests {
 
     #[test]
     fn test_multiple_action_buttons() {
-        let config = Arc::new(Config::default());
-        let ui_state = UiState::default();
-
         let (tx, text_rx1) = calloop::channel::channel();
 
         let test_id1 = 1;
         let test_action1: Arc<str> = "test1".into();
-        let hint = Hint::new(
-            0,
-            "",
-            "".into(),
-            Arc::clone(&config),
-            &mut FontSystem::new(),
-            ui_state.clone(),
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Config::default().into(),
+            ui_state: UiState::default(),
+        };
+        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
 
         let button1 = ActionButton {
             id: test_id1,
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(&config.styles.default.font, &mut FontSystem::new(), ""),
+            text: Text::new(
+                &context.config.styles.default.font,
+                &mut FontSystem::new(),
+                "",
+            ),
             state: State::Hovered,
-            config: Arc::clone(&config),
-            ui_state: ui_state.clone(),
+            config: Arc::clone(&context.config),
+            ui_state: context.ui_state.clone(),
             tx: Some(tx.clone()),
             width: 100.,
             action: Arc::clone(&test_action1),
@@ -302,23 +306,26 @@ mod tests {
 
         let test_id2 = 2;
         let test_action2: Arc<str> = "test2".into();
-        let hint = Hint::new(
-            0,
-            "",
-            "".into(),
-            Arc::clone(&config),
-            &mut FontSystem::new(),
-            ui_state.clone(),
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Config::default().into(),
+            ui_state: UiState::default(),
+        };
+        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
         let button2 = ActionButton {
             id: test_id2,
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(&config.styles.default.font, &mut FontSystem::new(), ""),
+            text: Text::new(
+                &context.config.styles.default.font,
+                &mut FontSystem::new(),
+                "",
+            ),
             state: State::Hovered,
-            config: Arc::clone(&config),
-            ui_state: ui_state.clone(),
+            config: Arc::clone(&context.config),
+            ui_state: context.ui_state.clone(),
             tx: Some(tx.clone()),
             width: 100.,
             action: Arc::clone(&test_action2),

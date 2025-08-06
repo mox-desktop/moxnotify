@@ -1,8 +1,8 @@
 use super::Text;
 use crate::{
     Urgency,
-    components::{Bounds, Component, Data, notification::NotificationId},
-    config::{self, Config},
+    components::{self, Bounds, Component, Data},
+    config,
     manager::UiState,
     rendering::texture_renderer,
     utils::buffers,
@@ -11,10 +11,7 @@ use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {
-    id: NotificationId,
-    app_name: Arc<str>,
-    ui_state: UiState,
-    config: Arc<Config>,
+    context: components::Context,
     pub buffer: Buffer,
     x: f32,
     y: f32,
@@ -50,19 +47,19 @@ impl Component for Summary {
     type Style = config::text::Summary;
 
     fn get_config(&self) -> &crate::config::Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_app_name(&self) -> &str {
-        &self.app_name
+        &self.context.app_name
     }
 
     fn get_id(&self) -> u32 {
-        self.id
+        self.context.id
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -80,7 +77,7 @@ impl Component for Summary {
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
             border_color: style.border.color.to_linear(urgency),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
@@ -112,7 +109,7 @@ impl Component for Summary {
             buffer: &self.buffer,
             left,
             top,
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
                 left: left as i32,
                 top: top as i32,
@@ -192,15 +189,9 @@ impl Component for Summary {
 }
 
 impl Summary {
-    pub fn new(
-        id: NotificationId,
-        config: Arc<Config>,
-        app_name: Arc<str>,
-        ui_state: UiState,
-        font_system: &mut FontSystem,
-    ) -> Self {
+    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size = config.styles.default.font.size * dpi / 72.0;
+        let font_size = context.config.styles.default.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),
@@ -209,13 +200,10 @@ impl Summary {
         buffer.set_size(font_system, None, None);
 
         Self {
-            id,
             buffer,
             x: 0.,
             y: 0.,
-            config,
-            ui_state,
-            app_name,
+            context,
         }
     }
 }
@@ -223,7 +211,10 @@ impl Summary {
 #[cfg(test)]
 mod tests {
     use crate::{
-        components::text::{Text, summary::Summary},
+        components::{
+            self,
+            text::{Text, summary::Summary},
+        },
         config::Config,
         manager::UiState,
     };
@@ -234,13 +225,13 @@ mod tests {
     fn test_body() {
         let mut font_system = FontSystem::new();
 
-        let mut summary = Summary::new(
-            0,
-            Arc::new(Config::default()),
-            "".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            config: Arc::new(Config::default()),
+            app_name: "".into(),
+            ui_state: UiState::default(),
+        };
+        let mut summary = Summary::new(context, &mut font_system);
 
         summary.set_text(
             &mut font_system,

@@ -213,7 +213,10 @@ impl Button for DismissButton {
 mod tests {
     use super::DismissButton;
     use crate::{
-        components::button::{Button, Hint, State},
+        components::{
+            self,
+            button::{Button, Hint, State},
+        },
         config::Config,
         manager::UiState,
         rendering::text_renderer::Text,
@@ -223,16 +226,13 @@ mod tests {
 
     #[test]
     fn test_dismiss_button() {
-        let config = Arc::new(Config::default());
-        let ui_state = UiState::default();
-        let hint = Hint::new(
-            0,
-            "",
-            "".into(),
-            Arc::clone(&config),
-            &mut FontSystem::new(),
-            ui_state.clone(),
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Config::default().into(),
+            ui_state: UiState::default(),
+        };
+        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
 
         let (tx, rx) = calloop::channel::channel();
         let test_id = 10;
@@ -242,10 +242,14 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(&config.styles.default.font, &mut FontSystem::new(), ""),
+            text: Text::new(
+                &context.config.styles.default.font,
+                &mut FontSystem::new(),
+                "",
+            ),
             state: State::Unhovered,
-            config: Arc::clone(&config),
-            ui_state,
+            config: Arc::clone(&context.config),
+            ui_state: context.ui_state,
             tx: Some(tx),
         };
 

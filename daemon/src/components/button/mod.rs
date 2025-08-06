@@ -5,7 +5,7 @@ mod dismiss;
 use super::text::body;
 use crate::{
     Urgency,
-    components::{Bounds, Component, Data},
+    components::{self, Bounds, Component, Data},
     config::{
         self, Config,
         button::ButtonState,
@@ -57,33 +57,24 @@ pub struct Ready;
 pub struct Finished;
 
 pub struct ButtonManager<State = NotReady> {
-    app_name: Arc<str>,
-    id: u32,
+    context: components::Context,
     buttons: Vec<Box<dyn Button<Style = ButtonState>>>,
     urgency: Urgency,
-    pub ui_state: UiState,
     sender: Option<calloop::channel::Sender<crate::Event>>,
-    config: Arc<Config>,
     _state: std::marker::PhantomData<State>,
 }
 
 impl ButtonManager<NotReady> {
     pub fn new(
-        id: u32,
+        context: components::Context,
         urgency: Urgency,
-        app_name: Arc<str>,
-        ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
-        config: Arc<Config>,
     ) -> Self {
         Self {
-            id,
+            context,
             buttons: Vec::new(),
             urgency,
-            ui_state,
             sender,
-            config,
-            app_name,
             _state: std::marker::PhantomData,
         }
     }
@@ -93,7 +84,7 @@ impl ButtonManager<NotReady> {
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        let app_name = Arc::clone(&self.app_name);
+        let app_name = Arc::clone(&self.context.app_name);
         self.internal_add_actions(app_name, actions, font_system)
     }
 
@@ -102,25 +93,26 @@ impl ButtonManager<NotReady> {
     }
 
     pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
-        let font = &self.config.styles.default.buttons.dismiss.default.font;
+        let font = &self
+            .context
+            .config
+            .styles
+            .default
+            .buttons
+            .dismiss
+            .default
+            .font;
         let text = text_renderer::Text::new(font, font_system, "X");
 
         let button = DismissButton {
-            id: self.id,
+            id: self.context.id,
             app_name: "".into(),
-            ui_state: self.ui_state.clone(),
-            hint: Hint::new(
-                0,
-                "",
-                "".into(),
-                Arc::clone(&self.config),
-                font_system,
-                self.ui_state.clone(),
-            ),
+            ui_state: self.context.ui_state.clone(),
+            hint: Hint::new(self.context.clone(), "", font_system),
             text,
             x: 0.,
             y: 0.,
-            config: Arc::clone(&self.config),
+            config: Arc::clone(&self.context.config),
             state: State::Unhovered,
             tx: self.sender.clone(),
         };
@@ -128,13 +120,10 @@ impl ButtonManager<NotReady> {
         self.buttons.push(Box::new(button));
 
         ButtonManager {
-            id: self.id,
-            app_name: self.app_name,
+            context: self.context,
             buttons: self.buttons,
             urgency: self.urgency,
-            ui_state: self.ui_state,
             sender: self.sender,
-            config: self.config,
             _state: std::marker::PhantomData,
         }
     }
@@ -146,7 +135,7 @@ impl ButtonManager<Ready> {
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        let app_name = Arc::clone(&self.app_name);
+        let app_name = Arc::clone(&self.context.app_name);
         self.internal_add_actions(app_name, actions, font_system)
     }
 
@@ -155,7 +144,13 @@ impl ButtonManager<Ready> {
     }
 
     pub fn finish(mut self, font_system: &mut FontSystem) -> ButtonManager<Finished> {
-        let hint_chars: Vec<char> = self.config.general.hint_characters.chars().collect();
+        let hint_chars: Vec<char> = self
+            .context
+            .config
+            .general
+            .hint_characters
+            .chars()
+            .collect();
         let n = hint_chars.len() as i32;
 
         self.buttons.iter_mut().enumerate().for_each(|(i, button)| {
@@ -173,26 +168,16 @@ impl ButtonManager<Ready> {
 
             indices.reverse();
             let combination: String = indices.into_iter().map(|i| hint_chars[i]).collect();
-            let hint = Hint::new(
-                0,
-                &combination,
-                "".into(),
-                Arc::clone(&self.config),
-                font_system,
-                self.ui_state.clone(),
-            );
+            let hint = Hint::new(self.context.clone(), &combination, font_system);
 
             button.set_hint(hint);
         });
 
         ButtonManager {
-            id: self.id,
-            app_name: self.app_name,
             buttons: self.buttons,
             urgency: self.urgency,
-            ui_state: self.ui_state,
             sender: self.sender,
-            config: self.config,
+            context: self.context,
             _state: std::marker::PhantomData,
         }
     }
@@ -260,9 +245,9 @@ impl ButtonManager<Finished> {
             .flat_map(|button| button.get_instances(&self.urgency))
             .collect::<Vec<_>>();
 
-        if self.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
-            && self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-            && self.ui_state.selected.load(Ordering::Relaxed)
+        if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
+            && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.context.id
+            && self.context.ui_state.selected.load(Ordering::Relaxed)
         {
             let hints = self
                 .buttons
@@ -282,9 +267,9 @@ impl ButtonManager<Finished> {
             .flat_map(|button| button.get_text_areas(&self.urgency))
             .collect::<Vec<_>>();
 
-        if self.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
-            && self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-            && self.ui_state.selected.load(Ordering::Relaxed)
+        if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
+            && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.context.id
+            && self.context.ui_state.selected.load(Ordering::Relaxed)
         {
             let hints = self
                 .buttons
@@ -303,9 +288,9 @@ impl ButtonManager<Finished> {
             .flat_map(|button| button.get_data(&self.urgency))
             .collect::<Vec<_>>();
 
-        if self.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
-            && self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-            && self.ui_state.selected.load(Ordering::Relaxed)
+        if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
+            && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.context.id
+            && self.context.ui_state.selected.load(Ordering::Relaxed)
         {
             let hints = self
                 .buttons
@@ -337,29 +322,30 @@ impl<S> ButtonManager<S> {
             return self;
         }
 
-        let font = &self.config.styles.default.buttons.action.default.font;
+        let font = &self
+            .context
+            .config
+            .styles
+            .default
+            .buttons
+            .action
+            .default
+            .font;
 
         self.buttons.extend(anchors.iter().map(|anchor| {
             let text = text_renderer::Text::new(font, font_system, "");
             Box::new(AnchorButton {
-                id: self.id,
+                id: self.context.id,
                 x: 0.,
                 y: 0.,
-                hint: Hint::new(
-                    0,
-                    "",
-                    "".into(),
-                    Arc::clone(&self.config),
-                    font_system,
-                    self.ui_state.clone(),
-                ),
-                config: Arc::clone(&self.config),
+                hint: Hint::new(self.context.clone(), "", font_system),
+                config: Arc::clone(&self.context.config),
                 state: State::Unhovered,
                 tx: self.sender.clone(),
                 text,
-                ui_state: self.ui_state.clone(),
+                ui_state: self.context.ui_state.clone(),
                 anchor: Arc::clone(anchor),
-                app_name: Arc::clone(&self.app_name),
+                app_name: Arc::clone(&self.context.app_name),
             }) as Box<dyn Button<Style = ButtonState>>
         }));
 
@@ -380,24 +366,25 @@ impl<S> ButtonManager<S> {
             .iter()
             .cloned()
             .map(|action| {
-                let font = &self.config.styles.default.buttons.action.default.font;
+                let font = &self
+                    .context
+                    .config
+                    .styles
+                    .default
+                    .buttons
+                    .action
+                    .default
+                    .font;
                 let text = text_renderer::Text::new(font, font_system, &action.1);
 
                 Box::new(ActionButton {
-                    id: self.id,
-                    ui_state: self.ui_state.clone(),
-                    hint: Hint::new(
-                        0,
-                        "",
-                        "".into(),
-                        Arc::clone(&self.config),
-                        font_system,
-                        self.ui_state.clone(),
-                    ),
+                    id: self.context.id,
+                    ui_state: self.context.ui_state.clone(),
+                    hint: Hint::new(self.context.clone(), "", font_system),
                     text,
                     x: 0.,
                     y: 0.,
-                    config: Arc::clone(&self.config),
+                    config: Arc::clone(&self.context.config),
                     action: action.0,
                     state: State::Unhovered,
                     width: 0.,
@@ -422,39 +409,30 @@ impl<S> ButtonManager<S> {
 }
 
 pub struct Hint {
-    id: u32,
     combination: Box<str>,
-    app_name: Arc<str>,
     text: text_renderer::Text,
-    config: Arc<Config>,
-    ui_state: UiState,
+    context: components::Context,
     x: f32,
     y: f32,
 }
 
 impl Hint {
     pub fn new<T>(
-        id: u32,
+        context: components::Context,
         combination: T,
-        app_name: Arc<str>,
-        config: Arc<Config>,
         font_system: &mut FontSystem,
-        ui_state: UiState,
     ) -> Self
     where
         T: AsRef<str>,
     {
         Self {
-            id,
-            app_name,
             combination: combination.as_ref().into(),
-            ui_state,
             text: text_renderer::Text::new(
-                &config.styles.default.font,
+                &context.config.styles.default.font,
                 font_system,
                 combination.as_ref(),
             ),
-            config,
+            context,
             x: 0.,
             y: 0.,
         }
@@ -465,23 +443,23 @@ impl Component for Hint {
     type Style = config::Hint;
 
     fn get_config(&self) -> &Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_id(&self) -> u32 {
-        self.id
+        self.context.id
     }
 
     fn get_app_name(&self) -> &str {
-        &self.app_name
+        &self.context.app_name
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
-        &self.config.styles.hover.hint
+        &self.context.config.styles.hover.hint
     }
 
     fn get_bounds(&self) -> Bounds {
@@ -525,7 +503,7 @@ impl Component for Hint {
     }
 
     fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
-        let style = &self.config.styles.hover.hint;
+        let style = &self.context.config.styles.hover.hint;
         let bounds = self.get_render_bounds();
 
         vec![buffers::Instance {
@@ -535,7 +513,7 @@ impl Component for Hint {
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
             border_color: style.border.color.to_linear(urgency),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.context.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.7,
         }]
     }
@@ -573,7 +551,7 @@ impl Component for Hint {
             buffer: &self.text.buffer,
             left: bounds.x + style.padding.left.resolve(pl),
             top: bounds.y + style.padding.top.resolve(pt),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
                 left: (bounds.x + style.padding.left.resolve(pl)) as i32,
                 top: (bounds.y + style.padding.top.resolve(pt)) as i32,
@@ -593,26 +571,22 @@ impl Component for Hint {
 #[cfg(test)]
 mod tests {
     use super::ButtonManager;
-    use crate::{Urgency, manager::UiState};
+    use crate::{Urgency, components, manager::UiState};
     use glyphon::FontSystem;
-    use std::sync::Arc;
 
     #[test]
     fn test_button_click_detection() {
-        let config = Arc::new(crate::config::Config::default());
-        let ui_state = UiState::default();
         let mut font_system = FontSystem::new();
 
-        let mut button_manager = ButtonManager::new(
-            1,
-            Urgency::Normal,
-            "".into(),
-            ui_state,
-            None,
-            Arc::clone(&config),
-        )
-        .add_dismiss(&mut font_system)
-        .finish(&mut font_system);
+        let context = components::Context {
+            id: 1,
+            app_name: "".into(),
+            ui_state: UiState::default(),
+            config: crate::config::Config::default().into(),
+        };
+        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
+            .add_dismiss(&mut font_system)
+            .finish(&mut font_system);
 
         let button = &mut button_manager.buttons_mut()[0];
         button.set_position(10.0, 10.0);
@@ -664,20 +638,17 @@ mod tests {
 
     #[test]
     fn test_button_hover_detection() {
-        let config = Arc::new(crate::config::Config::default());
-        let ui_state = UiState::default();
         let mut font_system = FontSystem::new();
 
-        let mut button_manager = ButtonManager::new(
-            1,
-            Urgency::Normal,
-            "".into(),
-            ui_state,
-            None,
-            Arc::clone(&config),
-        )
-        .add_dismiss(&mut font_system)
-        .finish(&mut font_system);
+        let context = components::Context {
+            id: 1,
+            app_name: "".into(),
+            ui_state: UiState::default(),
+            config: crate::config::Config::default().into(),
+        };
+        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
+            .add_dismiss(&mut font_system)
+            .finish(&mut font_system);
 
         let button = &mut button_manager.buttons_mut()[0];
         button.set_position(10.0, 10.0);

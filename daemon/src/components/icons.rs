@@ -1,17 +1,16 @@
 use crate::{
     Image,
-    components::{Bounds, Component},
+    components::{self, Bounds, Component},
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
-    utils::buffers,
-    utils::image_data::ImageData,
+    utils::{buffers, image_data::ImageData},
 };
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{Arc, LazyLock, Mutex, atomic::Ordering},
+    sync::{LazyLock, Mutex, atomic::Ordering},
 };
 
 use super::Data;
@@ -45,37 +44,31 @@ impl Cache {
 
 #[derive(Default)]
 pub struct Icons {
-    id: u32,
     icon: Option<ImageData>,
     app_icon: Option<ImageData>,
     x: f32,
     y: f32,
-    ui_state: UiState,
-    config: Arc<Config>,
-    app_name: Arc<str>,
+    context: components::Context,
 }
 
 impl Icons {
     pub fn new(
-        id: u32,
+        context: components::Context,
         image: Option<&Image>,
         app_icon: Option<&str>,
-        config: Arc<Config>,
-        ui_state: UiState,
-        app_name: Arc<str>,
     ) -> Self {
         let icon = match image {
             Some(Image::Data(image_data)) => Some(
                 image_data
                     .clone()
                     .to_rgba()
-                    .resize(config.general.icon_size),
+                    .resize(context.config.general.icon_size),
             ),
-            Some(Image::File(file)) => get_icon(file, config.general.icon_size as u16),
+            Some(Image::File(file)) => get_icon(file, context.config.general.icon_size as u16),
             Some(Image::Name(name)) => find_icon(
                 name,
-                config.general.icon_size as u16,
-                config.general.theme.as_ref(),
+                context.config.general.icon_size as u16,
+                context.config.general.theme.as_ref(),
             ),
             _ => None,
         };
@@ -83,8 +76,8 @@ impl Icons {
         let app_icon = app_icon.as_ref().and_then(|icon| {
             find_icon(
                 icon,
-                config.general.icon_size as u16,
-                config.general.theme.as_deref().as_ref(),
+                context.config.general.icon_size as u16,
+                context.config.general.theme.as_deref().as_ref(),
             )
         });
 
@@ -94,14 +87,11 @@ impl Icons {
         };
 
         Self {
-            id,
+            context,
             icon: final_icon,
             app_icon: final_app_icon,
             x: 0.,
             y: 0.,
-            ui_state,
-            config,
-            app_name,
         }
     }
 }
@@ -110,19 +100,19 @@ impl Component for Icons {
     type Style = StyleState;
 
     fn get_config(&self) -> &Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_id(&self) -> u32 {
-        self.id
+        self.context.id
     }
 
     fn get_app_name(&self) -> &str {
-        &self.app_name
+        &self.context.app_name
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -130,10 +120,10 @@ impl Component for Icons {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.config.find_style(
-            &self.app_name,
-            self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-                && self.ui_state.selected.load(Ordering::Relaxed),
+        let style = self.get_config().find_style(
+            &self.get_app_name(),
+            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+                && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
         let (width, height) = self
@@ -164,10 +154,10 @@ impl Component for Icons {
     }
 
     fn get_render_bounds(&self) -> Bounds {
-        let style = self.config.find_style(
-            &self.app_name,
-            self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-                && self.ui_state.selected.load(Ordering::Relaxed),
+        let style = self.get_config().find_style(
+            &self.get_app_name(),
+            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+                && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
         let (width, height) = self
@@ -205,10 +195,10 @@ impl Component for Icons {
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
-        let style = self.config.find_style(
-            &self.app_name,
-            self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-                && self.ui_state.selected.load(Ordering::Relaxed),
+        let style = self.get_config().find_style(
+            self.get_app_name(),
+            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+                && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
         let mut bounds = self.get_render_bounds();
@@ -219,7 +209,7 @@ impl Component for Icons {
                 top: bounds.y,
                 width: bounds.width,
                 height: bounds.height,
-                scale: self.ui_state.scale.load(Ordering::Relaxed),
+                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
                     left: bounds.x as u32,
@@ -232,19 +222,19 @@ impl Component for Icons {
                 depth: 0.9,
             });
 
-            bounds.x += bounds.height - self.config.general.app_icon_size as f32;
-            bounds.y += bounds.height - self.config.general.app_icon_size as f32;
+            bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
+            bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
         }
 
         if let Some(app_icon) = self.app_icon.as_ref() {
-            let app_icon_size = self.config.general.app_icon_size as f32;
+            let app_icon_size = self.get_config().general.app_icon_size as f32;
 
             texture_areas.push(TextureArea {
                 left: bounds.x,
                 top: bounds.y,
                 width: app_icon_size,
                 height: app_icon_size,
-                scale: self.ui_state.scale.load(Ordering::Relaxed),
+                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
                     left: bounds.x as u32,
@@ -332,7 +322,6 @@ mod tests {
     use super::*;
     use image::{DynamicImage, RgbaImage};
     use std::path::{Path, PathBuf};
-    use std::sync::Arc;
 
     #[test]
     fn cache_insert_and_retrieve() {
@@ -348,14 +337,17 @@ mod tests {
 
     #[test]
     fn new_with_image_data() {
-        let config = Arc::new(Config::default());
-        let ui_state = UiState::default();
-
         let img = RgbaImage::new(64, 64);
         let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         let image = Image::Data(image_data.clone());
-        let icons = Icons::new(1, Some(&image), None, config, ui_state, Arc::from("app"));
+        let context = components::Context {
+            id: 1,
+            config: Config::default().into(),
+            ui_state: UiState::default(),
+            app_name: "app".into(),
+        };
+        let icons = Icons::new(context, Some(&image), None);
 
         assert!(icons.icon.is_some());
         assert_eq!(icons.icon.unwrap().width(), 64);

@@ -1,18 +1,15 @@
 use crate::{
     Urgency,
-    components::{Bounds, Component},
+    components::{self, Bounds, Component},
     config::{self, Config, Insets, Size, border::BorderRadius},
     manager::UiState,
     rendering::texture_renderer,
     utils::buffers,
 };
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::atomic::Ordering;
 
 pub struct Progress {
-    id: u32,
-    app_name: Arc<str>,
-    ui_state: UiState,
-    config: Arc<Config>,
+    context: components::Context,
     value: i32,
     x: f32,
     y: f32,
@@ -23,19 +20,19 @@ impl Component for Progress {
     type Style = config::Progress;
 
     fn get_config(&self) -> &Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_app_name(&self) -> &str {
-        &self.app_name
+        &self.context.app_name
     }
 
     fn get_id(&self) -> u32 {
-        self.id
+        self.context.id
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -43,10 +40,10 @@ impl Component for Progress {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.config.find_style(
-            &self.app_name,
-            self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-                && self.ui_state.selected.load(Ordering::Relaxed),
+        let style = self.get_config().find_style(
+            &self.get_app_name(),
+            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+                && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
         let element_width = style.progress.width.resolve(self.width);
@@ -90,10 +87,10 @@ impl Component for Progress {
     fn get_render_bounds(&self) -> Bounds {
         let bounds = self.get_bounds();
 
-        let style = self.config.find_style(
-            &self.app_name,
-            self.ui_state.selected_id.load(Ordering::Relaxed) == self.id
-                && self.ui_state.selected.load(Ordering::Relaxed),
+        let style = self.get_config().find_style(
+            &self.get_app_name(),
+            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+                && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
         let remaining_space = self.width - bounds.width;
@@ -164,7 +161,7 @@ impl Component for Progress {
                 border_radius: border_radius.into(),
                 border_size: border_size.into(),
                 border_color: style.border.color.to_linear(urgency),
-                scale: self.ui_state.scale.load(Ordering::Relaxed),
+                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 depth: 0.8,
             });
         }
@@ -199,7 +196,7 @@ impl Component for Progress {
                     border_radius: border_radius.into(),
                     border_size: border_size.into(),
                     border_color: style.border.color.to_linear(urgency),
-                    scale: self.ui_state.scale.load(Ordering::Relaxed),
+                    scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                     depth: 0.8,
                 });
             }
@@ -214,18 +211,9 @@ impl Component for Progress {
 }
 
 impl Progress {
-    pub fn new(
-        id: u32,
-        value: i32,
-        ui_state: UiState,
-        config: Arc<Config>,
-        app_name: Arc<str>,
-    ) -> Self {
+    pub fn new(context: components::Context, value: i32) -> Self {
         Self {
-            id,
-            app_name,
-            config,
-            ui_state,
+            context,
             value,
             x: 0.,
             y: 0.,
@@ -252,10 +240,13 @@ mod tests {
     };
 
     fn create_test_progress(value: i32) -> Progress {
-        let config = Arc::new(Config::default());
-
-        let app_name = Arc::from("test_app");
-        let mut progress = Progress::new(1, value, UiState::default(), config, app_name);
+        let context = components::Context {
+            id: 1,
+            app_name: Arc::from("test_app"),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut progress = Progress::new(context, value);
         progress.set_width(300.0);
         progress.set_position(0.0, 0.0);
 
@@ -266,12 +257,12 @@ mod tests {
     fn test_initialization() {
         let progress = create_test_progress(50);
 
-        assert_eq!(progress.id, 1);
+        assert_eq!(progress.get_id(), 1);
         assert_eq!(progress.value, 50);
         assert_eq!(progress.x, 0.0);
         assert_eq!(progress.y, 0.0);
         assert_eq!(progress.width, 300.0);
-        assert_eq!(&*progress.app_name, "test_app");
+        assert_eq!(&*progress.get_app_name(), "test_app");
     }
 
     #[test]
@@ -420,15 +411,17 @@ mod tests {
 
     #[test]
     fn test_selection_state() {
-        let config = Arc::new(Config::default());
-        let ui_state = UiState {
-            selected_id: Arc::new(AtomicU32::new(1)),
-            selected: Arc::new(AtomicBool::new(true)),
-            ..Default::default()
+        let context = components::Context {
+            id: 1,
+            app_name: Arc::from("test_app"),
+            ui_state: UiState {
+                selected_id: Arc::new(AtomicU32::new(1)),
+                selected: Arc::new(AtomicBool::new(true)),
+                ..Default::default()
+            },
+            config: Arc::new(Config::default()),
         };
-
-        let app_name = Arc::from("test_app");
-        let progress = Progress::new(1, 50, ui_state, config, app_name);
+        let progress = Progress::new(context, 50);
 
         assert!(progress.get_ui_state().selected.load(Ordering::Relaxed));
         assert_eq!(

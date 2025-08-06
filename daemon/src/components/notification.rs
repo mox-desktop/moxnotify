@@ -5,6 +5,7 @@ use super::text::Text;
 use super::text::body::Body;
 use super::text::summary::Summary;
 use super::{Bounds, UiState};
+use crate::components;
 use crate::manager::Reason;
 use crate::rendering::texture_renderer;
 use crate::{
@@ -59,14 +60,14 @@ impl NotificationState {
 
     pub fn set_position(&mut self, x: f32, y: f32) {
         match self {
-            Self::Empty(_) => panic!("There's no reason to set position on an empty notification"),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.set_position(x, y),
         }
     }
 
     pub fn hovered(&self) -> bool {
         match self {
-            Self::Empty(_) => panic!("There's no reason to check if empty notification is hovered"),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.hovered(),
         }
     }
@@ -74,7 +75,7 @@ impl NotificationState {
     pub fn get_bounds(&self) -> Bounds {
         match self {
             Self::Empty(_) => {
-                panic!("There's no reason to retrieve bounds if notification is empty")
+                unreachable!()
             }
             Self::Ready(n) => n.get_bounds(),
         }
@@ -83,7 +84,7 @@ impl NotificationState {
     pub fn get_render_bounds(&self) -> Bounds {
         match self {
             Self::Empty(_) => {
-                panic!("There's no reason to retrieve render bounds if notification is empty")
+                unreachable!()
             }
             Self::Ready(n) => n.get_render_bounds(),
         }
@@ -92,7 +93,7 @@ impl NotificationState {
     pub fn unhover(&mut self) {
         match self {
             Self::Empty(_) => {
-                panic!("There's no reason to unhover an empty notification")
+                unreachable!()
             }
             Self::Ready(n) => n.unhover(),
         }
@@ -137,9 +138,9 @@ pub struct Notification<State> {
     pub registration_token: Option<RegistrationToken>,
     pub buttons: Option<ButtonManager<Finished>>,
     pub data: NotificationData,
-    ui_state: UiState,
     pub summary: Option<Summary>,
     pub body: Option<Body>,
+    context: components::Context,
     _state: std::marker::PhantomData<State>,
 }
 
@@ -153,19 +154,19 @@ impl Component for Notification<Ready> {
     type Style = StyleState;
 
     fn get_config(&self) -> &Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_app_name(&self) -> &str {
-        &self.data.app_name
+        &self.context.app_name
     }
 
     fn get_id(&self) -> u32 {
-        self.data.id
+        self.context.id
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -221,7 +222,7 @@ impl Component for Notification<Ready> {
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
             border_color: style.border.color.to_linear(urgency),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.9,
         }]
     }
@@ -320,8 +321,8 @@ impl Component for Notification<Ready> {
 
             progress.set_width(available_width);
 
-            let is_selected = self.ui_state.selected.load(Ordering::Relaxed)
-                && self.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
+            let is_selected = self.context.ui_state.selected.load(Ordering::Relaxed)
+                && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
             let selected_style = self.config.find_style(&self.data.app_name, is_selected);
 
             let progress_x =
@@ -488,7 +489,15 @@ impl<State> Notification<State> {
         data: NotificationData,
         ui_state: UiState,
     ) -> Notification<Empty> {
+        let context = components::Context {
+            id: data.id,
+            app_name: Arc::clone(&data.app_name),
+            config: Arc::clone(&config),
+            ui_state: ui_state.clone(),
+        };
+
         Notification {
+            context,
             summary: None,
             progress: None,
             y: 0.,
@@ -499,7 +508,6 @@ impl<State> Notification<State> {
             config: Arc::clone(&config),
             hovered: false,
             registration_token: None,
-            ui_state,
             body: None,
             _state: std::marker::PhantomData,
         }
@@ -512,10 +520,18 @@ impl<State> Notification<State> {
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification<Ready> {
+        let context = components::Context {
+            id: data.id,
+            app_name: Arc::clone(&data.app_name),
+            config: Arc::clone(&config),
+            ui_state: ui_state.clone(),
+        };
+
         if data.app_name == "next_notification_count".into()
             || data.app_name == "prev_notification_count".into()
         {
             return Notification {
+                context,
                 y: 0.,
                 x: 0.,
                 hovered: false,
@@ -524,7 +540,6 @@ impl<State> Notification<State> {
                 progress: None,
                 registration_token: None,
                 buttons: None,
-                ui_state: ui_state.clone(),
                 summary: None,
                 body: None,
                 data,
@@ -534,26 +549,12 @@ impl<State> Notification<State> {
 
         let icons = match (data.hints.image.as_ref(), data.app_icon.as_deref()) {
             (None, None) => None,
-            (image, app_icon) => Some(Icons::new(
-                data.id,
-                image,
-                app_icon,
-                Arc::clone(&config),
-                ui_state.clone(),
-                Arc::clone(&data.app_name),
-            )),
+            (image, app_icon) => Some(Icons::new(context.clone(), image, app_icon)),
         };
 
-        let mut buttons = ButtonManager::new(
-            data.id,
-            data.hints.urgency,
-            Arc::clone(&data.app_name),
-            ui_state.clone(),
-            sender,
-            Arc::clone(&config),
-        )
-        .add_dismiss(font_system)
-        .add_actions(&data.actions, font_system);
+        let mut buttons = ButtonManager::new(context.clone(), data.hints.urgency, sender)
+            .add_dismiss(font_system)
+            .add_actions(&data.actions, font_system);
 
         let dismiss_button = buttons
             .buttons()
@@ -567,13 +568,7 @@ impl<State> Notification<State> {
         let body = match data.body.is_empty() {
             true => None,
             false => {
-                let mut body = Body::new(
-                    data.id,
-                    Arc::clone(&config),
-                    Arc::clone(&data.app_name),
-                    ui_state.clone(),
-                    font_system,
-                );
+                let mut body = Body::new(context.clone(), font_system);
                 body.set_text(font_system, &data.body);
                 body.set_size(
                     font_system,
@@ -597,13 +592,7 @@ impl<State> Notification<State> {
         let summary = match data.summary.is_empty() {
             true => None,
             false => {
-                let mut summary = Summary::new(
-                    data.id,
-                    Arc::clone(&config),
-                    Arc::clone(&data.app_name),
-                    ui_state.clone(),
-                    font_system,
-                );
+                let mut summary = Summary::new(context.clone(), font_system);
                 summary.set_text(font_system, &data.summary);
                 summary.set_size(
                     font_system,
@@ -624,15 +613,11 @@ impl<State> Notification<State> {
 
         Notification {
             summary,
-            progress: data.hints.value.map(|value| {
-                Progress::new(
-                    data.id,
-                    value,
-                    ui_state.clone(),
-                    Arc::clone(&config),
-                    Arc::clone(&data.app_name),
-                )
-            }),
+            progress: data
+                .hints
+                .value
+                .map(|value| Progress::new(context.clone(), value)),
+            context,
             y: 0.,
             x: 0.,
             icons,
@@ -641,7 +626,6 @@ impl<State> Notification<State> {
             config,
             hovered: false,
             registration_token: None,
-            ui_state: ui_state.clone(),
             body,
             _state: std::marker::PhantomData,
         }
@@ -660,13 +644,7 @@ impl<State> Notification<State> {
         ) {
             (Some(progress), Some(value), false) => progress.set_value(value),
             (None, Some(value), _) => {
-                self.progress = Some(Progress::new(
-                    data.id,
-                    value,
-                    self.ui_state.clone(),
-                    Arc::clone(&self.config),
-                    Arc::clone(&data.app_name),
-                ))
+                self.progress = Some(Progress::new(self.context.clone(), value))
             }
             _ => {}
         }
@@ -674,28 +652,15 @@ impl<State> Notification<State> {
         match (self.body.as_mut(), self.data.body == data.body) {
             (Some(body), false) => body.set_text(font_system, &data.body),
             (None, _) => {
-                self.body = Some(Body::new(
-                    data.id,
-                    Arc::clone(&self.config),
-                    Arc::clone(&data.app_name),
-                    self.ui_state.clone(),
-                    font_system,
-                ));
+                self.body = Some(Body::new(self.context.clone(), font_system));
             }
             _ => {}
         }
 
         if self.data.actions != data.actions || self.data.body != data.body {
-            let mut buttons = ButtonManager::new(
-                data.id,
-                *self.urgency(),
-                Arc::clone(&data.app_name),
-                self.ui_state.clone(),
-                sender,
-                Arc::clone(&self.config),
-            )
-            .add_dismiss(font_system)
-            .add_actions(&data.actions, font_system);
+            let mut buttons = ButtonManager::new(self.context.clone(), *self.urgency(), sender)
+                .add_dismiss(font_system)
+                .add_actions(&data.actions, font_system);
 
             if let Some(body) = &self.body {
                 buttons = buttons.add_anchors(&body.anchors, font_system);
@@ -707,13 +672,7 @@ impl<State> Notification<State> {
         match (self.summary.as_mut(), self.data.summary == data.summary) {
             (Some(summary), false) => summary.set_text(font_system, &data.summary),
             (None, _) => {
-                self.summary = Some(Summary::new(
-                    data.id,
-                    Arc::clone(&self.config),
-                    Arc::clone(&data.app_name),
-                    self.ui_state.clone(),
-                    font_system,
-                ));
+                self.summary = Some(Summary::new(self.context.clone(), font_system));
             }
             _ => {}
         }
@@ -822,26 +781,12 @@ impl Notification<Empty> {
             self.data.app_icon.as_deref(),
         ) {
             (None, None) => None,
-            (image, app_icon) => Some(Icons::new(
-                self.data.id,
-                image,
-                app_icon,
-                Arc::clone(&self.config),
-                self.ui_state.clone(),
-                Arc::clone(&self.data.app_name),
-            )),
+            (image, app_icon) => Some(Icons::new(self.context.clone(), image, app_icon)),
         };
 
-        let mut buttons = ButtonManager::new(
-            self.data.id,
-            self.data.hints.urgency,
-            Arc::clone(&self.data.app_name),
-            self.ui_state.clone(),
-            sender,
-            Arc::clone(&self.config),
-        )
-        .add_dismiss(font_system)
-        .add_actions(&self.data.actions, font_system);
+        let mut buttons = ButtonManager::new(self.context.clone(), self.data.hints.urgency, sender)
+            .add_dismiss(font_system)
+            .add_actions(&self.data.actions, font_system);
 
         let dismiss_button = buttons
             .buttons()
@@ -855,13 +800,7 @@ impl Notification<Empty> {
         let body = match self.data.body.is_empty() {
             true => None,
             false => {
-                let mut body = Body::new(
-                    self.data.id,
-                    Arc::clone(&self.config),
-                    Arc::clone(&self.data.app_name),
-                    self.ui_state.clone(),
-                    font_system,
-                );
+                let mut body = Body::new(self.context.clone(), font_system);
                 body.set_text(font_system, &self.data.body);
                 body.set_size(
                     font_system,
@@ -885,13 +824,7 @@ impl Notification<Empty> {
         let summary = match self.data.summary.is_empty() {
             true => None,
             false => {
-                let mut summary = Summary::new(
-                    self.data.id,
-                    Arc::clone(&self.config),
-                    Arc::clone(&self.data.app_name),
-                    self.ui_state.clone(),
-                    font_system,
-                );
+                let mut summary = Summary::new(self.context.clone(), font_system);
                 summary.set_text(font_system, &self.data.summary);
                 summary.set_size(
                     font_system,
@@ -912,15 +845,11 @@ impl Notification<Empty> {
 
         Notification {
             summary,
-            progress: self.data.hints.value.map(|value| {
-                Progress::new(
-                    self.data.id,
-                    value,
-                    self.ui_state.clone(),
-                    Arc::clone(&self.config),
-                    Arc::clone(&self.data.app_name),
-                )
-            }),
+            progress: self
+                .data
+                .hints
+                .value
+                .map(|value| Progress::new(self.context.clone(), value)),
             y: 0.,
             x: 0.,
             icons,
@@ -929,8 +858,8 @@ impl Notification<Empty> {
             config: self.config,
             hovered: false,
             registration_token: self.registration_token,
-            ui_state: self.ui_state,
             body,
+            context: self.context,
             _state: std::marker::PhantomData,
         }
     }

@@ -4,8 +4,8 @@ use super::{
 };
 use crate::{
     Urgency,
-    components::{Bounds, Component, Data, notification::NotificationId},
-    config::{self, Config},
+    components::{self, Bounds, Component, Data},
+    config,
     manager::UiState,
     utils::buffers,
 };
@@ -23,16 +23,13 @@ pub struct Anchor {
 
 impl Anchor {
     pub fn get_bounds(&self) -> Bounds {
-        Bounds { ..self.bounds }
+        self.bounds.clone()
     }
 }
 
 pub struct Body {
-    id: NotificationId,
-    app_name: Arc<str>,
-    ui_state: UiState,
+    context: components::Context,
     pub anchors: Vec<Arc<Anchor>>,
-    config: Arc<Config>,
     pub buffer: Buffer,
     x: f32,
     y: f32,
@@ -345,19 +342,19 @@ impl Component for Body {
     type Style = config::text::Body;
 
     fn get_config(&self) -> &crate::config::Config {
-        &self.config
+        &self.context.config
     }
 
     fn get_app_name(&self) -> &str {
-        &self.app_name
+        &self.context.app_name
     }
 
     fn get_id(&self) -> u32 {
-        self.id
+        self.context.id
     }
 
     fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+        &self.context.ui_state
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -375,7 +372,7 @@ impl Component for Body {
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
             border_color: style.border.color.to_linear(urgency),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.context.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
@@ -403,7 +400,7 @@ impl Component for Body {
             buffer: &self.buffer,
             left,
             top,
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.context.ui_state.scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
                 left: left as i32,
                 top: top as i32,
@@ -474,15 +471,9 @@ impl Component for Body {
 }
 
 impl Body {
-    pub fn new(
-        id: NotificationId,
-        config: Arc<Config>,
-        app_name: Arc<str>,
-        ui_state: UiState,
-        font_system: &mut FontSystem,
-    ) -> Self {
+    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size = config.styles.default.font.size * dpi / 72.0;
+        let font_size = context.config.styles.default.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),
@@ -490,13 +481,10 @@ impl Body {
         buffer.shape_until_scroll(font_system, true);
 
         Self {
-            id,
+            context,
             buffer,
             x: 0.,
             y: 0.,
-            config,
-            ui_state,
-            app_name,
             anchors: Vec::new(),
         }
     }
@@ -519,13 +507,13 @@ mod tests {
     fn test_body() {
         let mut font_system = FontSystem::new();
 
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_text(
             &mut font_system,
@@ -544,13 +532,13 @@ mod tests {
     #[test]
     fn test_plain_url_detection() {
         let mut font_system = FontSystem::new();
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_text(
             &mut font_system,
@@ -565,13 +553,13 @@ mod tests {
     #[test]
     fn test_multiple_urls() {
         let mut font_system = FontSystem::new();
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_text(
             &mut font_system,
@@ -738,13 +726,13 @@ mod tests {
     #[test]
     fn test_attribute_inheritance() {
         let mut font_system = FontSystem::new();
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "test_app".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_text(
             &mut font_system,
@@ -758,13 +746,13 @@ mod tests {
     #[test]
     fn test_bounds_calculation() {
         let mut font_system = FontSystem::new();
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "test_app".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_position(10.0, 20.0);
         body.set_text(
@@ -782,13 +770,13 @@ mod tests {
     #[test]
     fn test_render_data() {
         let mut font_system = FontSystem::new();
-        let mut body = Body::new(
-            0,
-            Arc::new(Config::default()),
-            "test_app".into(),
-            UiState::default(),
-            &mut font_system,
-        );
+        let context = components::Context {
+            id: 0,
+            app_name: "".into(),
+            config: Arc::new(Config::default()),
+            ui_state: UiState::default(),
+        };
+        let mut body = Body::new(context, &mut font_system);
 
         body.set_position(10.0, 20.0);
         body.set_text(&mut font_system, "<span color=\"blue\">Blue text</span>");
