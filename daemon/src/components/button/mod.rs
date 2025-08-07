@@ -7,11 +7,10 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config::{
-        self, Config,
+        self,
         button::ButtonState,
         keymaps::{self},
     },
-    manager::UiState,
     rendering::{text_renderer, texture_renderer},
     utils::buffers,
 };
@@ -84,8 +83,7 @@ impl ButtonManager<NotReady> {
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        let app_name = Arc::clone(&self.context.app_name);
-        self.internal_add_actions(app_name, actions, font_system)
+        self.internal_add_actions(actions, font_system)
     }
 
     pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
@@ -105,16 +103,13 @@ impl ButtonManager<NotReady> {
         let text = text_renderer::Text::new(font, font_system, "X");
 
         let button = DismissButton {
-            id: self.context.id,
-            app_name: "".into(),
-            ui_state: self.context.ui_state.clone(),
             hint: Hint::new(self.context.clone(), "", font_system),
             text,
             x: 0.,
             y: 0.,
-            config: Arc::clone(&self.context.config),
             state: State::Unhovered,
             tx: self.sender.clone(),
+            context: self.context.clone(),
         };
 
         self.buttons.push(Box::new(button));
@@ -135,8 +130,7 @@ impl ButtonManager<Ready> {
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        let app_name = Arc::clone(&self.context.app_name);
-        self.internal_add_actions(app_name, actions, font_system)
+        self.internal_add_actions(actions, font_system)
     }
 
     pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
@@ -335,17 +329,14 @@ impl<S> ButtonManager<S> {
         self.buttons.extend(anchors.iter().map(|anchor| {
             let text = text_renderer::Text::new(font, font_system, "");
             Box::new(AnchorButton {
-                id: self.context.id,
+                context: self.context.clone(),
                 x: 0.,
                 y: 0.,
                 hint: Hint::new(self.context.clone(), "", font_system),
-                config: Arc::clone(&self.context.config),
                 state: State::Unhovered,
                 tx: self.sender.clone(),
                 text,
-                ui_state: self.context.ui_state.clone(),
                 anchor: Arc::clone(anchor),
-                app_name: Arc::clone(&self.context.app_name),
             }) as Box<dyn Button<Style = ButtonState>>
         }));
 
@@ -354,7 +345,6 @@ impl<S> ButtonManager<S> {
 
     fn internal_add_actions(
         mut self,
-        app_name: Arc<str>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
@@ -378,17 +368,14 @@ impl<S> ButtonManager<S> {
                 let text = text_renderer::Text::new(font, font_system, &action.1);
 
                 Box::new(ActionButton {
-                    id: self.context.id,
-                    ui_state: self.context.ui_state.clone(),
+                    context: self.context.clone(),
                     hint: Hint::new(self.context.clone(), "", font_system),
                     text,
                     x: 0.,
                     y: 0.,
-                    config: Arc::clone(&self.context.config),
                     action: action.0,
                     state: State::Unhovered,
                     width: 0.,
-                    app_name: Arc::clone(&app_name),
                     tx: self.sender.clone(),
                 }) as Box<dyn Button<Style = ButtonState>>
             })
@@ -442,20 +429,8 @@ impl Hint {
 impl Component for Hint {
     type Style = config::Hint;
 
-    fn get_config(&self) -> &Config {
-        &self.context.config
-    }
-
-    fn get_id(&self) -> u32 {
-        self.context.id
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.context.app_name
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.context.ui_state
+    fn get_context(&self) -> &components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {

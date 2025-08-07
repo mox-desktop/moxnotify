@@ -1,45 +1,28 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
     Urgency,
-    components::{Bounds, Component},
-    config::{Config, button::ButtonState},
-    manager::UiState,
-    rendering::text_renderer,
-    rendering::texture_renderer,
+    components::{self, Bounds, Component},
+    config::button::ButtonState,
+    rendering::{text_renderer, texture_renderer},
     utils::buffers,
 };
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::atomic::Ordering;
 
 pub struct DismissButton {
-    pub id: u32,
+    pub context: components::Context,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub config: Arc<Config>,
     pub text: text_renderer::Text,
     pub state: State,
-    pub ui_state: UiState,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
-    pub app_name: Arc<str>,
 }
 
 impl Component for DismissButton {
     type Style = ButtonState;
 
-    fn get_id(&self) -> u32 {
-        self.id
-    }
-
-    fn get_config(&self) -> &Config {
-        &self.config
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.app_name
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+    fn get_context(&self) -> &components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -64,7 +47,7 @@ impl Component for DismissButton {
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
             border_color: style.border.color.to_linear(urgency),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
@@ -98,7 +81,7 @@ impl Component for DismissButton {
             buffer: &self.text.buffer,
             left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
             top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
-            scale: self.ui_state.scale.load(Ordering::Relaxed),
+            scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
                 left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
                 top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
@@ -179,7 +162,7 @@ impl Button for DismissButton {
         if let Some(tx) = self.tx.as_ref() {
             _ = tx.send(crate::Event::Dismiss {
                 all: false,
-                id: self.id,
+                id: self.get_id(),
             });
         }
     }
@@ -222,7 +205,6 @@ mod tests {
         rendering::text_renderer::Text,
     };
     use glyphon::FontSystem;
-    use std::sync::Arc;
 
     #[test]
     fn test_dismiss_button() {
@@ -237,8 +219,6 @@ mod tests {
         let (tx, rx) = calloop::channel::channel();
         let test_id = 10;
         let button = DismissButton {
-            id: test_id,
-            app_name: "".into(),
             x: 0.,
             y: 0.,
             hint,
@@ -248,9 +228,8 @@ mod tests {
                 "",
             ),
             state: State::Unhovered,
-            config: Arc::clone(&context.config),
-            ui_state: context.ui_state,
             tx: Some(tx),
+            context,
         };
 
         button.click();

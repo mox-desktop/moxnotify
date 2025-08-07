@@ -39,13 +39,23 @@ pub struct Bounds {
 pub trait Component {
     type Style;
 
-    fn get_config(&self) -> &Config;
+    fn get_context(&self) -> &Context;
 
-    fn get_app_name(&self) -> &str;
+    fn get_config(&self) -> &Config {
+        &self.get_context().config
+    }
 
-    fn get_id(&self) -> u32;
+    fn get_app_name(&self) -> &str {
+        &self.get_context().app_name
+    }
 
-    fn get_ui_state(&self) -> &UiState;
+    fn get_id(&self) -> u32 {
+        self.get_context().id
+    }
+
+    fn get_ui_state(&self) -> &UiState {
+        &self.get_context().ui_state
+    }
 
     fn get_notification_style(&self) -> &StyleState {
         self.get_config().find_style(

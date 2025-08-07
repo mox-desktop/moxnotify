@@ -1,8 +1,7 @@
 use crate::{
     Urgency,
     components::{self, Bounds, Component},
-    config::{self, Config, Insets, Size, border::BorderRadius},
-    manager::UiState,
+    config::{self, Insets, Size, border::BorderRadius},
     rendering::texture_renderer,
     utils::buffers,
 };
@@ -19,20 +18,8 @@ pub struct Progress {
 impl Component for Progress {
     type Style = config::Progress;
 
-    fn get_config(&self) -> &Config {
-        &self.context.config
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.context.app_name
-    }
-
-    fn get_id(&self) -> u32 {
-        self.context.id
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.context.ui_state
+    fn get_context(&self) -> &components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -41,7 +28,7 @@ impl Component for Progress {
 
     fn get_bounds(&self) -> Bounds {
         let style = self.get_config().find_style(
-            &self.get_app_name(),
+            self.get_app_name(),
             self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
@@ -88,7 +75,7 @@ impl Component for Progress {
         let bounds = self.get_bounds();
 
         let style = self.get_config().find_style(
-            &self.get_app_name(),
+            self.get_app_name(),
             self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
@@ -243,8 +230,8 @@ mod tests {
         let context = components::Context {
             id: 1,
             app_name: Arc::from("test_app"),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
+            config: Arc::new(crate::Config::default()),
+            ui_state: crate::manager::UiState::default(),
         };
         let mut progress = Progress::new(context, value);
         progress.set_width(300.0);
@@ -414,12 +401,12 @@ mod tests {
         let context = components::Context {
             id: 1,
             app_name: Arc::from("test_app"),
-            ui_state: UiState {
+            ui_state: crate::manager::UiState {
                 selected_id: Arc::new(AtomicU32::new(1)),
                 selected: Arc::new(AtomicBool::new(true)),
                 ..Default::default()
             },
-            config: Arc::new(Config::default()),
+            config: Arc::new(crate::Config::default()),
         };
         let progress = Progress::new(context, 50);
 

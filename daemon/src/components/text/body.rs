@@ -6,7 +6,6 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
-    manager::UiState,
     utils::buffers,
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
@@ -341,20 +340,8 @@ impl Text for Body {
 impl Component for Body {
     type Style = config::text::Body;
 
-    fn get_config(&self) -> &crate::config::Config {
-        &self.context.config
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.context.app_name
-    }
-
-    fn get_id(&self) -> u32 {
-        self.context.id
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.context.ui_state
+    fn get_context(&self) -> &components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {

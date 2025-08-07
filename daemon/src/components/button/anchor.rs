@@ -1,48 +1,32 @@
 use super::{Button, Component, Hint, State};
 use crate::{
-    components::{Bounds, text::body::Anchor},
-    config::{Config, button::ButtonState},
-    manager::UiState,
+    components::{self, Bounds, text::body::Anchor},
+    config::button::ButtonState,
     rendering::{text_renderer::Text, texture_renderer},
     utils::buffers,
 };
 use std::sync::Arc;
 
 pub struct AnchorButton {
-    pub id: u32,
+    pub context: components::Context,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub config: Arc<Config>,
     pub text: Text,
     pub state: State,
-    pub ui_state: UiState,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
     pub anchor: Arc<Anchor>,
-    pub app_name: Arc<str>,
 }
 
 impl Component for AnchorButton {
     type Style = ButtonState;
 
-    fn get_config(&self) -> &Config {
-        &self.config
-    }
-
-    fn get_id(&self) -> u32 {
-        self.id
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.app_name
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.ui_state
+    fn get_context(&self) -> &crate::components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
-        &self.config.styles.hover.buttons.dismiss.default
+        &self.context.config.styles.hover.buttons.dismiss.default
     }
 
     fn get_instances(&self, urgency: &crate::Urgency) -> Vec<buffers::Instance> {

@@ -1,8 +1,7 @@
 use crate::{
     Image,
     components::{self, Bounds, Component},
-    config::{Config, StyleState},
-    manager::UiState,
+    config::StyleState,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
     utils::{buffers, image_data::ImageData},
 };
@@ -99,20 +98,8 @@ impl Icons {
 impl Component for Icons {
     type Style = StyleState;
 
-    fn get_config(&self) -> &Config {
-        &self.context.config
-    }
-
-    fn get_id(&self) -> u32 {
-        self.context.id
-    }
-
-    fn get_app_name(&self) -> &str {
-        &self.context.app_name
-    }
-
-    fn get_ui_state(&self) -> &UiState {
-        &self.context.ui_state
+    fn get_context(&self) -> &components::Context {
+        &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
@@ -121,7 +108,7 @@ impl Component for Icons {
 
     fn get_bounds(&self) -> Bounds {
         let style = self.get_config().find_style(
-            &self.get_app_name(),
+            self.get_app_name(),
             self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
@@ -155,7 +142,7 @@ impl Component for Icons {
 
     fn get_render_bounds(&self) -> Bounds {
         let style = self.get_config().find_style(
-            &self.get_app_name(),
+            self.get_app_name(),
             self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
@@ -343,8 +330,8 @@ mod tests {
         let image = Image::Data(image_data.clone());
         let context = components::Context {
             id: 1,
-            config: Config::default().into(),
-            ui_state: UiState::default(),
+            config: crate::Config::default().into(),
+            ui_state: crate::manager::UiState::default(),
             app_name: "app".into(),
         };
         let icons = Icons::new(context, Some(&image), None);
