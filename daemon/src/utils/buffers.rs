@@ -5,6 +5,7 @@ pub trait DataDescription {
     const ATTRIBS: &'static [wgpu::VertexAttribute];
     const STEP_MODE: wgpu::VertexStepMode;
 
+    #[must_use]
     fn desc() -> wgpu::VertexBufferLayout<'static>
     where
         Self: Sized,
@@ -200,6 +201,7 @@ pub struct DepthBuffer {
 }
 
 impl DepthBuffer {
+    #[must_use]
     pub fn new(device: &wgpu::Device, width: u32, height: u32) -> Self {
         let size = wgpu::Extent3d {
             width,
@@ -226,6 +228,7 @@ impl DepthBuffer {
         }
     }
 
+    #[must_use]
     pub fn view(&self) -> &TextureView {
         &self.view
     }
@@ -299,6 +302,7 @@ pub struct Projection {
 }
 
 impl Projection {
+    #[must_use]
     pub fn new(device: &wgpu::Device, left: f32, right: f32, top: f32, bottom: f32) -> Self {
         let projection = Mat4::projection(left, right, top, bottom);
 
@@ -331,8 +335,8 @@ impl Projection {
         });
 
         Self {
-            bind_group,
             bind_group_layout,
+            bind_group,
             buffer,
         }
     }

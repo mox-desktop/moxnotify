@@ -5,7 +5,7 @@ use crate::{
     components::{
         Component, Data,
         button::ButtonType,
-        notification::{Empty, Notification, NotificationId, NotificationState},
+        notification::{self, Empty, Notification, NotificationId, NotificationState},
         text::Text,
     },
     config::{Config, Queue, keymaps},
@@ -89,10 +89,13 @@ impl NotificationManager {
         }
     }
 
+    /// Inhibit notifications
     pub fn inhibit(&mut self) {
         self.inhibited = true;
     }
 
+    /// Stop inhibiting notifications and bring any inhibited
+    /// notifications to the view
     pub fn uninhibit(&mut self) {
         self.waiting = 0;
         self.inhibited = false;
@@ -220,7 +223,7 @@ impl NotificationManager {
                 if let Some(notification) = self.notifications.get(i) {
                     let extents = notification.get_bounds();
                     return acc + extents.height;
-                };
+                }
 
                 acc
             })
@@ -251,13 +254,16 @@ impl NotificationManager {
         }
     }
 
+    /// Returns the ID of the currently selected notification, if any.
     pub fn selected_id(&self) -> Option<NotificationId> {
-        match self.ui_state.selected.load(Ordering::Relaxed) {
-            true => Some(self.ui_state.selected_id.load(Ordering::Relaxed)),
-            false => None,
+        if self.ui_state.selected.load(Ordering::Relaxed) {
+            Some(self.ui_state.selected_id.load(Ordering::Relaxed))
+        } else {
+            None
         }
     }
 
+    /// Get mutable reference to the current selected notification
     pub fn selected_notification_mut(&mut self) -> Option<&mut NotificationState> {
         let id = self.selected_id();
         self.notifications
@@ -265,6 +271,10 @@ impl NotificationManager {
             .find(|notification| Some(notification.id()) == id)
     }
 
+    /// Selects a notification by its ID, updating the selection state and visible range.
+    ///
+    /// If the selected notification is outside the current visible range, it handles
+    /// the viewport to bring it into view. Also promotes unloaded notifications.
     pub fn select(&mut self, id: NotificationId) {
         let Some(new_index) = self.notifications.iter().position(|n| n.id() == id) else {
             return;
@@ -355,6 +365,7 @@ impl NotificationManager {
         self.update_size();
     }
 
+    /// Select next notification
     pub fn next(&mut self) {
         let next_notification_index = {
             let id = self.ui_state.selected_id.load(Ordering::Relaxed);
@@ -375,6 +386,7 @@ impl NotificationManager {
         }
     }
 
+    /// Select previous notification
     pub fn prev(&mut self) {
         let notification_index = {
             let id = self.ui_state.selected_id.load(Ordering::Relaxed);
@@ -395,6 +407,7 @@ impl NotificationManager {
         }
     }
 
+    /// Deselect notification and start expiration timer
     pub fn deselect(&mut self) {
         if !self.ui_state.selected.load(Ordering::Relaxed) {
             return;
@@ -409,7 +422,7 @@ impl NotificationManager {
                 match self.config.general.queue {
                     Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
                     Queue::Unordered => notification.start_timer(&self.loop_handle),
-                    _ => {}
+                    Queue::FIFO => {}
                 }
             }
         }
@@ -419,7 +432,7 @@ impl NotificationManager {
         self.waiting
     }
 
-    pub fn add_many(&mut self, data: Vec<NotificationData>) -> anyhow::Result<()> {
+    pub fn add_many(&mut self, data: Vec<NotificationData>) {
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
             .map(|data| {
@@ -434,14 +447,12 @@ impl NotificationManager {
         self.notifications.extend(new_notifications);
         self.promote_notifications();
         self.update_size();
-
-        Ok(())
     }
 
-    pub fn add(&mut self, data: NotificationData) -> anyhow::Result<()> {
+    pub fn add(&mut self, data: NotificationData) {
         if self.inhibited {
             self.waiting += 1;
-            return Ok(());
+            return;
         }
 
         if let Some((i, notification)) = self
@@ -458,7 +469,7 @@ impl NotificationManager {
             match self.config.general.queue {
                 Queue::FIFO if i == 0 => notification.start_timer(&self.loop_handle),
                 Queue::Unordered => notification.start_timer(&self.loop_handle),
-                _ => {}
+                Queue::FIFO => {}
             }
         } else {
             let mut notification = Notification::<Empty>::new_empty(
@@ -469,10 +480,10 @@ impl NotificationManager {
 
             match self.config.general.queue {
                 Queue::FIFO if self.notifications.is_empty() => {
-                    notification.start_timer(&self.loop_handle)
+                    notification.start_timer(&self.loop_handle);
                 }
                 Queue::Unordered => notification.start_timer(&self.loop_handle),
-                _ => {}
+                Queue::FIFO => {}
             }
 
             match self.history {
@@ -487,8 +498,6 @@ impl NotificationManager {
 
         self.promote_notifications();
         self.update_size();
-
-        Ok(())
     }
 
     pub fn dismiss(&mut self, id: NotificationId) {
@@ -513,6 +522,11 @@ impl NotificationManager {
             if let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
                 notification.start_timer(&self.loop_handle);
             }
+        }
+
+        // Deselect if there are no notifications left
+        if self.notifications.is_empty() {
+            self.deselect();
         }
     }
 
@@ -608,11 +622,11 @@ impl Moxnotify {
             .notifications
             .notifications()
             .range(range)
-            .map(|notification| notification.id())
+            .map(notification::NotificationState::id)
             .collect();
 
         if let Some(reason) = reason {
-            for id in ids.iter() {
+            for id in &ids {
                 _ = self
                     .emit_sender
                     .send(EmitEvent::NotificationClosed { id: *id, reason });
@@ -693,7 +707,7 @@ mod tests {
         );
 
         let data = NotificationData::default();
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert_eq!(manager.notifications().len(), 1);
     }
@@ -715,9 +729,9 @@ mod tests {
             ..Default::default()
         };
 
-        manager.add(data.clone()).unwrap();
+        manager.add(data.clone());
 
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert_eq!(manager.notifications().len(), 1);
     }
@@ -743,7 +757,7 @@ mod tests {
             notifications.push(data);
         }
 
-        manager.add_many(notifications).unwrap();
+        manager.add_many(notifications);
         assert_eq!(manager.notifications().len(), 5);
     }
 
@@ -763,7 +777,7 @@ mod tests {
             id: 123,
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert_eq!(manager.notifications().len(), 1);
 
@@ -787,7 +801,7 @@ mod tests {
             id: 1,
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert_eq!(manager.selected_id(), None);
 
@@ -818,7 +832,7 @@ mod tests {
                 id: i,
                 ..Default::default()
             };
-            manager.add(data).unwrap();
+            manager.add(data);
         }
 
         manager.next();
@@ -871,7 +885,7 @@ mod tests {
             id: 0,
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert_eq!(manager.notifications().len(), 1);
 
@@ -881,7 +895,7 @@ mod tests {
             id: 1,
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         assert!(manager.inhibited());
         assert_eq!(manager.notifications().len(), 1);
@@ -912,7 +926,7 @@ mod tests {
             summary: "summary".into(),
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         let data = manager.data();
         // Instances
@@ -942,7 +956,7 @@ mod tests {
             id: 1,
             ..Default::default()
         };
-        manager.add(data).unwrap();
+        manager.add(data);
 
         if let Some(notification) = manager.notifications.get_mut(0) {
             notification.set_position(10.0, 20.0);

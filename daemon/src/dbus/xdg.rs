@@ -41,7 +41,7 @@ impl NotificationHints {
                     "category" => nh.category = Str::try_from(v).ok().map(|s| s.as_str().into()),
                     "value" => nh.value = i32::try_from(v).ok(),
                     "desktop-entry" => {
-                        nh.desktop_entry = Str::try_from(v).ok().map(|s| s.as_str().into())
+                        nh.desktop_entry = Str::try_from(v).ok().map(|s| s.as_str().into());
                     }
                     "resident" => {
                         nh.resident = match v {
@@ -53,10 +53,10 @@ impl NotificationHints {
                         };
                     }
                     "sound-file" => {
-                        nh.sound_file = Str::try_from(v).ok().map(|s| Path::new(s.as_str()).into())
+                        nh.sound_file = Str::try_from(v).ok().map(|s| Path::new(s.as_str()).into());
                     }
                     "sound-name" => {
-                        nh.sound_name = Str::try_from(v).ok().map(|s| s.as_str().into())
+                        nh.sound_name = Str::try_from(v).ok().map(|s| s.as_str().into());
                     }
                     "suppress-sound" => {
                         nh.suppress_sound = match v {
@@ -159,13 +159,12 @@ impl NotificationsImpl {
         hints: HashMap<&str, zbus::zvariant::Value<'_>>,
         expire_timeout: i32,
     ) -> u32 {
-        let id = match replaces_id == 0 {
-            true => {
-                let id = self.next_id;
-                self.next_id = self.next_id.checked_add(1).unwrap_or(1);
-                id
-            }
-            false => replaces_id,
+        let id = if replaces_id == 0 {
+            let id = self.next_id;
+            self.next_id = self.next_id.checked_add(1).unwrap_or(1);
+            id
+        } else {
+            replaces_id
         };
 
         let app_icon: Option<Box<str>> = if app_icon.is_empty() {
@@ -289,7 +288,7 @@ pub async fn serve(
                     .await;
                 }
                 _ => {}
-            };
+            }
         }
     });
 

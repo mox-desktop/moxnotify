@@ -29,7 +29,7 @@ impl Component for AnchorButton {
         &self.context.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: &crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: crate::Urgency) -> Vec<buffers::Instance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
         vec![buffers::Instance {
@@ -44,7 +44,7 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: &crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
@@ -118,7 +118,7 @@ impl Button for AnchorButton {
     }
 
     fn unhover(&mut self) {
-        self.state = State::Unhovered
+        self.state = State::Unhovered;
     }
 
     fn set_hint(&mut self, hint: Hint) {

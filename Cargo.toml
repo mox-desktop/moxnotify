@@ -10,3 +10,14 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 panic = "abort"
+
+[workspace.package]
+keywords = ["notification", "daemon", "wayland", "keyboard", "desktop"]
+categories = ["gui", "command-line-utilities", "os", "visualization", "multimedia"]
+edition = "2024"
+homepage = "https://pipewire.org"
+license = "MIT"
+repository = "https://github.com/mox-desktop/moxnotify"
+version = "0.1.0"
+description = "Feature-rich hardware-accelerated keyboard driven Wayland notification daemon."
+readme = "README.md"

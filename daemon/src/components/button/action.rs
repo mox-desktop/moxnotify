@@ -27,7 +27,7 @@ impl Component for ActionButton {
         &self.context
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -46,7 +46,7 @@ impl Component for ActionButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: &Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
@@ -187,7 +187,7 @@ impl Button for ActionButton {
     }
 
     fn unhover(&mut self) {
-        self.state = State::Unhovered
+        self.state = State::Unhovered;
     }
 
     fn set_hint(&mut self, hint: Hint) {

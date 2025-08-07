@@ -236,7 +236,7 @@ impl ButtonManager<Finished> {
         let mut buttons = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_instances(&self.urgency))
+            .flat_map(|button| button.get_instances(self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -246,7 +246,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_instances(&self.urgency))
+                .flat_map(|button| button.hint().get_instances(self.urgency))
                 .collect::<Vec<_>>();
             buttons.extend_from_slice(&hints);
         }
@@ -258,7 +258,7 @@ impl ButtonManager<Finished> {
         let mut text_areas = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_text_areas(&self.urgency))
+            .flat_map(|button| button.get_text_areas(self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -268,7 +268,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_text_areas(&self.urgency));
+                .flat_map(|button| button.hint().get_text_areas(self.urgency));
             text_areas.extend(hints);
         }
 
@@ -279,7 +279,7 @@ impl ButtonManager<Finished> {
         let mut data = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_data(&self.urgency))
+            .flat_map(|button| button.get_data(self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -289,7 +289,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_data(&self.urgency));
+                .flat_map(|button| button.hint().get_data(self.urgency));
             data.extend(hints);
         }
 
@@ -477,7 +477,7 @@ impl Component for Hint {
         }
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let style = &self.context.config.styles.hover.hint;
         let bounds = self.get_render_bounds();
 
@@ -498,7 +498,7 @@ impl Component for Hint {
         self.y = y;
     }
 
-    fn get_text_areas(&self, urgency: &Urgency) -> Vec<TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
         let bounds = self.get_render_bounds();

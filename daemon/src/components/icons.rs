@@ -57,12 +57,11 @@ impl Icons {
         app_icon: Option<&str>,
     ) -> Self {
         let icon = match image {
-            Some(Image::Data(image_data)) => Some(
-                image_data
-                    .clone()
-                    .to_rgba()
-                    .resize(context.config.general.icon_size),
-            ),
+            Some(Image::Data(image_data)) => image_data
+                .clone()
+                .to_rgba()
+                .resize(context.config.general.icon_size)
+                .ok(),
             Some(Image::File(file)) => get_icon(file, context.config.general.icon_size as u16),
             Some(Image::Name(name)) => find_icon(
                 name,
@@ -113,24 +112,20 @@ impl Component for Icons {
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
-        let (width, height) = self
-            .icon
-            .as_ref()
-            .map(|i| {
-                (
-                    i.width() as f32
-                        + style.icon.padding.right
-                        + style.icon.padding.left
-                        + style.icon.margin.left
-                        + style.icon.margin.right,
-                    i.height() as f32
-                        + style.icon.padding.top
-                        + style.icon.padding.bottom
-                        + style.icon.margin.top
-                        + style.icon.margin.bottom,
-                )
-            })
-            .unwrap_or((0., 0.));
+        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
+            (
+                i.width() as f32
+                    + style.icon.padding.right
+                    + style.icon.padding.left
+                    + style.icon.margin.left
+                    + style.icon.margin.right,
+                i.height() as f32
+                    + style.icon.padding.top
+                    + style.icon.padding.bottom
+                    + style.icon.margin.top
+                    + style.icon.margin.bottom,
+            )
+        });
 
         Bounds {
             x: self.x,
@@ -147,16 +142,12 @@ impl Component for Icons {
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
-        let (width, height) = self
-            .icon
-            .as_ref()
-            .map(|i| {
-                (
-                    i.width() as f32 + style.icon.padding.right + style.icon.padding.left,
-                    i.height() as f32 + style.icon.padding.top + style.icon.padding.bottom,
-                )
-            })
-            .unwrap_or((0., 0.));
+        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
+            (
+                i.width() as f32 + style.icon.padding.right + style.icon.padding.left,
+                i.height() as f32 + style.icon.padding.top + style.icon.padding.bottom,
+            )
+        });
 
         Bounds {
             x: self.x + style.icon.margin.left,
@@ -166,11 +157,11 @@ impl Component for Icons {
         }
     }
 
-    fn get_instances(&self, _: &crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, _: crate::Urgency) -> Vec<buffers::Instance> {
         Vec::new()
     }
 
-    fn get_text_areas(&self, _: &crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
@@ -238,7 +229,7 @@ impl Component for Icons {
         texture_areas
     }
 
-    fn get_data(&self, _: &crate::Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, _: crate::Urgency) -> Vec<Data<'_>> {
         self.get_textures().into_iter().map(Data::Texture).collect()
     }
 }
@@ -249,7 +240,7 @@ where
 {
     let icon_path = freedesktop_icons::lookup(name.as_ref())
         .with_size(icon_size)
-        .with_theme(theme.as_ref().map(AsRef::as_ref).unwrap_or("hicolor"))
+        .with_theme(theme.as_ref().map_or("hicolor", AsRef::as_ref))
         .force_svg()
         .with_cache()
         .find()?;
@@ -300,8 +291,10 @@ where
     let image_data = image_data
         .ok()
         .map(|i| i.to_rgba().resize(icon_size as u32))?;
-    ICON_CACHE.insert(&icon_path, image_data.clone());
-    Some(image_data)
+    if let Ok(image_data) = image_data.as_ref() {
+        ICON_CACHE.insert(&icon_path, image_data.clone());
+    }
+    image_data.ok()
 }
 
 #[cfg(test)]

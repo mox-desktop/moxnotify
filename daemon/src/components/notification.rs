@@ -30,6 +30,7 @@ pub enum NotificationState {
 }
 
 impl NotificationState {
+    #[must_use]
     pub fn id(&self) -> NotificationId {
         match self {
             Self::Empty(n) => n.id(),
@@ -37,6 +38,7 @@ impl NotificationState {
         }
     }
 
+    #[must_use]
     pub fn data(&self) -> &NotificationData {
         match self {
             Self::Empty(n) => &n.data,
@@ -65,6 +67,7 @@ impl NotificationState {
         }
     }
 
+    #[must_use]
     pub fn hovered(&self) -> bool {
         match self {
             Self::Empty(_) => unreachable!(),
@@ -72,6 +75,7 @@ impl NotificationState {
         }
     }
 
+    #[must_use]
     pub fn get_bounds(&self) -> Bounds {
         match self {
             Self::Empty(_) => {
@@ -111,6 +115,7 @@ impl NotificationState {
         }
     }
 
+    #[must_use]
     pub fn buttons(&self) -> Option<&ButtonManager<Finished>> {
         match self {
             Self::Empty(n) => n.buttons.as_ref(),
@@ -132,7 +137,6 @@ pub struct Notification<State> {
     pub y: f32,
     pub x: f32,
     hovered: bool,
-    config: Arc<Config>,
     pub icons: Option<Icons>,
     progress: Option<Progress>,
     pub registration_token: Option<RegistrationToken>,
@@ -196,7 +200,7 @@ impl Component for Notification<Ready> {
         }
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
 
@@ -215,7 +219,7 @@ impl Component for Notification<Ready> {
         }]
     }
 
-    fn get_text_areas(&self, _: &Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
@@ -229,7 +233,7 @@ impl Component for Notification<Ready> {
 
         let extents = self.get_render_bounds();
         let hovered = self.hovered();
-        let style = self.config.find_style(&self.data.app_name, hovered);
+        let style = self.context.config.find_style(&self.data.app_name, hovered);
 
         let x_offset = style.border.size.left + style.padding.left;
         let y_offset = style.border.size.top + style.padding.top;
@@ -276,7 +280,8 @@ impl Component for Notification<Ready> {
                 - progress_height
                 - max_action_button_height;
 
-            let vertical_offset = (available_height - self.config.general.icon_size as f32) / 2.0;
+            let vertical_offset =
+                (available_height - self.context.config.general.icon_size as f32) / 2.0;
             let icon_x = extents.x + x_offset;
             let icon_y = extents.y + y_offset + vertical_offset;
 
@@ -311,7 +316,10 @@ impl Component for Notification<Ready> {
 
             let is_selected = self.context.ui_state.selected.load(Ordering::Relaxed)
                 && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-            let selected_style = self.config.find_style(&self.data.app_name, is_selected);
+            let selected_style = self
+                .context
+                .config
+                .find_style(&self.data.app_name, is_selected);
 
             let progress_x =
                 extents.x + selected_style.border.size.left + selected_style.padding.left;
@@ -356,8 +364,10 @@ impl Component for Notification<Ready> {
                 .buttons()
                 .iter()
                 .find(|button| button.button_type() == ButtonType::Action)
-                .map(|button| button.get_style())
-                .unwrap_or_else(|| &style.buttons.action.default);
+                .map_or_else(
+                    || &style.buttons.action.default,
+                    |button| button.get_style(),
+                );
 
             let side_padding = style.border.size.left
                 + style.border.size.right
@@ -413,7 +423,7 @@ impl Component for Notification<Ready> {
                             .as_ref()
                             .map(|body| body.get_render_bounds().y)
                             .unwrap_or_default(),
-                    )
+                    );
                 });
         }
 
@@ -435,11 +445,11 @@ impl Component for Notification<Ready> {
                         .as_ref()
                         .map(|summary| summary.get_bounds().height)
                         .unwrap_or_default(),
-            )
+            );
         }
     }
 
-    fn get_data(&self, urgency: &Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         let mut data = self
             .get_instances(urgency)
             .into_iter()
@@ -472,6 +482,7 @@ pub struct Empty;
 pub struct Ready;
 
 impl<State> Notification<State> {
+    #[must_use]
     pub fn new_empty(
         config: Arc<Config>,
         data: NotificationData,
@@ -480,8 +491,8 @@ impl<State> Notification<State> {
         let context = components::Context {
             id: data.id,
             app_name: Arc::clone(&data.app_name),
-            config: Arc::clone(&config),
-            ui_state: ui_state.clone(),
+            config,
+            ui_state,
         };
 
         Notification {
@@ -493,7 +504,6 @@ impl<State> Notification<State> {
             icons: None,
             buttons: None,
             data,
-            config: Arc::clone(&config),
             hovered: false,
             registration_token: None,
             body: None,
@@ -501,6 +511,7 @@ impl<State> Notification<State> {
         }
     }
 
+    #[must_use]
     pub fn new(
         config: Arc<Config>,
         font_system: &mut FontSystem,
@@ -511,8 +522,8 @@ impl<State> Notification<State> {
         let context = components::Context {
             id: data.id,
             app_name: Arc::clone(&data.app_name),
-            config: Arc::clone(&config),
-            ui_state: ui_state.clone(),
+            config,
+            ui_state,
         };
 
         if data.app_name == "next_notification_count".into()
@@ -523,7 +534,6 @@ impl<State> Notification<State> {
                 y: 0.,
                 x: 0.,
                 hovered: false,
-                config: Arc::clone(&config),
                 icons: None,
                 progress: None,
                 registration_token: None,
@@ -548,55 +558,52 @@ impl<State> Notification<State> {
             .buttons()
             .iter()
             .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map(|button| button.get_render_bounds().width)
-            .unwrap_or(0.0);
+            .map_or(0.0, |button| button.get_render_bounds().width);
 
-        let style = config.find_style(&data.app_name, false);
+        let style = context.config.find_style(&data.app_name, false);
 
-        let body = match data.body.is_empty() {
-            true => None,
-            false => {
-                let mut body = Body::new(context.clone(), font_system);
-                body.set_text(font_system, &data.body);
-                body.set_size(
-                    font_system,
-                    Some(
-                        style.width
-                            - icons
-                                .as_ref()
-                                .map(|icons| icons.get_bounds().width)
-                                .unwrap_or_default()
-                            - dismiss_button,
-                    ),
-                    None,
-                );
+        let body = if data.body.is_empty() {
+            None
+        } else {
+            let mut body = Body::new(context.clone(), font_system);
+            body.set_text(font_system, &data.body);
+            body.set_size(
+                font_system,
+                Some(
+                    style.width
+                        - icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
+                        - dismiss_button,
+                ),
+                None,
+            );
 
-                buttons = buttons.add_anchors(&body.anchors, font_system);
+            buttons = buttons.add_anchors(&body.anchors, font_system);
 
-                Some(body)
-            }
+            Some(body)
         };
 
-        let summary = match data.summary.is_empty() {
-            true => None,
-            false => {
-                let mut summary = Summary::new(context.clone(), font_system);
-                summary.set_text(font_system, &data.summary);
-                summary.set_size(
-                    font_system,
-                    Some(
-                        style.width
-                            - icons
-                                .as_ref()
-                                .map(|icons| icons.get_bounds().width)
-                                .unwrap_or_default()
-                            - dismiss_button,
-                    ),
-                    None,
-                );
+        let summary = if data.summary.is_empty() {
+            None
+        } else {
+            let mut summary = Summary::new(context.clone(), font_system);
+            summary.set_text(font_system, &data.summary);
+            summary.set_size(
+                font_system,
+                Some(
+                    style.width
+                        - icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
+                        - dismiss_button,
+                ),
+                None,
+            );
 
-                Some(summary)
-            }
+            Some(summary)
         };
 
         Notification {
@@ -611,7 +618,6 @@ impl<State> Notification<State> {
             icons,
             buttons: Some(buttons.finish(font_system)),
             data,
-            config,
             hovered: false,
             registration_token: None,
             body,
@@ -632,7 +638,7 @@ impl<State> Notification<State> {
         ) {
             (Some(progress), Some(value), false) => progress.set_value(value),
             (None, Some(value), _) => {
-                self.progress = Some(Progress::new(self.context.clone(), value))
+                self.progress = Some(Progress::new(self.context.clone(), value));
             }
             _ => {}
         }
@@ -646,7 +652,7 @@ impl<State> Notification<State> {
         }
 
         if self.data.actions != data.actions || self.data.body != data.body {
-            let mut buttons = ButtonManager::new(self.context.clone(), *self.urgency(), sender)
+            let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
                 .add_dismiss(font_system)
                 .add_actions(&data.actions, font_system);
 
@@ -681,7 +687,7 @@ impl<State> Notification<State> {
             let timer = Timer::from_duration(Duration::from_millis(timeout));
             let id = self.id();
             self.registration_token = loop_handle
-                .insert_source(timer, move |_, _, moxnotify| {
+                .insert_source(timer, move |_, (), moxnotify| {
                     moxnotify.dismiss_by_id(id, Some(Reason::Expired));
                     TimeoutAction::Drop
                 })
@@ -700,8 +706,10 @@ impl<State> Notification<State> {
         }
     }
 
+    #[must_use]
     pub fn timeout(&self) -> Option<u64> {
         let notification_style_entry = self
+            .context
             .config
             .styles
             .notification
@@ -710,37 +718,41 @@ impl<State> Notification<State> {
 
         let ignore_timeout = notification_style_entry
             .and_then(|entry| entry.ignore_timeout)
-            .unwrap_or(self.config.general.ignore_timeout);
+            .unwrap_or(self.context.config.general.ignore_timeout);
 
         let default_timeout = notification_style_entry
             .and_then(|entry| entry.default_timeout.as_ref())
-            .unwrap_or(&self.config.general.default_timeout);
+            .unwrap_or(&self.context.config.general.default_timeout);
 
         if ignore_timeout {
-            (default_timeout.get(&self.data.hints.urgency) > 0)
-                .then(|| (default_timeout.get(&self.data.hints.urgency) as u64) * 1000)
+            (default_timeout.get(self.data.hints.urgency) > 0)
+                .then(|| (default_timeout.get(self.data.hints.urgency) as u64) * 1000)
         } else {
             match self.data.timeout {
                 0 => None,
-                -1 => (default_timeout.get(&self.data.hints.urgency) > 0)
-                    .then(|| (default_timeout.get(&self.data.hints.urgency) as u64) * 1000),
+                -1 => (default_timeout.get(self.data.hints.urgency) > 0)
+                    .then(|| (default_timeout.get(self.data.hints.urgency) as u64) * 1000),
                 t if t > 0 => Some(t as u64),
                 _ => None,
             }
         }
     }
 
+    #[must_use]
     pub fn width(&self) -> f32 {
-        match self.hovered() {
-            true => self.config.styles.hover.width.resolve(0.),
-            false => self.config.styles.default.width.resolve(0.),
+        if self.hovered() {
+            self.context.config.styles.hover.width.resolve(0.)
+        } else {
+            self.context.config.styles.default.width.resolve(0.)
         }
     }
 
-    pub fn urgency(&self) -> &Urgency {
-        &self.data.hints.urgency
+    #[must_use]
+    pub fn urgency(&self) -> Urgency {
+        self.data.hints.urgency
     }
 
+    #[must_use]
     pub fn hovered(&self) -> bool {
         self.hovered
     }
@@ -753,6 +765,7 @@ impl<State> Notification<State> {
         self.hovered = false;
     }
 
+    #[must_use]
     pub fn id(&self) -> NotificationId {
         self.data.id
     }
@@ -780,55 +793,52 @@ impl Notification<Empty> {
             .buttons()
             .iter()
             .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map(|button| button.get_render_bounds().width)
-            .unwrap_or(0.0);
+            .map_or(0.0, |button| button.get_render_bounds().width);
 
-        let style = self.config.find_style(&self.data.app_name, false);
+        let style = self.context.config.find_style(&self.data.app_name, false);
 
-        let body = match self.data.body.is_empty() {
-            true => None,
-            false => {
-                let mut body = Body::new(self.context.clone(), font_system);
-                body.set_text(font_system, &self.data.body);
-                body.set_size(
-                    font_system,
-                    Some(
-                        style.width
-                            - icons
-                                .as_ref()
-                                .map(|icons| icons.get_bounds().width)
-                                .unwrap_or_default()
-                            - dismiss_button,
-                    ),
-                    None,
-                );
+        let body = if self.data.body.is_empty() {
+            None
+        } else {
+            let mut body = Body::new(self.context.clone(), font_system);
+            body.set_text(font_system, &self.data.body);
+            body.set_size(
+                font_system,
+                Some(
+                    style.width
+                        - icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
+                        - dismiss_button,
+                ),
+                None,
+            );
 
-                buttons = buttons.add_anchors(&body.anchors, font_system);
+            buttons = buttons.add_anchors(&body.anchors, font_system);
 
-                Some(body)
-            }
+            Some(body)
         };
 
-        let summary = match self.data.summary.is_empty() {
-            true => None,
-            false => {
-                let mut summary = Summary::new(self.context.clone(), font_system);
-                summary.set_text(font_system, &self.data.summary);
-                summary.set_size(
-                    font_system,
-                    Some(
-                        style.width
-                            - icons
-                                .as_ref()
-                                .map(|icons| icons.get_bounds().width)
-                                .unwrap_or_default()
-                            - dismiss_button,
-                    ),
-                    None,
-                );
+        let summary = if self.data.summary.is_empty() {
+            None
+        } else {
+            let mut summary = Summary::new(self.context.clone(), font_system);
+            summary.set_text(font_system, &self.data.summary);
+            summary.set_size(
+                font_system,
+                Some(
+                    style.width
+                        - icons
+                            .as_ref()
+                            .map(|icons| icons.get_bounds().width)
+                            .unwrap_or_default()
+                        - dismiss_button,
+                ),
+                None,
+            );
 
-                Some(summary)
-            }
+            Some(summary)
         };
 
         Notification {
@@ -843,7 +853,6 @@ impl Notification<Empty> {
             icons,
             buttons: Some(buttons.finish(font_system)),
             data: self.data,
-            config: self.config,
             hovered: false,
             registration_token: self.registration_token,
             body,
@@ -852,12 +861,14 @@ impl Notification<Empty> {
         }
     }
 
+    #[must_use]
     pub fn height(&self) -> f32 {
         0.
     }
 }
 
 impl Notification<Ready> {
+    #[must_use]
     pub fn height(&self) -> f32 {
         let style = self.get_style();
 

@@ -1,7 +1,13 @@
 [package]
 name = "ctl"
-version = "0.1.0"
-edition = "2024"
+description.workspace = true
+readme.workspace = true
+version.workspace = true
+edition.workspace = true
+categories.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
 
 [dependencies]
 zbus = { version = "5.5.0", default-features = false }
@@ -9,3 +15,4 @@ anyhow = { version = "1.0.95", default-features = false }
 clap = "4.5.27"
 tokio = "1.43.0"
 serde = { version = "1.0.219", default-features = false }
+

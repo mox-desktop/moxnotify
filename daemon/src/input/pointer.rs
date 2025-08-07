@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 
 use crate::{
     Moxnotify,
+    components::notification,
     config::keymaps::{self},
     rendering::surface::FocusReason,
 };
@@ -90,7 +91,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                 let hovered_id = state
                     .notifications
                     .get_by_coordinates(surface_x, surface_y)
-                    .map(|n| n.id());
+                    .map(notification::NotificationState::id);
 
                 let pointer = &mut state.seat.pointer;
                 pointer.x = surface_x;
@@ -221,7 +222,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                 state.seat.pointer.serial = serial;
 
                 if let Some(surface) = state.surface.as_mut() {
-                    surface.focus(FocusReason::MouseEnter)
+                    surface.focus(FocusReason::MouseEnter);
                 }
 
                 state.seat.pointer.x = surface_x;

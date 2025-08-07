@@ -107,11 +107,11 @@ impl Component for Progress {
         }
     }
 
-    fn get_text_areas(&self, _: &Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
         vec![]
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let extents = self.get_render_bounds();
 
         let progress_ratio = (self.value as f32 / 100.0).min(1.0);
@@ -198,6 +198,7 @@ impl Component for Progress {
 }
 
 impl Progress {
+    #[must_use]
     pub fn new(context: components::Context, value: i32) -> Self {
         Self {
             context,
@@ -249,7 +250,7 @@ mod tests {
         assert_eq!(progress.x, 0.0);
         assert_eq!(progress.y, 0.0);
         assert_eq!(progress.width, 300.0);
-        assert_eq!(&*progress.get_app_name(), "test_app");
+        assert_eq!(progress.get_app_name(), "test_app");
     }
 
     #[test]
@@ -276,7 +277,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert!(!instances.is_empty());
 
@@ -290,7 +291,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].rect_size[0], width);
@@ -303,7 +304,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 2);
 
@@ -324,7 +325,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].rect_size[0], width);
@@ -336,7 +337,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 1);
         assert_eq!(instances[0].rect_size[0], width);
@@ -349,7 +350,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 2);
 
@@ -367,7 +368,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 2);
 
@@ -385,7 +386,7 @@ mod tests {
         let width = 300.0;
         progress.set_width(width);
 
-        let instances = progress.get_instances(&Urgency::Normal);
+        let instances = progress.get_instances(Urgency::Normal);
 
         assert_eq!(instances.len(), 2);
 

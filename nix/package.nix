@@ -6,17 +6,24 @@
   libxkbcommon,
   wayland,
   vulkan-loader,
-  alsa-lib,
+  pipewire,
+  llvmPackages,
 }:
 
 let
-  cargoToml = builtins.fromTOML (builtins.readFile ../daemon/Cargo.toml);
+  cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
 in
 rustPlatform.buildRustPackage rec {
   pname = "moxnotify";
-  inherit (cargoToml.package) version;
+  inherit (cargoToml.workspace.package) version;
 
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock = {
+    lockFile = ../Cargo.lock;
+    outputHashes = {
+      "pipewire-0.8.0" = "sha256-Ox3LaoFtl4KN+zfJgUEwNdwRCo3eyOSLQr+C18+H/sM=";
+      "libspa-0.8.0" = "sha256-Ox3LaoFtl4KN+zfJgUEwNdwRCo3eyOSLQr+C18+H/sM=";
+    };
+  };
 
   src = lib.cleanSourceWith {
     src = ../.;
@@ -35,14 +42,18 @@ rustPlatform.buildRustPackage rec {
       ];
   };
 
-  nativeBuildInputs = [ pkg-config ];
+  nativeBuildInputs = [
+    pkg-config
+    rustPlatform.bindgenHook
+    llvmPackages.libclang
+  ];
 
   buildInputs = [
     lua5_4
     libxkbcommon
     wayland
     vulkan-loader
-    alsa-lib
+    pipewire
   ];
 
   doCheck = false;

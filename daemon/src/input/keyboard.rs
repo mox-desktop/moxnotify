@@ -180,7 +180,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                 let rate = (1000 / state.seat.keyboard.repeat.rate) as u64;
                                 state.seat.keyboard.repeat.registration_token = state
                                     .loop_handle
-                                    .insert_source(timer, move |_, _, moxnotify| {
+                                    .insert_source(timer, move |_, (), moxnotify| {
                                         if let Some(key) = moxnotify.seat.keyboard.repeat.key {
                                             let key_with_modifiers = KeyWithModifiers {
                                                 key,
@@ -282,32 +282,36 @@ impl Moxnotify {
                     self.seat.keyboard.key_combination.clear();
                     self.seat.keyboard.repeat.key = None;
                 }
-                KeyAction::ToggleHistory => {
-                    match self.notifications.history {
-                        History::Shown => {
-                            self.handle_app_event(crate::Event::HideHistory)?;
-                            self.seat.keyboard.key_combination.clear();
-                            self.seat.keyboard.repeat.key = None;
-                        }
-                        History::Hidden => self.handle_app_event(crate::Event::ShowHistory)?,
-                    };
-                }
+                KeyAction::ToggleHistory => match self.notifications.history {
+                    History::Shown => {
+                        self.handle_app_event(crate::Event::HideHistory)?;
+                        self.seat.keyboard.key_combination.clear();
+                        self.seat.keyboard.repeat.key = None;
+                    }
+                    History::Hidden => self.handle_app_event(crate::Event::ShowHistory)?,
+                },
                 KeyAction::Uninhibit => self.notifications.uninhibit(),
                 KeyAction::Ihibit => self.notifications.inhibit(),
-                KeyAction::ToggleInhibit => match self.notifications.inhibited() {
-                    true => self.notifications.uninhibit(),
-                    false => self.notifications.inhibit(),
-                },
+                KeyAction::ToggleInhibit => {
+                    if self.notifications.inhibited() {
+                        self.notifications.uninhibit();
+                    } else {
+                        self.notifications.inhibit();
+                    }
+                }
                 KeyAction::Mute => {
                     self.audio.mute();
                 }
                 KeyAction::Unmute => {
                     self.audio.unmute();
                 }
-                KeyAction::ToggleMute => match self.audio.muted() {
-                    true => self.audio.unmute(),
-                    false => self.audio.mute(),
-                },
+                KeyAction::ToggleMute => {
+                    if self.audio.muted() {
+                        self.audio.unmute();
+                    } else {
+                        self.audio.mute();
+                    }
+                }
                 KeyAction::NormalMode => {
                     self.notifications
                         .ui_state

@@ -53,7 +53,7 @@ impl Component for Summary {
         &self.get_notification_style().summary
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -69,7 +69,7 @@ impl Component for Summary {
         }]
     }
 
-    fn get_text_areas(&self, urgency: &crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -166,7 +166,7 @@ impl Component for Summary {
         self.y = y;
     }
 
-    fn get_data(&self, urgency: &Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)
             .into_iter()
             .map(Data::Instance)

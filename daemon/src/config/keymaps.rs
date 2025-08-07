@@ -23,7 +23,7 @@ impl<'de> Deserialize<'de> for Keymaps {
 
         let mut merged = Self::default().0;
 
-        for kc in user_keycombs.into_iter() {
+        for kc in user_keycombs {
             if let Some(pos) = merged
                 .iter()
                 .position(|default_kc| default_kc.mode == kc.mode && default_kc.keys == kc.keys)
@@ -263,9 +263,8 @@ impl fmt::Display for Keys {
             "{}",
             self.0
                 .iter()
-                .map(|key| key.to_string())
-                .collect::<Vec<_>>()
-                .join("")
+                .map(std::string::ToString::to_string)
+                .collect::<String>()
         )
     }
 }
@@ -530,9 +529,8 @@ impl fmt::Display for KeyCombination {
             "{}",
             self.keys
                 .iter()
-                .map(|key| key.to_string())
-                .collect::<Vec<String>>()
-                .join("")
+                .map(std::string::ToString::to_string)
+                .collect::<String>()
         )
     }
 }

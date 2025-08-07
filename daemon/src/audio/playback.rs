@@ -3,10 +3,10 @@ use pw::{properties::properties, spa};
 use spa::pod::Pod;
 use std::{fs, path::Path, time::Duration};
 use symphonia::core::{
-    audio::SampleBuffer,
+    audio::{Channels, SampleBuffer},
     codecs::{CODEC_TYPE_NULL, DecoderOptions},
     formats::FormatOptions,
-    io::MediaSourceStream,
+    io::{MediaSourceStream, MediaSourceStreamOptions},
     meta::MetadataOptions,
     probe::Hint,
 };
@@ -42,7 +42,7 @@ impl Playback {
         T: AsRef<Path>,
     {
         let src = fs::File::open(&path)?;
-        let mss = MediaSourceStream::new(Box::new(src), Default::default());
+        let mss = MediaSourceStream::new(Box::new(src), MediaSourceStreamOptions::default());
         let hint = Hint::new();
 
         let probed = symphonia::default::get_probe()
@@ -64,7 +64,7 @@ impl Playback {
         let channels_count = track
             .codec_params
             .channels
-            .map(|channels| channels.count())
+            .map(Channels::count)
             .ok_or(anyhow::anyhow!("Unable to determine channel count"))?;
 
         let sample_rate = track

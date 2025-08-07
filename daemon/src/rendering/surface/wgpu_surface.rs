@@ -26,7 +26,7 @@ impl WgpuSurface {
         config: &Config,
     ) -> anyhow::Result<Self> {
         let raw_window_handle = RawWindowHandle::Wayland(WaylandWindowHandle::new(
-            NonNull::new(surface.id().as_ptr() as *mut _).context("Surface id is a null ptr")?,
+            NonNull::new(surface.id().as_ptr().cast()).context("Surface id is a null ptr")?,
         ));
 
         let wgpu_surface = unsafe {

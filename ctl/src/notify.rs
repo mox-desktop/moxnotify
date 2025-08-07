@@ -79,9 +79,10 @@ pub async fn emit(event: Event) -> zbus::Result<()> {
 
     let notifications = NotificationsProxy::new(&conn).await?;
     let server_information = notifications.get_server_information().await?;
-    if *server_information.0 != *"moxnotify" && *server_information.1 != *"mox" {
-        panic!("Unkown notification server");
-    }
+    assert!(
+        !(*server_information.0 != *"moxnotify" && *server_information.1 != *"mox"),
+        "Unkown notification server"
+    );
 
     let notify = NotifyProxy::new(&conn).await?;
     let mut out = io::stdout().lock();
@@ -103,22 +104,25 @@ pub async fn emit(event: Event) -> zbus::Result<()> {
         Event::Mute => notify.mute().await?,
         Event::ToggleMute => {
             if notify.muted().await? {
-                notify.unmute().await?
+                notify.unmute().await?;
             } else {
-                notify.mute().await?
+                notify.mute().await?;
             }
         }
-        Event::MuteState => match notify.muted().await? {
-            true => writeln!(out, "muted")?,
-            false => writeln!(out, "unmuted")?,
-        },
+        Event::MuteState => {
+            if notify.muted().await? {
+                writeln!(out, "muted")?;
+            } else {
+                writeln!(out, "unmuted")?;
+            }
+        }
         Event::ShowHistory => notify.show_history().await?,
         Event::HideHistory => notify.hide_history().await?,
         Event::ToggleHistory => {
             if notify.history().await? == History::Shown {
-                notify.hide_history().await?
+                notify.hide_history().await?;
             } else {
-                notify.show_history().await?
+                notify.show_history().await?;
             }
         }
         Event::HistoryState => match notify.history().await? {
@@ -129,15 +133,18 @@ pub async fn emit(event: Event) -> zbus::Result<()> {
         Event::Uninhibit => notify.uninhibit().await?,
         Event::ToggleInhibit => {
             if notify.inhibited().await? {
-                notify.uninhibit().await?
+                notify.uninhibit().await?;
             } else {
-                notify.inhibit().await?
+                notify.inhibit().await?;
             }
         }
-        Event::InhibitState => match notify.inhibited().await? {
-            true => writeln!(out, "inhibited")?,
-            false => writeln!(out, "uninhibited")?,
-        },
+        Event::InhibitState => {
+            if notify.inhibited().await? {
+                writeln!(out, "inhibited")?;
+            } else {
+                writeln!(out, "uninhibited")?;
+            }
+        }
     }
 
     Ok(())

@@ -90,10 +90,10 @@ impl ShapeRenderer {
         let instance_buffer = buffers::InstanceBuffer::new(device, &[]);
 
         Self {
-            instance_buffer,
             render_pipeline,
             vertex_buffer,
             index_buffer,
+            instance_buffer,
             projection_uniform,
         }
     }

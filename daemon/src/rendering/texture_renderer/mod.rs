@@ -138,7 +138,7 @@ impl TextureRenderer {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[buffers::Vertex::desc(), buffers::TextureInstance::desc()],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -148,7 +148,7 @@ impl TextureRenderer {
                     blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                compilation_options: Default::default(),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,

@@ -64,7 +64,7 @@ impl<'de> Deserialize<'de> for Color {
                         "urgency_low" => color.urgency_low = parse_hex(map.next_value()?)?,
                         "urgency_normal" => color.urgency_normal = parse_hex(map.next_value()?)?,
                         "urgency_critical" => {
-                            color.urgency_critical = parse_hex(map.next_value()?)?
+                            color.urgency_critical = parse_hex(map.next_value()?)?;
                         }
                         _ => {
                             return Err(de::Error::unknown_field(
@@ -92,7 +92,7 @@ impl Color {
         }
     }
 
-    pub fn get(&self, urgency: &Urgency) -> [u8; 4] {
+    pub fn get(&self, urgency: Urgency) -> [u8; 4] {
         match urgency {
             Urgency::Low => self.urgency_low,
             Urgency::Normal => self.urgency_normal,
@@ -100,7 +100,7 @@ impl Color {
         }
     }
 
-    pub fn to_linear(self, urgency: &Urgency) -> [f32; 4] {
+    pub fn to_linear(self, urgency: Urgency) -> [f32; 4] {
         let srgb_to_linear = |c: u8| {
             let normalized = c as f32 / 255.0;
             if normalized > 0.04045 {
@@ -120,7 +120,7 @@ impl Color {
         [r * a, g * a, b * a, a]
     }
 
-    pub fn into_glyphon(self, urgency: &Urgency) -> glyphon::Color {
+    pub fn into_glyphon(self, urgency: Urgency) -> glyphon::Color {
         let value = match urgency {
             Urgency::Low => self.urgency_low,
             Urgency::Normal => self.urgency_normal,
@@ -135,7 +135,7 @@ impl FromStr for Color {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split(',').map(|part| part.trim()).collect();
+        let parts: Vec<&str> = s.split(',').map(str::trim).collect();
         match parts.len() {
             1 => {
                 let rgba = parse_hex(parts[0])?;

@@ -1,6 +1,7 @@
 use raw_window_handle::{RawDisplayHandle, WaylandDisplayHandle};
 use std::ptr::NonNull;
 use wayland_client::Connection;
+use wgpu::DeviceDescriptor;
 
 pub struct WgpuState {
     pub instance: wgpu::Instance,
@@ -15,7 +16,7 @@ impl WgpuState {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
 
         let raw_display_handle = RawDisplayHandle::Wayland(WaylandDisplayHandle::new(
-            NonNull::new(conn.backend().display_ptr() as *mut _).unwrap(),
+            NonNull::new(conn.backend().display_ptr().cast()).unwrap(),
         ));
 
         let adapter = instance
@@ -24,15 +25,15 @@ impl WgpuState {
             .expect("Failed to find suitable adapter");
 
         let (device, queue) = adapter
-            .request_device(&Default::default())
+            .request_device(&DeviceDescriptor::default())
             .await
             .expect("Failed to request device");
 
         Ok(Self {
-            device,
-            queue,
             instance,
             adapter,
+            queue,
+            device,
             raw_display_handle,
         })
     }

@@ -501,18 +501,18 @@ impl Sub<Size> for f32 {
 }
 
 impl Size {
-    pub fn is_auto(&self) -> bool {
-        self == &Size::Auto
+    pub fn is_auto(self) -> bool {
+        self == Size::Auto
     }
 
-    pub fn is_value(&self) -> bool {
+    pub fn is_value(self) -> bool {
         matches!(self, Size::Auto)
     }
 
-    pub fn resolve(&self, auto: f32) -> f32 {
+    pub fn resolve(self, auto: f32) -> f32 {
         match self {
             Size::Auto => auto,
-            Size::Value(v) => *v,
+            Size::Value(v) => v,
         }
     }
 }
@@ -1117,7 +1117,7 @@ impl Default for Timeout {
 }
 
 impl Timeout {
-    pub fn get(&self, urgency: &crate::Urgency) -> i32 {
+    pub fn get(&self, urgency: crate::Urgency) -> i32 {
         match urgency {
             crate::Urgency::Low => self.urgency_low,
             crate::Urgency::Normal => self.urgency_normal,
@@ -1315,21 +1315,24 @@ impl Config {
             .notification
             .iter()
             .find(|n| &*n.app == app_name.as_ref())
-            .map(|c| if hovered { &c.hover } else { &c.default })
-            .unwrap_or_else(|| {
-                if hovered {
-                    &self.styles.hover
-                } else {
-                    &self.styles.default
-                }
-            })
+            .map_or_else(
+                || {
+                    if hovered {
+                        &self.styles.hover
+                    } else {
+                        &self.styles.default
+                    }
+                },
+                |c| {
+                    if hovered { &c.hover } else { &c.default }
+                },
+            )
     }
 
     pub fn path() -> anyhow::Result<Box<Path>> {
         let home_dir = std::env::var("HOME").map(PathBuf::from)?;
         let config_dir = std::env::var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| home_dir.join(".config"));
+            .map_or_else(|_| home_dir.join(".config"), PathBuf::from);
 
         let mox_path = config_dir.join("mox").join("moxnotify").join("config.lua");
         if mox_path.exists() {

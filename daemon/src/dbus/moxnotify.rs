@@ -195,7 +195,7 @@ pub async fn serve(
                 }
                 Err(e) => log::error!("{e}"),
                 _ => {}
-            };
+            }
         }
     });
 

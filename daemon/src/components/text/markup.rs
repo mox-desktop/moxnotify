@@ -37,6 +37,7 @@ pub struct Parser {
 }
 
 impl Parser {
+    #[must_use]
     pub fn new(input: String) -> Self {
         Parser {
             pos: 0,
@@ -211,7 +212,7 @@ impl Parser {
 
         let url = remaining[(text_end + 2)..url_end].to_string();
 
-        for _ in 0..(url_end + 1) {
+        for _ in 0..=url_end {
             self.consume_char(true);
         }
 
@@ -237,22 +238,8 @@ impl Parser {
                         ' ' | '\t' | '\n' | '\r' | '<' | '>' => {
                             break;
                         }
-                        '(' => depth += 1,
-                        ')' => {
-                            if depth == 0 {
-                                break;
-                            }
-                            depth -= 1;
-                        }
-                        '[' => depth += 1,
-                        ']' => {
-                            if depth == 0 {
-                                break;
-                            }
-                            depth -= 1;
-                        }
-                        '{' => depth += 1,
-                        '}' => {
+                        '(' | '[' | '{' => depth += 1,
+                        ')' | ']' | '}' => {
                             if depth == 0 {
                                 break;
                             }

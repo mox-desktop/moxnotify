@@ -246,7 +246,7 @@ impl Moxnotify {
                             .as_ref()
                             .map(Arc::clone),
                     },
-                    (Some(sound_file), Some(_)) | (Some(sound_file), None) => Some(sound_file),
+                    (Some(sound_file), Some(_) | None) => Some(sound_file),
                 };
 
                 let suppress_sound = data.hints.suppress_sound;
@@ -256,7 +256,7 @@ impl Moxnotify {
                     History::Hidden => data.id,
                 };
 
-                self.notifications.add(NotificationData { id, ..*data })?;
+                self.notifications.add(NotificationData { id, ..*data });
 
                 if self.notifications.inhibited() || suppress_sound {
                     log::debug!("Sound suppressed for notification");
@@ -389,7 +389,7 @@ impl Moxnotify {
                     })?;
                     let notifications = rows.collect::<Result<Vec<_>, _>>()?;
                     log::info!("Loaded {} historical notifications", notifications.len());
-                    self.notifications.add_many(notifications)?;
+                    self.notifications.add_many(notifications);
                     log::debug!("History view completed");
                 } else {
                     log::debug!("History already shown");
@@ -461,7 +461,8 @@ impl Moxnotify {
                     ));
 
                     rows.into_iter()
-                        .try_for_each(|notification| self.notifications.add(notification?))?;
+                        .filter_map(std::result::Result::ok)
+                        .for_each(|notification| self.notifications.add(notification));
                     drop(stmt);
                 } else {
                     log::debug!("Notifications already uninhibited");
@@ -776,7 +777,7 @@ async fn main() -> anyhow::Result<()> {
 
     event_loop
         .handle()
-        .insert_source(event_receiver, |event, _, moxnotify| {
+        .insert_source(event_receiver, |event, (), moxnotify| {
             if let calloop::channel::Event::Msg(event) = event {
                 if let Err(e) = moxnotify.handle_app_event(event) {
                     log::error!("Failed to handle event: {e}");
@@ -785,7 +786,16 @@ async fn main() -> anyhow::Result<()> {
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {}", e))?;
 
-    event_loop.run(None, &mut moxnotify, |_| {})?;
+    event_loop.run(None, &mut moxnotify, |moxnotify| {
+        println!(
+            "{}",
+            moxnotify
+                .notifications
+                .ui_state
+                .selected
+                .load(Ordering::Relaxed)
+        );
+    })?;
 
     Ok(())
 }

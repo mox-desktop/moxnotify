@@ -20,6 +20,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1,
     zwlr_layer_surface_v1::{self, KeyboardInteractivity},
 };
+use wgpu::wgt::CommandEncoderDescriptor;
 
 #[derive(PartialEq, Debug)]
 pub enum FocusReason {
@@ -76,7 +77,7 @@ impl Surface {
             (),
         );
 
-        let scale = output.map(|o| o.scale).unwrap_or(1.0);
+        let scale = output.map_or(1.0, |o| o.scale);
 
         layer_surface.set_keyboard_interactivity(KeyboardInteractivity::None);
         layer_surface
@@ -148,7 +149,7 @@ impl Surface {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = device.create_command_encoder(&Default::default());
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -326,11 +327,7 @@ impl Moxnotify {
             )
             .ok();
 
-            let scale = self
-                .surface
-                .as_ref()
-                .map(|surface| surface.scale)
-                .unwrap_or(1.0);
+            let scale = self.surface.as_ref().map_or(1.0, |surface| surface.scale);
 
             self.notifications
                 .ui_state

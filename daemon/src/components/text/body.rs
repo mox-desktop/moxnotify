@@ -21,6 +21,7 @@ pub struct Anchor {
 }
 
 impl Anchor {
+    #[must_use]
     pub fn get_bounds(&self) -> Bounds {
         self.bounds.clone()
     }
@@ -95,7 +96,7 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
 
     if value.starts_with("rgb(") && value.ends_with(')') {
         let rgb = &value[4..value.len() - 1];
-        let parts: Vec<&str> = rgb.split(',').map(|s| s.trim()).collect();
+        let parts: Vec<&str> = rgb.split(',').map(str::trim).collect();
         if parts.len() == 3 {
             if let (Some(r), Some(g), Some(b)) = (
                 parts[0].parse::<u8>().ok(),
@@ -107,7 +108,7 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
         }
     } else if value.starts_with("rgba(") && value.ends_with(')') {
         let rgba = &value[5..value.len() - 1];
-        let parts: Vec<&str> = rgba.split(',').map(|s| s.trim()).collect();
+        let parts: Vec<&str> = rgba.split(',').map(str::trim).collect();
         if parts.len() == 4 {
             if let (Some(r), Some(g), Some(b), Some(a)) = (
                 parts[0].parse::<u8>().ok(),
@@ -171,7 +172,7 @@ impl Text for Body {
                         .for_each(|(key, value)| match key.as_str() {
                             "font_desc" => {}
                             "font_family" | "face" => {
-                                attrs = attrs.clone().family(Family::Name(value))
+                                attrs = attrs.clone().family(Family::Name(value));
                             }
 
                             "font_size" | "size" => {
@@ -180,12 +181,12 @@ impl Text for Body {
                                     let font_size = value * dpi / 72.0;
                                     attrs = attrs
                                         .clone()
-                                        .metrics(glyphon::Metrics::new(font_size, font_size * 1.2))
+                                        .metrics(glyphon::Metrics::new(font_size, font_size * 1.2));
                                 }
                             }
                             "letter_spacing" => {
                                 if let Ok(spacing) = value.parse::<f32>() {
-                                    attrs = attrs.clone().letter_spacing(spacing)
+                                    attrs = attrs.clone().letter_spacing(spacing);
                                 }
                             }
                             "rise" | "baseline_shift" => {}
@@ -195,7 +196,7 @@ impl Text for Body {
                                     attrs = attrs.clone().metrics(glyphon::Metrics::new(
                                         current_metrics.font_size,
                                         height,
-                                    ))
+                                    ));
                                 }
                             }
 
@@ -207,15 +208,14 @@ impl Text for Body {
                             },
                             "font_weight" | "weight" => {
                                 if value == "bold" {
-                                    attrs = attrs.clone().weight(Weight::BOLD)
+                                    attrs = attrs.clone().weight(Weight::BOLD);
                                 } else if value == "normal" {
-                                    attrs = attrs.clone().weight(Weight::NORMAL)
+                                    attrs = attrs.clone().weight(Weight::NORMAL);
                                 } else if let Ok(weight_value) = value.parse::<u16>() {
                                     let weight = match weight_value {
                                         100 => Weight::THIN,
                                         200 => Weight::EXTRA_LIGHT,
                                         300 => Weight::LIGHT,
-                                        400 => Weight::NORMAL,
                                         500 => Weight::MEDIUM,
                                         600 => Weight::SEMIBOLD,
                                         700 => Weight::BOLD,
@@ -223,7 +223,7 @@ impl Text for Body {
                                         900 => Weight::BLACK,
                                         _ => Weight::NORMAL,
                                     };
-                                    attrs = attrs.clone().weight(weight)
+                                    attrs = attrs.clone().weight(weight);
                                 }
                             }
                             "font_variant" | "variant" => match value.as_ref() {
@@ -233,25 +233,25 @@ impl Text for Body {
                             },
                             "font_stretch" | "stretch" => match value.as_ref() {
                                 "ultra-condensed" => {
-                                    attrs = attrs.clone().stretch(Stretch::UltraCondensed)
+                                    attrs = attrs.clone().stretch(Stretch::UltraCondensed);
                                 }
                                 "extra-condensed" => {
-                                    attrs = attrs.clone().stretch(Stretch::ExtraCondensed)
+                                    attrs = attrs.clone().stretch(Stretch::ExtraCondensed);
                                 }
                                 "condensed" => attrs = attrs.clone().stretch(Stretch::Condensed),
                                 "semi-condensed" => {
-                                    attrs = attrs.clone().stretch(Stretch::SemiCondensed)
+                                    attrs = attrs.clone().stretch(Stretch::SemiCondensed);
                                 }
                                 "normal" => attrs = attrs.clone().stretch(Stretch::Normal),
                                 "semi-expanded" => {
-                                    attrs = attrs.clone().stretch(Stretch::SemiExpanded)
+                                    attrs = attrs.clone().stretch(Stretch::SemiExpanded);
                                 }
                                 "expanded" => attrs = attrs.clone().stretch(Stretch::Expanded),
                                 "extra-expanded" => {
-                                    attrs = attrs.clone().stretch(Stretch::ExtraExpanded)
+                                    attrs = attrs.clone().stretch(Stretch::ExtraExpanded);
                                 }
                                 "ultra-expanded" => {
-                                    attrs = attrs.clone().stretch(Stretch::UltraExpanded)
+                                    attrs = attrs.clone().stretch(Stretch::UltraExpanded);
                                 }
                                 _ => {}
                             },
@@ -271,7 +271,7 @@ impl Text for Body {
 
                             "foreground" | "fgcolor" | "color" => {
                                 if let Some(color) = parse_color(value) {
-                                    attrs = attrs.clone().color(color)
+                                    attrs = attrs.clone().color(color);
                                 }
                             }
                             "background" | "bgcolor" => {}
@@ -317,7 +317,7 @@ impl Text for Body {
         self.buffer
             .set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
 
-        anchors.iter_mut().for_each(|anchor| {
+        for anchor in anchors.iter_mut() {
             if let Some(line) = self.buffer.layout_runs().nth(anchor.line) {
                 let first = line.glyphs.get(anchor.start);
                 let last = line.glyphs.get(anchor.end);
@@ -330,8 +330,8 @@ impl Text for Body {
                         height: line.line_height,
                     };
                 }
-            };
-        });
+            }
+        }
 
         self.anchors = anchors.into_iter().map(Arc::new).collect();
     }
@@ -348,7 +348,7 @@ impl Component for Body {
         &self.get_notification_style().body
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -364,7 +364,7 @@ impl Component for Body {
         }]
     }
 
-    fn get_text_areas(&self, urgency: &crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         let render_bounds = self.get_render_bounds();
 
@@ -448,7 +448,7 @@ impl Component for Body {
         self.y = y;
     }
 
-    fn get_data(&self, urgency: &Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)
             .into_iter()
             .map(Data::Instance)
@@ -768,7 +768,7 @@ mod tests {
         body.set_position(10.0, 20.0);
         body.set_text(&mut font_system, "<span color=\"blue\">Blue text</span>");
 
-        let data = body.get_data(&Urgency::Normal);
+        let data = body.get_data(Urgency::Normal);
 
         assert!(data.len() >= 2);
 

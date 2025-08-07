@@ -71,7 +71,7 @@ impl NotificationView {
             }
         } else {
             self.prev = None;
-        };
+        }
 
         if notification_count > self.visible.end {
             let summary = self.config.styles.prev.format.replace(
@@ -114,10 +114,10 @@ impl NotificationView {
                     total_width - style.border.size.left - style.border.size.right,
                     extents.height - style.border.size.top - style.border.size.bottom,
                 ],
-                rect_color: style.background.to_linear(&crate::Urgency::Low),
+                rect_color: style.background.to_linear(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),
                 border_size: style.border.size.into(),
-                border_color: style.border.color.to_linear(&crate::Urgency::Low),
+                border_color: style.border.color.to_linear(crate::Urgency::Low),
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
                 depth: 0.9,
             };
@@ -127,7 +127,7 @@ impl NotificationView {
                 prev.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(&crate::Urgency::Low)
+                    .get_text_areas(crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }
@@ -145,10 +145,10 @@ impl NotificationView {
                     total_width - style.border.size.left - style.border.size.right,
                     extents.height - style.border.size.top - style.border.size.bottom,
                 ],
-                rect_color: style.background.to_linear(&crate::Urgency::Low),
+                rect_color: style.background.to_linear(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),
                 border_size: style.border.size.into(),
-                border_color: style.border.color.to_linear(&crate::Urgency::Low),
+                border_color: style.border.color.to_linear(crate::Urgency::Low),
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
                 depth: 0.9,
             };
@@ -158,7 +158,7 @@ impl NotificationView {
                 next.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(&crate::Urgency::Low)
+                    .get_text_areas(crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }

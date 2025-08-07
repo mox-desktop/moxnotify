@@ -33,7 +33,7 @@ impl Component for DismissButton {
         }
     }
 
-    fn get_instances(&self, urgency: &Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -52,7 +52,7 @@ impl Component for DismissButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: &Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
@@ -184,7 +184,7 @@ impl Button for DismissButton {
     }
 
     fn unhover(&mut self) {
-        self.state = State::Unhovered
+        self.state = State::Unhovered;
     }
 
     fn set_hint(&mut self, hint: Hint) {
@@ -208,8 +208,9 @@ mod tests {
 
     #[test]
     fn test_dismiss_button() {
+        let test_id = 10;
         let context = components::Context {
-            id: 0,
+            id: test_id,
             app_name: "".into(),
             config: Config::default().into(),
             ui_state: UiState::default(),
@@ -217,7 +218,6 @@ mod tests {
         let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
 
         let (tx, rx) = calloop::channel::channel();
-        let test_id = 10;
         let button = DismissButton {
             x: 0.,
             y: 0.,

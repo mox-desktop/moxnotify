@@ -16,6 +16,7 @@ pub struct ImageData {
 }
 
 impl ImageData {
+    #[must_use]
     pub fn to_rgba(self) -> Self {
         if self.has_alpha {
             self
@@ -39,40 +40,47 @@ impl ImageData {
         }
     }
 
-    pub fn resize(self, size: u32) -> Self {
-        let mut src =
-            fr::images::Image::from_vec_u8(self.width, self.height, self.data, fr::PixelType::U8x4)
-                .unwrap();
+    pub fn resize(self, size: u32) -> anyhow::Result<Self> {
+        let mut src = fr::images::Image::from_vec_u8(
+            self.width,
+            self.height,
+            self.data,
+            fr::PixelType::U8x4,
+        )?;
 
         let alpha_mul_div = fr::MulDiv::default();
-        alpha_mul_div.multiply_alpha_inplace(&mut src).unwrap();
+        alpha_mul_div.multiply_alpha_inplace(&mut src)?;
+
         let mut dst = fr::images::Image::new(size, size, fr::PixelType::U8x4);
         let mut resizer = fr::Resizer::new();
-        resizer
-            .resize(&src, &mut dst, &ResizeOptions::default())
-            .unwrap();
-        alpha_mul_div.divide_alpha_inplace(&mut dst).unwrap();
+        resizer.resize(&src, &mut dst, &ResizeOptions::default())?;
 
-        Self {
+        alpha_mul_div.divide_alpha_inplace(&mut dst)?;
+
+        Ok(Self {
             width: dst.width(),
             height: dst.height(),
             data: dst.into_vec(),
             ..self
-        }
+        })
     }
 
+    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.data
     }
 
+    #[must_use]
     pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
+    #[must_use]
     pub fn width(&self) -> u32 {
         self.width
     }
 
+    #[must_use]
     pub fn height(&self) -> u32 {
         self.height
     }
@@ -204,10 +212,10 @@ mod tests {
         let image_data = ImageData::try_from(DynamicImage::ImageRgb8(img)).unwrap();
         let converted = image_data.to_rgba().resize(2);
 
-        assert_eq!(converted.channels, 4);
-        assert!(converted.has_alpha);
-        assert_eq!(converted.data.len(), 2 * 2 * 4);
-        assert_eq!(converted.rowstride, 2 * 4);
+        assert_eq!(converted.as_ref().unwrap().channels, 4);
+        assert!(converted.as_ref().unwrap().has_alpha);
+        assert_eq!(converted.as_ref().unwrap().data.len(), 2 * 2 * 4);
+        assert_eq!(converted.as_ref().unwrap().rowstride, 2 * 4);
     }
 
     #[test]
@@ -217,9 +225,9 @@ mod tests {
 
         let resized = image_data.to_rgba().resize(2);
 
-        assert_eq!(resized.width, 2);
-        assert_eq!(resized.height, 2);
-        assert_eq!(resized.rowstride, 2 * 2 * 4);
+        assert_eq!(resized.as_ref().unwrap().width, 2);
+        assert_eq!(resized.as_ref().unwrap().height, 2);
+        assert_eq!(resized.as_ref().unwrap().rowstride, 2 * 2 * 4);
     }
 
     #[test]
@@ -230,7 +238,7 @@ mod tests {
 
         let converted = image_data.to_rgba().resize(2);
 
-        assert_eq!(converted.data[3], 128);
+        assert_eq!(converted.unwrap().data[3], 128);
     }
 
     #[test]

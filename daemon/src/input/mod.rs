@@ -45,7 +45,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for Moxnotify {
         _qh: &QueueHandle<Self>,
     ) {
         if let wl_seat::Event::Name { name } = event {
-            state.seat.name = Some(name)
+            state.seat.name = Some(name);
         }
     }
 }
