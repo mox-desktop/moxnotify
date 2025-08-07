@@ -129,5 +129,5 @@ return {
 - **Rust**  
 - **dbus**
 - **wayland**  
-- **alsa**  
+- **pipewire**  
 - **vulkan-loader**

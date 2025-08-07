@@ -86,7 +86,7 @@ impl TryFrom<DynamicImage> for ImageData {
 
         let width = rgba_image.width();
         let height = rgba_image.height();
-        let data = rgba_image.as_raw().to_vec();
+        let data = rgba_image.as_raw().clone();
 
         let channels = 4;
         let bits_per_sample = 8;

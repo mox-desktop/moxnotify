@@ -183,8 +183,7 @@ impl Moxnotify {
                     .notifications()
                     .iter()
                     .find(|notification| notification.id() == id)
-                    .map(|n| n.data().hints.resident)
-                    .unwrap_or_default()
+                    .is_some_and(|n| n.data().hints.resident)
                 {
                     self.dismiss_by_id(id, None);
                 }
@@ -220,11 +219,10 @@ impl Moxnotify {
                     data.hints.sound_file.as_ref().map(Arc::clone),
                     data.hints.sound_name.as_ref().map(Arc::clone),
                 ) {
-                    (Some(sound_file), None) => Some(sound_file),
                     (None, Some(sound_name)) => freedesktop_sound::lookup(&sound_name)
                         .with_cache()
                         .find()
-                        .map(|s| s.into()),
+                        .map(std::convert::Into::into),
                     (None, None) => match data.hints.urgency {
                         Urgency::Low => self
                             .config
@@ -248,7 +246,7 @@ impl Moxnotify {
                             .as_ref()
                             .map(Arc::clone),
                     },
-                    (Some(sound_file), Some(_)) => Some(sound_file),
+                    (Some(sound_file), Some(_)) | (Some(sound_file), None) => Some(sound_file),
                 };
 
                 let suppress_sound = data.hints.suppress_sound;
@@ -286,7 +284,7 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_by_id(id, Some(Reason::CloseNotificationCall))
+                self.dismiss_by_id(id, Some(Reason::CloseNotificationCall));
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut() {
@@ -330,12 +328,12 @@ impl Moxnotify {
                 return Ok(());
             }
             Event::Mute => {
-                if !self.audio.muted() {
+                if self.audio.muted() {
+                    log::debug!("Audio already muted");
+                } else {
                     log::info!("Muting notification sounds");
                     _ = self.emit_sender.send(EmitEvent::MuteStateChanged(true));
                     self.audio.mute();
-                } else {
-                    log::debug!("Audio already muted");
                 }
 
                 return Ok(());
@@ -420,14 +418,14 @@ impl Moxnotify {
                 }
             }
             Event::Inhibit => {
-                if !self.notifications.inhibited() {
+                if self.notifications.inhibited() {
+                    log::debug!("Notifications already inhibited");
+                } else {
                     log::info!("Inhibiting notifications");
                     self.notifications.inhibit();
                     _ = self.emit_sender.send(EmitEvent::InhibitStateChanged(
                         self.notifications.inhibited(),
                     ));
-                } else {
-                    log::debug!("Notifications already inhibited");
                 }
             }
             Event::Uninhibit => {
@@ -499,7 +497,7 @@ impl Moxnotify {
 
                 return Ok(());
             }
-        };
+        }
 
         self.update_surface_size();
         if let Some(surface) = self.surface.as_mut() {
@@ -732,8 +730,9 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to insert Wayland source: {}", e))?;
 
     moxnotify.globals.contents().with_list(|list| {
-        list.iter().for_each(|global| {
-            if global.interface == wl_output::WlOutput::interface().name {
+        list.iter()
+            .filter(|global| global.interface == wl_output::WlOutput::interface().name)
+            .for_each(|global| {
                 let wl_output = moxnotify.globals.registry().bind(
                     global.name,
                     global.version,
@@ -742,8 +741,7 @@ async fn main() -> anyhow::Result<()> {
                 );
                 let output = Output::new(wl_output, global.name);
                 moxnotify.outputs.push(output);
-            }
-        });
+            });
     });
 
     let (executor, scheduler) = calloop::futures::executor()?;
@@ -773,7 +771,7 @@ async fn main() -> anyhow::Result<()> {
 
     event_loop
         .handle()
-        .insert_source(executor, |_: (), _, _| ())
+        .insert_source(executor, |(), (), _| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {}", e))?;
 
     event_loop

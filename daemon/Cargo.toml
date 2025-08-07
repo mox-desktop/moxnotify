@@ -2,6 +2,10 @@
 name = "daemon"
 version = "0.1.0"
 edition = "2024"
+description = "Feature-rich hardware-accelerated keyboard driven Wayland notification daemon."
+license = "MIT"
+repository = "https://github.com/mox-desktop/moxnotify"
+readme = "README.md"
 
 [dependencies]
 calloop = { version = "0.14.2", features = ["executor"] }

@@ -23,7 +23,7 @@ impl<'de> Deserialize<'de> for Keymaps {
 
         let mut merged = Self::default().0;
 
-        user_keycombs.into_iter().for_each(|kc| {
+        for kc in user_keycombs.into_iter() {
             if let Some(pos) = merged
                 .iter()
                 .position(|default_kc| default_kc.mode == kc.mode && default_kc.keys == kc.keys)
@@ -32,7 +32,7 @@ impl<'de> Deserialize<'de> for Keymaps {
             } else {
                 merged.push(kc);
             }
-        });
+        }
 
         Ok(Keymaps(merged))
     }
@@ -316,14 +316,11 @@ impl<'de> Deserialize<'de> for Keys {
                     let mut parsed = false;
                     for len in (1..=remaining.len()).rev() {
                         let candidate = &remaining[..len];
-                        match KeyWithModifiers::from_str(candidate) {
-                            Ok(key) => {
-                                keys.push(key);
-                                remaining = &remaining[len..];
-                                parsed = true;
-                                break;
-                            }
-                            Err(_) => continue,
+                        if let Ok(key) = KeyWithModifiers::from_str(candidate) {
+                            keys.push(key);
+                            remaining = &remaining[len..];
+                            parsed = true;
+                            break;
                         }
                     }
                     if !parsed {

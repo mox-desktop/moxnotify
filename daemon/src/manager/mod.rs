@@ -612,11 +612,11 @@ impl Moxnotify {
             .collect();
 
         if let Some(reason) = reason {
-            ids.iter().for_each(|id| {
+            for id in ids.iter() {
                 _ = self
                     .emit_sender
                     .send(EmitEvent::NotificationClosed { id: *id, reason });
-            });
+            }
         }
 
         if ids.len() == self.notifications.notifications.len() {
