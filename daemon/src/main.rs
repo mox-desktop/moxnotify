@@ -7,7 +7,10 @@ mod manager;
 mod rendering;
 pub mod utils;
 
-use crate::config::keymaps;
+use crate::{
+    components::notification::{Empty, Notification, NotificationState},
+    config::keymaps,
+};
 use audio::Audio;
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
@@ -31,6 +34,7 @@ use std::{
     path::Path,
     rc::Rc,
     sync::{Arc, atomic::Ordering},
+    time::Duration,
 };
 use tokio::sync::broadcast;
 use utils::image_data::ImageData;
@@ -773,7 +777,7 @@ async fn main() -> anyhow::Result<()> {
     event_loop
         .handle()
         .insert_source(executor, |(), (), _| ())
-        .map_err(|e| anyhow::anyhow!("Failed to insert source: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
 
     event_loop
         .handle()
@@ -784,18 +788,37 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         })
-        .map_err(|e| anyhow::anyhow!("Failed to insert source: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
 
-    event_loop.run(None, &mut moxnotify, |moxnotify| {
-        println!(
-            "{}",
-            moxnotify
-                .notifications
-                .ui_state
-                .selected
-                .load(Ordering::Relaxed)
-        );
-    })?;
+    // When idle process unloaded notifications
+    // in theory it should work, but for some reason its never
+    // fired even if event loop is idling
+    //
+    //event_loop.handle().insert_idle(|moxnotify| {
+    //    let sender = moxnotify.notifications.sender.clone();
+
+    //    if let Some(notification_state) = moxnotify
+    //        .notifications
+    //        .notifications_mut()
+    //        .iter_mut()
+    //        .find(|notification| matches!(notification, NotificationState::Empty(_)))
+    //    {
+    //        if let NotificationState::Empty(notification) = std::mem::replace(
+    //            notification_state,
+    //            NotificationState::Empty(Notification::<Empty>::new_empty(
+    //                Arc::clone(&moxnotify.config),
+    //                NotificationData::default(),
+    //                manager::UiState::default(),
+    //            )),
+    //        ) {
+    //            *notification_state = NotificationState::Ready(
+    //                notification.promote(&mut moxnotify.font_system.borrow_mut(), Some(sender)),
+    //            );
+    //        }
+    //    }
+    //});
+
+    event_loop.run(None, &mut moxnotify, |_| {})?;
 
     Ok(())
 }

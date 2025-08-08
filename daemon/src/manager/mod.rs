@@ -56,7 +56,7 @@ pub struct NotificationManager {
     loop_handle: LoopHandle<'static, Moxnotify>,
     pub font_system: Rc<RefCell<FontSystem>>,
     pub notification_view: NotificationView,
-    sender: calloop::channel::Sender<crate::Event>,
+    pub sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     pub ui_state: UiState,
     pub history: History,
@@ -107,6 +107,10 @@ impl NotificationManager {
 
     pub fn notifications(&self) -> &VecDeque<NotificationState> {
         &self.notifications
+    }
+
+    pub fn notifications_mut(&mut self) -> &mut VecDeque<NotificationState> {
+        &mut self.notifications
     }
 
     pub fn data(

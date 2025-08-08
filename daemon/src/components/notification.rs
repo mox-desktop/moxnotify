@@ -772,6 +772,7 @@ impl<State> Notification<State> {
 }
 
 impl Notification<Empty> {
+    #[must_use]
     pub fn promote(
         self,
         font_system: &mut FontSystem,
@@ -840,6 +841,8 @@ impl Notification<Empty> {
 
             Some(summary)
         };
+
+        log::debug!("Notification id: {} loaded", self.id());
 
         Notification {
             summary,
