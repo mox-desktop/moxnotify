@@ -23,6 +23,10 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
+use taffy::{
+    TaffyTree,
+    style_helpers::{auto, flex, length, line, span},
+};
 
 pub enum NotificationState {
     Empty(Notification<Empty>),
@@ -235,10 +239,6 @@ impl Component for Notification<Ready> {
         let hovered = self.hovered();
         let style = self.context.config.find_style(&self.data.app_name, hovered);
 
-        let x_offset = style.border.size.left + style.padding.left;
-        let y_offset = style.border.size.top + style.padding.top;
-
-        // Get action buttons for reuse
         let action_buttons_count = self
             .buttons
             .as_ref()
@@ -251,201 +251,268 @@ impl Component for Notification<Ready> {
             })
             .unwrap_or_default();
 
-        let max_action_button_height = self
+        let mut tree: TaffyTree<()> = TaffyTree::new();
+
+        let icons_size = self
+            .icons
+            .as_ref()
+            .map(|i| i.get_bounds())
+            .unwrap_or_default();
+        let summary_size = self
+            .summary
+            .as_ref()
+            .map(|s| s.get_bounds())
+            .unwrap_or_default();
+        let progress_size = self
+            .progress
+            .as_ref()
+            .map(|p| p.get_bounds())
+            .unwrap_or_default();
+
+        let dismiss_size = self
             .buttons
             .as_ref()
             .and_then(|buttons| {
                 buttons
                     .buttons()
                     .iter()
-                    .filter(|button| button.button_type() == ButtonType::Action)
-                    .map(|button| button.get_bounds().height)
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .find(|button| button.button_type() == ButtonType::Dismiss)
+                    .map(|button| button.get_bounds())
             })
             .unwrap_or_default();
 
-        // Position icons
-        if let Some(icons) = self.icons.as_mut() {
-            let progress_height = self
-                .progress
+        let action_buttons_height = if action_buttons_count > 0 {
+            self.buttons
                 .as_ref()
-                .map(|p| p.get_bounds().height)
-                .unwrap_or_default();
+                .and_then(|buttons| {
+                    buttons
+                        .buttons()
+                        .iter()
+                        .filter(|b| b.button_type() == ButtonType::Action)
+                        .map(|b| b.get_bounds().height)
+                        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                })
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
 
-            let available_height = extents.height
-                - style.border.size.top
-                - style.border.size.bottom
-                - style.padding.top
-                - style.padding.bottom
-                - progress_height
-                - max_action_button_height;
+        let container_node = tree
+            .new_leaf(taffy::Style {
+                size: taffy::Size {
+                    width: length(extents.width),
+                    height: length(extents.height),
+                },
+                padding: taffy::Rect {
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    top: length(style.padding.top.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                display: taffy::Display::Grid,
+                grid_template_rows: vec![
+                    length(summary_size.height.max(dismiss_size.height)),
+                    auto(),
+                    length(action_buttons_height),
+                    length(progress_size.height),
+                ],
+                grid_template_columns: vec![
+                    length(icons_size.width),
+                    flex(1.0),
+                    length(dismiss_size.width),
+                ],
+                ..Default::default()
+            })
+            .unwrap();
 
-            let vertical_offset =
-                (available_height - self.context.config.general.icon_size as f32) / 2.0;
-            let icon_x = extents.x + x_offset;
-            let icon_y = extents.y + y_offset + vertical_offset;
+        // Icons node
+        let icons_node = if self.icons.is_some() {
+            let node = tree
+                .new_leaf(taffy::Style {
+                    grid_row: span(2),
+                    grid_column: line(1),
+                    size: taffy::Size {
+                        width: length(icons_size.width),
+                        height: length(icons_size.height),
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+            tree.add_child(container_node, node).unwrap();
+            Some(node)
+        } else {
+            None
+        };
 
-            icons.set_position(icon_x, icon_y);
+        let summary_node = if self.summary.is_some() {
+            let node = tree
+                .new_leaf(taffy::Style {
+                    grid_row: line(1),
+                    grid_column: line(2),
+                    size: taffy::Size {
+                        width: auto(),
+                        height: length(summary_size.height),
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+            tree.add_child(container_node, node).unwrap();
+            Some(node)
+        } else {
+            None
+        };
+
+        let dismiss_node = tree
+            .new_leaf(taffy::Style {
+                grid_row: line(1),
+                grid_column: line(3),
+                size: taffy::Size {
+                    width: length(dismiss_size.width),
+                    height: length(dismiss_size.height),
+                },
+                ..Default::default()
+            })
+            .unwrap();
+        tree.add_child(container_node, dismiss_node).unwrap();
+
+        let body_node = if self.body.is_some() {
+            let node = tree
+                .new_leaf(taffy::Style {
+                    grid_row: line(2),
+                    grid_column: line(2),
+                    size: taffy::Size {
+                        width: auto(),
+                        height: auto(),
+                    },
+                    flex_grow: 1.0,
+                    ..Default::default()
+                })
+                .unwrap();
+            tree.add_child(container_node, node).unwrap();
+            Some(node)
+        } else {
+            None
+        };
+
+        let action_buttons_node = if action_buttons_count > 0 {
+            let node = tree
+                .new_leaf(taffy::Style {
+                    grid_row: line(3),
+                    grid_column: span(3),
+                    display: taffy::Display::Flex,
+                    flex_direction: taffy::FlexDirection::Row,
+                    justify_content: Some(taffy::JustifyContent::SpaceBetween),
+                    size: taffy::Size {
+                        width: auto(),
+                        height: length(action_buttons_height),
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+            tree.add_child(container_node, node).unwrap();
+            Some(node)
+        } else {
+            None
+        };
+
+        let progress_node = if self.progress.is_some() {
+            let node = tree
+                .new_leaf(taffy::Style {
+                    grid_row: line(4),
+                    grid_column: span(3),
+                    size: taffy::Size {
+                        width: auto(),
+                        height: length(progress_size.height),
+                    },
+                    ..Default::default()
+                })
+                .unwrap();
+            tree.add_child(container_node, node).unwrap();
+            Some(node)
+        } else {
+            None
+        };
+
+        tree.compute_layout(
+            container_node,
+            taffy::Size {
+                width: taffy::AvailableSpace::Definite(extents.width),
+                height: taffy::AvailableSpace::MinContent,
+            },
+        )
+        .unwrap();
+
+        if let Some(icons) = icons_node {
+            let res = tree.layout(icons).unwrap();
+            self.icons
+                .as_mut()
+                .unwrap()
+                .set_position(res.location.x, res.location.y);
         }
 
-        // Position summary
-        if let Some(summary) = self.summary.as_mut() {
-            summary.set_position(
-                extents.x
-                    + x_offset
-                    + self
-                        .icons
-                        .as_ref()
-                        .map(|icons| icons.get_bounds().width)
-                        .unwrap_or_default(),
-                extents.y + y_offset,
-            );
+        if let Some(summary) = summary_node {
+            let res = tree.layout(summary).unwrap();
+            self.summary
+                .as_mut()
+                .unwrap()
+                .set_position(res.location.x, res.location.y);
         }
 
-        // Position progress indicator if present
-        if let Some(progress) = self.progress.as_mut() {
-            let available_width = extents.width
-                - style.border.size.left
-                - style.border.size.right
-                - style.padding.left
-                - style.padding.right
-                - style.progress.margin.left
-                - style.progress.margin.right;
-
-            progress.set_width(available_width);
-
-            let is_selected = self.context.ui_state.selected.load(Ordering::Relaxed)
-                && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-            let selected_style = self
-                .context
-                .config
-                .find_style(&self.data.app_name, is_selected);
-
-            let progress_x =
-                extents.x + selected_style.border.size.left + selected_style.padding.left;
-            let progress_y = extents.y + extents.height
-                - selected_style.border.size.bottom
-                - selected_style.padding.bottom
-                - progress.get_bounds().height;
-
-            progress.set_position(progress_x, progress_y);
+        let res = tree.layout(dismiss_node).unwrap();
+        if let Some(buttons) = self.buttons.as_mut() {
+            if let Some(dismiss_button) = buttons
+                .buttons_mut()
+                .iter_mut()
+                .find(|button| button.button_type() == ButtonType::Dismiss)
+            {
+                dismiss_button.set_position(res.location.x, res.location.y);
+            }
         }
 
-        let dismiss_bottom_y = self
-            .buttons
-            .as_mut()
-            .and_then(|buttons| {
-                buttons
+        if let Some(body) = body_node {
+            let res = tree.layout(body).unwrap();
+            self.body
+                .as_mut()
+                .unwrap()
+                .set_position(res.location.x, res.location.y);
+        }
+
+        if let Some(actions) = action_buttons_node {
+            let res = tree.layout(actions).unwrap();
+
+            if let Some(buttons) = self.buttons.as_mut() {
+                let action_buttons: Vec<_> = buttons
                     .buttons_mut()
                     .iter_mut()
-                    .find(|button| button.button_type() == ButtonType::Dismiss)
-                    .map(|button| {
-                        let dismiss_x = extents.x + extents.width
-                            - style.border.size.right
-                            - style.padding.right
-                            - button.get_bounds().width;
+                    .filter(|b| b.button_type() == ButtonType::Action)
+                    .collect();
 
-                        let dismiss_y = extents.y
-                            + style.margin.top
-                            + style.border.size.top
-                            + style.padding.top;
+                let button_spacing = if action_buttons.len() > 1 {
+                    (res.size.width
+                        - action_buttons
+                            .iter()
+                            .map(|b| b.get_bounds().width)
+                            .sum::<f32>())
+                        / (action_buttons.len() - 1) as f32
+                } else {
+                    0.0
+                };
 
-                        button.set_position(dismiss_x, dismiss_y);
-                        button.get_bounds().y + button.get_bounds().height
-                    })
-            })
-            .unwrap_or_default();
-
-        // Position action buttons
-        if let Some(buttons) = self.buttons.as_mut()
-            && action_buttons_count > 0
-        {
-            let button_style = buttons
-                .buttons()
-                .iter()
-                .find(|button| button.button_type() == ButtonType::Action)
-                .map_or_else(
-                    || &style.buttons.action.default,
-                    |button| button.get_style(),
-                );
-
-            let side_padding = style.border.size.left
-                + style.border.size.right
-                + style.padding.left
-                + style.padding.right;
-
-            let button_margin = button_style.margin.left + button_style.margin.right;
-            let available_width = extents.width - side_padding - button_margin;
-
-            let action_buttons_f32 = action_buttons_count as f32;
-            let total_spacing = (action_buttons_f32 - 1.0) * button_margin;
-            let button_width = (available_width - total_spacing) / action_buttons_f32;
-
-            buttons.set_action_widths(button_width);
-
-            let progress_height = self
-                .progress
-                .as_ref()
-                .map(|p| p.get_bounds().height)
-                .unwrap_or_default();
-
-            let base_x = extents.x + style.border.size.left + style.padding.left;
-            let bottom_padding = style.border.size.bottom + style.padding.bottom + progress_height;
-
-            buttons
-                .buttons_mut()
-                .iter_mut()
-                .filter(|b| b.button_type() == ButtonType::Action)
-                .enumerate()
-                .for_each(|(i, button)| {
-                    let x_position = base_x + (button_width + button_margin) * i as f32;
-                    let y_position =
-                        (extents.y + extents.height - bottom_padding - button.get_bounds().height)
-                            .max(dismiss_bottom_y);
-
-                    button.set_position(x_position, y_position);
-                });
+                let mut current_x = res.location.x;
+                for button in action_buttons {
+                    button.set_position(current_x, res.location.y);
+                    current_x += button.get_bounds().width + button_spacing;
+                }
+            }
         }
 
-        // Position anchor buttons
-        if let Some(buttons) = self.buttons.as_mut() {
-            buttons
-                .buttons_mut()
-                .iter_mut()
-                .filter(|b| b.button_type() == ButtonType::Anchor)
-                .for_each(|button| {
-                    button.set_position(
-                        self.body
-                            .as_ref()
-                            .map(|body| body.get_render_bounds().y)
-                            .unwrap_or_default(),
-                        self.body
-                            .as_ref()
-                            .map(|body| body.get_render_bounds().y)
-                            .unwrap_or_default(),
-                    );
-                });
-        }
-
-        // Position body
-        let bounds = self.get_render_bounds();
-        if let Some(body) = self.body.as_mut() {
-            body.set_position(
-                bounds.x
-                    + x_offset
-                    + self
-                        .icons
-                        .as_ref()
-                        .map(|icons| icons.get_bounds().width)
-                        .unwrap_or_default(),
-                bounds.y
-                    + y_offset
-                    + self
-                        .summary
-                        .as_ref()
-                        .map(|summary| summary.get_bounds().height)
-                        .unwrap_or_default(),
-            );
+        if let Some(progress) = progress_node {
+            let res = tree.layout(progress).unwrap();
+            self.progress
+                .as_mut()
+                .unwrap()
+                .set_position(res.location.x, res.location.y);
+            self.progress.as_mut().unwrap().set_width(res.size.width);
         }
     }
 
