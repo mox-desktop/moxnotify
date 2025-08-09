@@ -659,30 +659,6 @@ async fn main() -> anyhow::Result<()> {
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
 
-    //event_loop.handle().insert_idle(|moxnotify| {
-    //    let sender = moxnotify.notifications.sender.clone();
-
-    //    if let Some(notification_state) = moxnotify
-    //        .notifications
-    //        .notifications_mut()
-    //        .iter_mut()
-    //        .find(|notification| matches!(notification, NotificationState::Empty(_)))
-    //    {
-    //        if let NotificationState::Empty(notification) = std::mem::replace(
-    //            notification_state,
-    //            NotificationState::Empty(Notification::<Empty>::new_empty(
-    //                Arc::clone(&moxnotify.config),
-    //                NotificationData::default(),
-    //                manager::UiState::default(),
-    //            )),
-    //        ) {
-    //            *notification_state = NotificationState::Ready(
-    //                notification.promote(&mut moxnotify.font_system.borrow_mut(), Some(sender)),
-    //            );
-    //        }
-    //    }
-    //});
-
     event_loop.run(None, &mut moxnotify, |_| {})?;
 
     Ok(())
