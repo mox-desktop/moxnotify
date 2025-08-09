@@ -109,10 +109,6 @@ impl NotificationManager {
         &self.notifications
     }
 
-    pub fn notifications_mut(&mut self) -> &mut VecDeque<NotificationState> {
-        &mut self.notifications
-    }
-
     pub fn data(
         &self,
     ) -> (

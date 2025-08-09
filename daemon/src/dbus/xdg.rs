@@ -248,7 +248,12 @@ pub async fn serve(
     if let Err(e) = conn
         .request_name_with_flags(
             "org.freedesktop.Notifications",
-            RequestNameFlags::DoNotQueue.into(),
+            // If in release mode, exit if well-known name is already taken
+            #[cfg(not(debug_assertions))]
+            (RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement),
+            // If in debug profile, replace already existing daemon
+            #[cfg(debug_assertions)]
+            RequestNameFlags::ReplaceExisting.into(),
         )
         .await
     {

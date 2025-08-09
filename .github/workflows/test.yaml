@@ -38,10 +38,8 @@ jobs:
             
       - name: Run tests and linting in Nix shell
         run: |
+          nix profile install nixpkgs#cargo-llvm-cov
           nix develop --command bash -c "
-            # Install cargo-llvm-cov in the Nix environment
-            cargo install cargo-llvm-cov
-            
             # Generate code coverage
             cargo llvm-cov --all-features --workspace --bins --lcov --output-path lcov.info
             

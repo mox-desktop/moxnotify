@@ -10,6 +10,7 @@ struct MoxnotifyInterface {
 #[zbus::interface(name = "pl.mox.Notify")]
 impl MoxnotifyInterface {
     async fn focus(&self) {
+        println!("henlo");
         if let Err(e) = self.event_sender.send(Event::FocusSurface) {
             log::error!("{e}");
         }
@@ -154,8 +155,16 @@ pub async fn serve(
         .build()
         .await?;
 
-    conn.request_name_with_flags("pl.mox.Notify", RequestNameFlags::DoNotQueue.into())
-        .await?;
+    conn.request_name_with_flags(
+        "pl.mox.Notify",
+        // If in release mode, exit if well-known name is already taken
+        #[cfg(not(debug_assertions))]
+        (RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement),
+        // If in debug profile, replace already existing daemon
+        #[cfg(debug_assertions)]
+        RequestNameFlags::ReplaceExisting.into(),
+    )
+    .await?;
 
     let iface = conn
         .object_server()
