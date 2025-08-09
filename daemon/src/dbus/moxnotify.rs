@@ -1,5 +1,9 @@
 use crate::{EmitEvent, Event, History};
+#[cfg(not(debug_assertions))]
+use futures_lite::stream::StreamExt;
 use tokio::sync::broadcast;
+#[cfg(not(debug_assertions))]
+use zbus::fdo::DBusProxy;
 use zbus::{fdo::RequestNameFlags, object_server::SignalEmitter};
 
 struct MoxnotifyInterface {
@@ -10,7 +14,6 @@ struct MoxnotifyInterface {
 #[zbus::interface(name = "pl.mox.Notify")]
 impl MoxnotifyInterface {
     async fn focus(&self) {
-        println!("henlo");
         if let Err(e) = self.event_sender.send(Event::FocusSurface) {
             log::error!("{e}");
         }
@@ -170,6 +173,17 @@ pub async fn serve(
         .object_server()
         .interface::<_, MoxnotifyInterface>("/pl/mox/Notify")
         .await?;
+
+    #[cfg(not(debug_assertions))]
+    let acquired_stream = DBusProxy::new(&conn).await?.receive_name_lost().await?;
+    #[cfg(not(debug_assertions))]
+    tokio::spawn(async move {
+        let mut acquired_stream = acquired_stream;
+        if acquired_stream.next().await.is_some() {
+            log::info!("Request to ReplaceExisting on pl.mox.Notify received");
+            std::process::exit(0);
+        }
+    });
 
     tokio::spawn(async move {
         loop {
