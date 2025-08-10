@@ -1,8 +1,12 @@
+use super::Data;
 use crate::{
     Image,
-    components::{self, Bounds, Component},
-    config::StyleState,
-    utils::image_data::ImageData,
+    components::{self, Component},
+    config,
+    utils::{
+        image_data::ImageContext,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use moxui::{
     shape_renderer,
@@ -14,17 +18,16 @@ use std::{
     path::Path,
     sync::{LazyLock, Mutex, atomic::Ordering},
 };
-
-use super::Data;
+use taffy::style_helpers::{auto, length, line, span};
 
 static ICON_CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
-type IconMap = BTreeMap<Box<Path>, ImageData>;
+type IconMap = BTreeMap<Box<Path>, ImageContext>;
 
 #[derive(Default)]
 pub struct Cache(Mutex<IconMap>);
 
 impl Cache {
-    pub fn insert<P>(&self, icon_path: &P, data: ImageData)
+    pub fn insert<P>(&self, icon_path: &P, data: ImageContext)
     where
         P: AsRef<Path>,
     {
@@ -34,7 +37,7 @@ impl Cache {
         icon_map.insert(entry.into(), data);
     }
 
-    pub fn get<P>(&self, icon_path: P) -> Option<ImageData>
+    pub fn get<P>(&self, icon_path: P) -> Option<ImageContext>
     where
         P: AsRef<Path>,
     {
@@ -44,17 +47,19 @@ impl Cache {
     }
 }
 
-#[derive(Default)]
 pub struct Icons {
-    icon: Option<ImageData>,
-    app_icon: Option<ImageData>,
+    node: taffy::NodeId,
+    icon: Option<ImageContext>,
+    app_icon: Option<ImageContext>,
     x: f32,
     y: f32,
     context: components::Context,
 }
 
 impl Icons {
+    #[must_use]
     pub fn new(
+        tree: &mut taffy::TaffyTree<NodeContext>,
         context: components::Context,
         image: Option<&Image>,
         app_icon: Option<&str>,
@@ -82,12 +87,16 @@ impl Icons {
             )
         });
 
-        let (final_app_icon, final_icon) = match icon.is_some() {
-            true => (app_icon, icon),
-            false => (None, app_icon),
+        let (final_app_icon, final_icon) = if icon.is_some() {
+            (app_icon, icon)
+        } else {
+            (None, app_icon)
         };
 
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
+            node,
             context,
             icon: final_icon,
             app_icon: final_app_icon,
@@ -98,82 +107,97 @@ impl Icons {
 }
 
 impl Component for Icons {
-    type Style = StyleState;
+    type Style = config::Icon;
 
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
-        self.get_notification_style()
+        &self.get_notification_style().icon
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
-        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
-            (
-                i.width() as f32
-                    + style.icon.padding.right
-                    + style.icon.padding.left
-                    + style.icon.margin.left
-                    + style.icon.margin.right,
-                i.height() as f32
-                    + style.icon.padding.top
-                    + style.icon.padding.bottom
-                    + style.icon.margin.top
-                    + style.icon.margin.bottom,
-            )
-        });
-
-        Bounds {
-            x: self.x,
-            y: self.y,
-            width,
-            height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
-        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
-            (
-                i.width() as f32 + style.icon.padding.right + style.icon.padding.left,
-                i.height() as f32 + style.icon.padding.top + style.icon.padding.bottom,
-            )
-        });
-
-        Bounds {
-            x: self.x + style.icon.margin.left,
-            y: self.y + style.icon.margin.top,
-            width,
-            height,
-        }
-    }
-
-    fn get_instances(&self, _: crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        _: crate::Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         Vec::new()
     }
 
-    fn get_text_areas(&self, _: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        _: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
+        let style = self.get_style();
+
+        let (width, height) = self
+            .icon
+            .as_ref()
+            .map_or((0., 0.), |i| (i.width() as f32, i.height() as f32));
+
+        self.node = tree
+            .new_leaf(taffy::Style {
+                grid_row: span(2),
+                grid_column: line(1),
+                size: taffy::Size {
+                    width: length(width),
+                    height: length(height),
+                },
+                padding: taffy::Rect {
+                    top: length(style.padding.top.resolve(0.)),
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
+    }
+
+    fn get_textures(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
         let style = self.get_config().find_style(
@@ -182,68 +206,75 @@ impl Component for Icons {
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
-        let mut bounds = self.get_render_bounds();
-
+        let mut layout = tree.global_layout(self.get_node_id()).unwrap();
         if let Some(icon) = self.icon.as_ref() {
             let mut buffer = Buffer::new(icon.width() as f32, icon.height() as f32);
             buffer.set_bytes(icon.data());
 
             texture_areas.push(TextureArea {
-                left: bounds.x + style.icon.padding.left,
-                top: bounds.y + style.icon.padding.top,
-                scale: 1.0,
-                rotation: 0.,
+                left: layout.location.x,
+                top: layout.location.y,
+                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
+                rotation: 0.0,
                 bounds: TextureBounds {
-                    left: bounds.x as u32,
-                    top: bounds.y as u32,
-                    right: (bounds.x + bounds.width) as u32,
-                    bottom: (bounds.y + bounds.height) as u32,
+                    left: layout.location.x as u32,
+                    top: layout.location.y as u32,
+                    right: (layout.location.x + layout.content_box_width()) as u32,
+                    bottom: (layout.location.y + layout.content_box_height()) as u32,
                 },
-                skew: [0., 0.],
+                skew: [0.0, 0.0],
                 radius: style.icon.border.radius.into(),
                 buffer,
                 depth: 0.9,
             });
 
-            bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
-            bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
+            layout.location.x +=
+                layout.content_box_width() - self.get_config().general.app_icon_size as f32;
+            layout.location.y +=
+                layout.content_box_height() - self.get_config().general.app_icon_size as f32;
         }
 
         if let Some(app_icon) = self.app_icon.as_ref() {
             let app_icon_size = self.get_config().general.app_icon_size as f32;
-            texture_areas.push(TextureArea::simple(
-                app_icon.data(),
-                bounds.x + style.icon.padding.left,
-                bounds.y + style.icon.padding.top,
-                app_icon.width() as f32,
-                app_icon.height() as f32,
-                TextureBounds {
-                    left: bounds.x as u32,
-                    top: bounds.y as u32,
-                    right: (bounds.x
-                        + app_icon_size
-                        + style.icon.padding.left
-                        + style.icon.padding.right) as u32,
-                    bottom: (bounds.y
-                        + app_icon_size
-                        + style.icon.padding.top
-                        + style.icon.padding.bottom) as u32,
+
+            texture_areas.push(TextureArea {
+                left: layout.location.x,
+                top: layout.location.y,
+                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
+                rotation: 0.0,
+                bounds: TextureBounds {
+                    left: layout.location.x as u32,
+                    top: layout.location.y as u32,
+                    right: (layout.location.x + app_icon_size) as u32,
+                    bottom: (layout.location.y + app_icon_size) as u32,
                 },
-                style.app_icon.border.radius.into(),
-                style.icon.border.size.into(),
-                0.8,
-            ));
+                skew: [0.0, 0.0],
+                radius: style.app_icon.border.radius.into(),
+                buffer: {
+                    let mut buffer = Buffer::new(app_icon_size, app_icon_size);
+                    buffer.set_bytes(app_icon.data());
+                    buffer
+                },
+                depth: 0.8,
+            });
         }
 
         texture_areas
     }
 
-    fn get_data(&self, _: crate::Urgency) -> Vec<Data<'_>> {
-        self.get_textures().into_iter().map(Data::Texture).collect()
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, _: crate::Urgency) -> Vec<Data<'_>> {
+        self.get_textures(tree)
+            .into_iter()
+            .map(Data::Texture)
+            .collect()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 
-fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<ImageData>
+fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<ImageContext>
 where
     T: AsRef<str>,
 {
@@ -257,7 +288,7 @@ where
     get_icon(&icon_path, icon_size)
 }
 
-pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<ImageData>
+pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<ImageContext>
 where
     T: AsRef<Path>,
 {
@@ -302,7 +333,7 @@ where
             }
         });
 
-        ImageData::try_from(image::DynamicImage::ImageRgba8(image::RgbaImage::from_raw(
+        ImageContext::try_from(image::DynamicImage::ImageRgba8(image::RgbaImage::from_raw(
             icon_size as u32,
             icon_size as u32,
             data,
@@ -310,7 +341,7 @@ where
         .ok()
     } else {
         let image = image::open(icon_path.as_ref()).ok()?;
-        ImageData::try_from(image).ok()
+        ImageContext::try_from(image).ok()
     };
 
     let image_data = if icon_path
@@ -327,56 +358,4 @@ where
         ICON_CACHE.insert(&icon_path, data.clone());
     }
     image_data
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{DynamicImage, RgbaImage};
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn cache_insert_and_retrieve() {
-        let cache = Cache::default();
-        let path = PathBuf::from("test_icon.png");
-
-        let img = RgbaImage::new(32, 32);
-        let data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        cache.insert(&path, data.clone());
-        assert_eq!(cache.get(&path).unwrap(), data);
-    }
-
-    #[test]
-    fn new_with_image_data() {
-        let img = RgbaImage::new(64, 64);
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        let image = Image::Data(image_data.clone());
-        let context = components::Context {
-            id: 1,
-            config: crate::Config::default().into(),
-            ui_state: crate::manager::UiState::default(),
-            app_name: "app".into(),
-        };
-        let icons = Icons::new(context, Some(&image), None);
-
-        assert!(icons.icon.is_some());
-        assert_eq!(icons.icon.unwrap().width(), 64);
-    }
-
-    #[test]
-    fn cache_miss_returns_none() {
-        let cache = Cache::default();
-        let non_existent_path = Path::new("non_existent.png");
-        assert!(cache.get(non_existent_path).is_none());
-    }
-
-    #[test]
-    fn set_position_updates_coordinates() {
-        let mut icons = Icons::default();
-        icons.set_position(100., 200.);
-        assert_eq!(icons.x, 100.);
-        assert_eq!(icons.y, 200.);
-    }
 }

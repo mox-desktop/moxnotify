@@ -7,6 +7,7 @@ use crate::{
         text::Text,
     },
     config::Config,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
@@ -42,7 +43,11 @@ impl NotificationView {
         }
     }
 
-    pub fn update_notification_count(&mut self, notification_count: usize) {
+    pub fn update_notification_count(
+        &mut self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        notification_count: usize,
+    ) {
         if self.visible.start > 0 {
             let summary = self
                 .config
@@ -59,6 +64,7 @@ impl NotificationView {
                     .set_text(&mut font_system, &summary);
             } else {
                 self.prev = Some(Notification::<Ready>::counter(
+                    tree,
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -88,6 +94,7 @@ impl NotificationView {
                     .set_text(&mut font_system, &summary);
             } else {
                 self.next = Some(Notification::<Ready>::counter(
+                    tree,
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -104,16 +111,17 @@ impl NotificationView {
 
     pub fn prev_data(
         &self,
+        tree: &taffy::TaffyTree<NodeContext>,
         total_width: f32,
     ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
         if let Some(prev) = self.prev.as_ref() {
-            let extents = prev.get_render_bounds();
+            let layout = tree.global_layout(prev.get_node_id()).unwrap();
             let style = &self.config.styles.prev;
             let instance = shape_renderer::ShapeInstance {
-                rect_pos: [extents.x, extents.y],
+                rect_pos: [layout.location.x, layout.location.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,
-                    extents.height - style.border.size.top - style.border.size.bottom,
+                    layout.content_box_height() - style.border.size.top - style.border.size.bottom,
                 ],
                 rect_color: style.background.color(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),
@@ -128,7 +136,7 @@ impl NotificationView {
                 prev.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::Urgency::Low)
+                    .get_text_areas(tree, crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }
@@ -138,16 +146,17 @@ impl NotificationView {
 
     pub fn next_data(
         &self,
+        tree: &taffy::TaffyTree<NodeContext>,
         total_width: f32,
     ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
         if let Some(next) = self.next.as_ref() {
-            let extents = next.get_render_bounds();
+            let layout = tree.global_layout(next.get_node_id()).unwrap();
             let style = &self.config.styles.prev;
             let instance = shape_renderer::ShapeInstance {
-                rect_pos: [extents.x, extents.y],
+                rect_pos: [layout.location.x, layout.location.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,
-                    extents.height - style.border.size.top - style.border.size.bottom,
+                    layout.content_box_height() - style.border.size.top - style.border.size.bottom,
                 ],
                 rect_color: style.background.color(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),
@@ -162,7 +171,7 @@ impl NotificationView {
                 next.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::Urgency::Low)
+                    .get_text_areas(tree, crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }

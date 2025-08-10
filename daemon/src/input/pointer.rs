@@ -1,11 +1,10 @@
-use std::sync::atomic::Ordering;
-
 use crate::{
     Moxnotify,
     components::notification,
     config::keymaps::{self},
     rendering::surface::FocusReason,
 };
+use std::sync::atomic::Ordering;
 use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum, delegate_noop,
     globals::GlobalList,
@@ -70,8 +69,6 @@ impl Pointer {
         self.state = pointer_state;
     }
 }
-
-const LEFT_MOUSE_CLICK: u32 = 272;
 
 impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
     fn event(
@@ -182,6 +179,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                 state: WEnum::Value(value),
                 ..
             } => {
+                const LEFT_MOUSE_CLICK: u32 = 272;
                 if button != LEFT_MOUSE_CLICK {
                     return;
                 }

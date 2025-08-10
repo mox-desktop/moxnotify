@@ -8,6 +8,10 @@ use crate::{
     },
     config::{Config, keymaps},
     history,
+    utils::{
+        self,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -25,6 +29,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
+use taffy::style_helpers::auto;
 use view::NotificationView;
 
 #[derive(Clone)]
@@ -57,6 +62,8 @@ pub struct NotificationManager {
     pub notification_view: NotificationView,
     pub ui_state: UiState,
     pub history: history::History,
+    pub tree: taffy::TaffyTree<NodeContext>,
+    pub node_id: taffy::NodeId,
 }
 
 impl NotificationManager {
@@ -67,6 +74,7 @@ impl NotificationManager {
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
         let ui_state = UiState::default();
+        let mut tree = taffy::TaffyTree::new();
 
         Self {
             history: history::History::try_new(&config.general.history.path).unwrap(),
@@ -83,6 +91,16 @@ impl NotificationManager {
             notifications: VecDeque::new(),
             config,
             ui_state,
+            node_id: tree
+                .new_leaf(taffy::Style {
+                    size: taffy::Size {
+                        width: auto(),
+                        height: auto(),
+                    },
+                    ..Default::default()
+                })
+                .unwrap(),
+            tree,
         }
     }
 
@@ -123,7 +141,7 @@ impl NotificationManager {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),
             })
-            .flat_map(|notification| notification.get_data(notification.urgency()))
+            .flat_map(|notification| notification.get_data(&self.tree, notification.urgency()))
             .for_each(|data_item| match data_item {
                 Data::Instance(instance) => instances.push(instance),
                 Data::TextArea(text_area) => text_areas.push(text_area),
@@ -137,17 +155,22 @@ impl NotificationManager {
                 NotificationState::Ready(notification) => Some(notification),
             })
             .map(|notification| {
-                notification.get_render_bounds().x + notification.get_render_bounds().width
+                notification.get_render_bounds(&self.tree).x
+                    + notification.get_render_bounds(&self.tree).width
             })
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or_default();
 
-        if let Some((instance, text_area)) = self.notification_view.prev_data(total_width) {
+        if let Some((instance, text_area)) =
+            self.notification_view.prev_data(&self.tree, total_width)
+        {
             instances.push(instance);
             text_areas.push(text_area);
         }
 
-        if let Some((instance, text_area)) = self.notification_view.next_data(total_width) {
+        if let Some((instance, text_area)) =
+            self.notification_view.next_data(&self.tree, total_width)
+        {
             instances.push(instance);
             text_areas.push(text_area);
         }
@@ -157,62 +180,36 @@ impl NotificationManager {
 
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
         self.iter_viewed().find(|notification| {
-            let bounds = notification.get_render_bounds();
-            x >= bounds.x as f64
-                && x <= (bounds.x + bounds.width) as f64
-                && y >= bounds.y as f64
-                && y <= (bounds.y + bounds.height) as f64
+            let layout = self.tree.global_layout(notification.get_node_id()).unwrap();
+            x >= layout.location.x as f64
+                && x <= (layout.location.x + layout.content_box_width()) as f64
+                && y >= layout.location.y as f64
+                && y <= (layout.location.y + layout.content_box_height()) as f64
         })
     }
 
-    pub fn click(&mut self, x: f64, y: f64) -> bool {
-        self.iter_viewed_mut().any(|notification| {
-            notification
-                .buttons_mut()
-                .as_mut()
-                .is_some_and(|buttons| buttons.click(x, y))
-        })
+    pub fn click(&self, x: f64, y: f64) -> bool {
+        self.get_by_coordinates(x, y)
+            .map(|notification| {
+                notification
+                    .buttons()
+                    .as_ref()
+                    .is_some_and(|buttons| buttons.click(&self.tree, x, y))
+            })
+            .unwrap_or_default()
     }
 
     pub fn hover(&mut self, x: f64, y: f64) -> bool {
-        self.iter_viewed_mut().any(|notification| {
-            notification
-                .buttons_mut()
-                .is_some_and(|buttons| buttons.hover(x, y))
+        self.notification_view.visible.clone().any(|index| {
+            self.notifications
+                .get_mut(index)
+                .and_then(|notification| {
+                    notification
+                        .buttons_mut()
+                        .map(|buttons| buttons.hover(&self.tree, x, y))
+                })
+                .unwrap_or_default()
         })
-    }
-
-    pub fn height(&self) -> f32 {
-        let height = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map_or(0., |n| n.get_bounds().height);
-
-        self.iter_viewed().fold(height, |acc, notification| {
-            acc + notification.get_bounds().height
-        }) + self
-            .notification_view
-            .next
-            .as_ref()
-            .map_or(0., |n| n.get_bounds().height)
-    }
-
-    pub fn width(&self) -> f32 {
-        let (min_x, max_x) =
-            self.iter_viewed()
-                .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
-                    let extents = notification.get_bounds();
-                    let left = extents.x + notification.data().hints.x as f32;
-                    let right = extents.x + extents.width + notification.data().hints.x as f32;
-                    (min_x.min(left), max_x.max(right))
-                });
-
-        if min_x == f32::MAX || max_x == f32::MIN {
-            0.0
-        } else {
-            max_x - min_x
-        }
     }
 
     /// Returns the ID of the currently selected notification, if any.
@@ -357,10 +354,17 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) {
+        let nodes: Vec<_> = data
+            .iter()
+            .map(|_| self.tree.new_leaf(taffy::Style::DEFAULT).unwrap())
+            .collect();
+
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
-            .map(|data| {
+            .zip(nodes.into_par_iter())
+            .map(|(data, node)| {
                 NotificationState::Empty(Notification::<Empty>::empty(
+                    node,
                     Arc::clone(&self.config),
                     data,
                     self.ui_state.clone(),
@@ -386,6 +390,7 @@ impl NotificationManager {
             .find(|(_, n)| n.id() == data.id)
         {
             notification.replace(
+                &mut self.tree,
                 &mut self.font_system.borrow_mut(),
                 data,
                 Some(self.sender.clone()),
@@ -395,8 +400,12 @@ impl NotificationManager {
                 notification.start_timer(&self.loop_handle);
             }
         } else {
-            let mut notification =
-                Notification::<Empty>::empty(Arc::clone(&self.config), data, self.ui_state.clone());
+            let mut notification = Notification::<Empty>::empty(
+                self.tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
+                Arc::clone(&self.config),
+                data,
+                self.ui_state.clone(),
+            );
 
             match self.history.state() {
                 history::HistoryState::Hidden => {
@@ -487,6 +496,7 @@ impl NotificationManager {
                     && let NotificationState::Empty(notification) = std::mem::replace(
                         notification_state,
                         NotificationState::Empty(Notification::<Empty>::empty(
+                            self.tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                             Arc::clone(&self.config),
                             NotificationData::default(),
                             UiState::default(),
@@ -494,6 +504,7 @@ impl NotificationManager {
                     )
                 {
                     *notification_state = NotificationState::Ready(notification.promote(
+                        &mut self.tree,
                         &mut self.font_system.borrow_mut(),
                         Some(self.sender.clone()),
                     ));
@@ -502,35 +513,73 @@ impl NotificationManager {
     }
 
     pub fn update_size(&mut self) {
-        let x_offset = self
-            .iter_viewed()
-            .map(|notification| notification.data().hints.x)
-            .min()
-            .unwrap_or_default()
-            .abs() as f32;
+        self.tree.clear();
+
+        self.node_id = self
+            .tree
+            .new_leaf(taffy::Style {
+                display: taffy::Display::Flex,
+                flex_direction: taffy::FlexDirection::Column,
+                size: taffy::Size {
+                    width: auto(),
+                    height: auto(),
+                },
+                ..Default::default()
+            })
+            .unwrap();
+
+        self.notification_view
+            .update_notification_count(&mut self.tree, self.notifications.len());
 
         if let Some(prev) = self.notification_view.prev.as_mut() {
-            prev.set_position(0., 0.);
+            prev.update_layout(&mut self.tree);
+            self.tree
+                .add_child(self.node_id, prev.get_node_id())
+                .unwrap();
         }
 
-        let mut start = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map(|n| n.get_bounds().y + n.get_bounds().height)
-            .unwrap_or_default();
-
-        self.iter_viewed_mut().for_each(|notification| {
-            notification.set_position(x_offset, start);
-            start += notification.get_bounds().height;
+        self.notification_view.visible.clone().for_each(|i| {
+            if let Some(notification) = self.notifications.get_mut(i) {
+                notification.update_layout(&mut self.tree);
+                self.tree
+                    .add_child(self.node_id, notification.get_node_id())
+                    .unwrap();
+            }
         });
 
         if let Some(next) = self.notification_view.next.as_mut() {
-            next.set_position(0., start);
+            next.update_layout(&mut self.tree);
+            self.tree
+                .add_child(self.node_id, next.get_node_id())
+                .unwrap();
         }
 
-        self.notification_view
-            .update_notification_count(self.notifications.len());
+        self.tree
+            .compute_layout_with_measure(
+                self.node_id,
+                taffy::Size::max_content(),
+                |known_dimensions, available_space, _node_id, node_context, _style| {
+                    utils::taffy::measure_function(
+                        known_dimensions,
+                        available_space,
+                        node_context,
+                        &mut self.font_system.borrow_mut(),
+                    )
+                },
+            )
+            .unwrap();
+
+        if let Some(prev) = self.notification_view.prev.as_mut() {
+            prev.apply_computed_layout(&mut self.tree);
+        }
+        self.notification_view.visible.clone().for_each(|i| {
+            if let Some(notification) = self.notifications.get_mut(i) {
+                notification.apply_computed_layout(&mut self.tree);
+            }
+        });
+        if let Some(next) = self.notification_view.next.as_mut() {
+            next.apply_computed_layout(&mut self.tree);
+        }
     }
 }
 
@@ -580,8 +629,9 @@ impl Moxnotify {
             return;
         }
 
-        ids.iter()
-            .for_each(|id| self.notifications.dismiss_by_id(*id));
+        for id in ids {
+            self.notifications.dismiss_by_id(id)
+        }
     }
 
     pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<Reason>) {
@@ -899,7 +949,7 @@ mod tests {
         manager.add(data);
 
         if let Some(notification) = manager.notifications.get_mut(0) {
-            notification.set_position(10.0, 20.0);
+            notification.update_layout(&mut manager.tree, 10.0, 20.0);
         }
 
         let x = 10.0 + style.margin.left.resolve(0.) as f64;

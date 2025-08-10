@@ -1,18 +1,20 @@
 use super::{Button, Component, Hint, State};
 use crate::{
-    components::{self, Bounds, text::body::Anchor},
+    components::{self, text::body::Anchor},
     config::button::ButtonState,
-    rendering::text_renderer::Text,
+    rendering::text_renderer::TextContext,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
 pub struct AnchorButton {
+    pub node: taffy::NodeId,
     pub context: components::Context,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: Text,
+    pub text: TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
     pub anchor: Arc<Anchor>,
@@ -29,12 +31,16 @@ impl Component for AnchorButton {
         &self.context.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: crate::Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
         vec![shape_renderer::ShapeInstance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -44,7 +50,11 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        urgency: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
@@ -62,31 +72,26 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let anchor_extents = self.anchor.get_bounds();
-
-        Bounds {
-            x: self.x + anchor_extents.x,
-            y: self.y + anchor_extents.y,
-            width: anchor_extents.width,
-            height: anchor_extents.height,
-        }
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
+        self.hint.update_layout(tree);
+        self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
     }
 
-    fn get_render_bounds(&self) -> Bounds {
-        self.get_bounds()
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
-
-        let bounds = self.get_render_bounds();
-        self.hint.set_position(bounds.x, bounds.y);
-    }
-
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 

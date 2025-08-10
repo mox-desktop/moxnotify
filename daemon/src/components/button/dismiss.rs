@@ -1,19 +1,22 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
     Urgency,
-    components::{self, Bounds, Component},
+    components::{self, Component},
     config::button::ButtonState,
     rendering::text_renderer,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
+use taffy::style_helpers::{auto, length, line};
 
 pub struct DismissButton {
+    pub node: taffy::NodeId,
     pub context: components::Context,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: text_renderer::Text,
+    pub text: text_renderer::TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
 }
@@ -33,16 +36,16 @@ impl Component for DismissButton {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
-
+        let layout = tree.global_layout(self.node).unwrap();
         vec![shape_renderer::ShapeInstance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [
-                bounds.width - style.border.size.left - style.border.size.right,
-                bounds.height - style.border.size.top - style.border.size.bottom,
-            ],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -52,12 +55,16 @@ impl Component for DismissButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
-        let extents = self.get_render_bounds();
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
+        let layout = tree.global_layout(self.node).unwrap();
 
-        let remaining_padding = extents.width - text_extents.width;
+        let remaining_padding = layout.content_box_width() - text_extents.width;
         let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
             (true, true) => (remaining_padding / 2., remaining_padding / 2.),
             (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
@@ -67,7 +74,7 @@ impl Component for DismissButton {
             ),
         };
 
-        let remaining_padding = extents.height - text_extents.height;
+        let remaining_padding = layout.content_box_height() - text_extents.height;
         let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
             (true, true) => (remaining_padding / 2., remaining_padding / 2.),
             (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
@@ -79,17 +86,19 @@ impl Component for DismissButton {
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
-            top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
+            left: layout.location.x + style.border.size.left + style.padding.left.resolve(pl),
+            top: layout.location.y + style.border.size.top + style.padding.top.resolve(pt),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
-                top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
-                right: (extents.x
+                left: (layout.location.x + style.border.size.left + style.padding.left.resolve(pl))
+                    as i32,
+                top: (layout.location.y + style.border.size.top + style.padding.top.resolve(pt))
+                    as i32,
+                right: (layout.location.x
                     + style.border.size.left
                     + style.padding.left.resolve(pl)
                     + text_extents.width) as i32,
-                bottom: (extents.y
+                bottom: (layout.location.y
                     + style.border.size.top
                     + style.padding.top.resolve(pt)
                     + text_extents.height) as i32,
@@ -99,57 +108,82 @@ impl Component for DismissButton {
         }]
     }
 
-    fn get_bounds(&self) -> Bounds {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
-        let text_extents = self.text.get_bounds();
+        self.node = tree
+            .new_leaf(taffy::Style {
+                grid_row: line(1),
+                grid_column: line(3),
+                size: taffy::Size {
+                    width: if style.width.is_auto() {
+                        auto()
+                    } else {
+                        length(style.width.resolve(0.))
+                    },
+                    height: if style.height.is_auto() {
+                        auto()
+                    } else {
+                        length(style.height.resolve(0.))
+                    },
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                },
+                padding: taffy::Rect {
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    top: length(style.padding.top.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
 
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
-
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
-
-        Bounds {
-            x: self.x,
-            y: self.y,
-            width,
-            height,
-        }
+        self.hint.update_layout(tree);
     }
 
-    fn get_render_bounds(&self) -> Bounds {
-        let bounds = self.get_bounds();
-        let style = self.get_style();
-
-        Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
-        }
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
+        self.text.set_buffer_position(self.x, self.y);
+        self.hint.apply_computed_layout(tree);
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
-        self.text.set_buffer_position(x, y);
-
-        let bounds = self.get_render_bounds();
-        self.hint.set_position(bounds.x, bounds.y);
-    }
-
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 
@@ -202,7 +236,7 @@ mod tests {
         },
         config::Config,
         manager::UiState,
-        rendering::text_renderer::Text,
+        rendering::text_renderer::TextRenderer,
     };
     use glyphon::FontSystem;
 

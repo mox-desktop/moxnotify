@@ -2,6 +2,11 @@
 members = ["daemon", "ctl"]
 resolver = "2"
 
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -18,7 +23,6 @@ categories = [
   "multimedia",
 ]
 edition = "2024"
-homepage = "https://pipewire.org"
 license = "MIT"
 repository = "https://github.com/mox-desktop/moxnotify"
 version = "0.1.0"

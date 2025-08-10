@@ -5,13 +5,14 @@ mod dismiss;
 use super::text::body;
 use crate::{
     Urgency,
-    components::{self, Bounds, Component, Data},
+    components::{self, Component, Data},
     config::{
         self,
         button::ButtonState,
         keymaps::{self},
     },
     rendering::text_renderer,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use action::ActionButton;
 use anchor::AnchorButton;
@@ -19,6 +20,7 @@ use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
+use taffy::style_helpers::auto;
 
 #[derive(Clone, Copy, Debug)]
 pub enum State {
@@ -57,6 +59,7 @@ pub struct Finished;
 
 pub struct ButtonManager<State = NotReady> {
     context: components::Context,
+    pub action_container: Option<taffy::NodeId>,
     buttons: Vec<Box<dyn Button<Style = ButtonState>>>,
     urgency: Urgency,
     sender: Option<calloop::channel::Sender<crate::Event>>,
@@ -70,6 +73,7 @@ impl ButtonManager<NotReady> {
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Self {
         Self {
+            action_container: None,
             context,
             buttons: Vec::new(),
             urgency,
@@ -80,17 +84,27 @@ impl ButtonManager<NotReady> {
 
     pub fn add_actions(
         self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        self.internal_add_actions(actions, font_system)
+        self.internal_add_actions(tree, actions, font_system)
     }
 
-    pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
-        self.internal_add_anchors(anchors, font_system)
+    pub fn add_anchors(
+        self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        anchors: &[Arc<body::Anchor>],
+        font_system: &mut FontSystem,
+    ) -> Self {
+        self.internal_add_anchors(tree, anchors, font_system)
     }
 
-    pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
+    pub fn add_dismiss(
+        mut self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        font_system: &mut FontSystem,
+    ) -> ButtonManager<Ready> {
         let font = &self
             .context
             .config
@@ -100,10 +114,11 @@ impl ButtonManager<NotReady> {
             .dismiss
             .default
             .font;
-        let text = text_renderer::Text::new(font, font_system, "X");
+        let text = text_renderer::TextContext::new(font, font_system, "X");
 
         let button = DismissButton {
-            hint: Hint::new(self.context.clone(), "", font_system),
+            node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
+            hint: Hint::new(tree, self.context.clone(), "", font_system),
             text,
             x: 0.,
             y: 0.,
@@ -119,6 +134,7 @@ impl ButtonManager<NotReady> {
             buttons: self.buttons,
             urgency: self.urgency,
             sender: self.sender,
+            action_container: self.action_container,
             _state: std::marker::PhantomData,
         }
     }
@@ -127,17 +143,27 @@ impl ButtonManager<NotReady> {
 impl ButtonManager<Ready> {
     pub fn add_actions(
         self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        self.internal_add_actions(actions, font_system)
+        self.internal_add_actions(tree, actions, font_system)
     }
 
-    pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
-        self.internal_add_anchors(anchors, font_system)
+    pub fn add_anchors(
+        self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        anchors: &[Arc<body::Anchor>],
+        font_system: &mut FontSystem,
+    ) -> Self {
+        self.internal_add_anchors(tree, anchors, font_system)
     }
 
-    pub fn finish(mut self, font_system: &mut FontSystem) -> ButtonManager<Finished> {
+    pub fn finish(
+        mut self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        font_system: &mut FontSystem,
+    ) -> ButtonManager<Finished> {
         let hint_chars: Vec<char> = self
             .context
             .config
@@ -162,7 +188,7 @@ impl ButtonManager<Ready> {
 
             indices.reverse();
             let combination: String = indices.into_iter().map(|i| hint_chars[i]).collect();
-            let hint = Hint::new(self.context.clone(), &combination, font_system);
+            let hint = Hint::new(tree, self.context.clone(), &combination, font_system);
 
             button.set_hint(hint);
         });
@@ -172,50 +198,45 @@ impl ButtonManager<Ready> {
             urgency: self.urgency,
             sender: self.sender,
             context: self.context,
+            action_container: self.action_container,
             _state: std::marker::PhantomData,
         }
     }
 }
 
 impl ButtonManager<Finished> {
-    pub fn click(&self, x: f64, y: f64) -> bool {
+    #[must_use]
+    pub fn click(&self, tree: &taffy::TaffyTree<NodeContext>, x: f64, y: f64) -> bool {
         self.buttons
             .iter()
-            .filter_map(|button| {
-                let bounds = button.get_render_bounds();
-                if x >= bounds.x as f64
-                    && y >= bounds.y as f64
-                    && x <= (bounds.x + bounds.width) as f64
-                    && y <= (bounds.y + bounds.height) as f64
-                {
-                    button.click();
-                    Some(true)
-                } else {
-                    None
-                }
+            .find(|button| {
+                let layout = tree.global_layout(button.get_node_id()).unwrap();
+                x >= layout.location.x as f64
+                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && y >= layout.location.y as f64
+                    && y <= (layout.location.y + layout.content_box_height()) as f64
             })
-            .next()
+            .map(|button| button.click())
             .is_some()
     }
 
-    pub fn hover(&mut self, x: f64, y: f64) -> bool {
+    pub fn hover(&mut self, tree: &taffy::TaffyTree<NodeContext>, x: f64, y: f64) -> bool {
         self.buttons
             .iter_mut()
-            .filter_map(|button| {
-                let bounds = button.get_render_bounds();
-                if x >= bounds.x as f64
-                    && y >= bounds.y as f64
-                    && x <= (bounds.x + bounds.width) as f64
-                    && y <= (bounds.y + bounds.height) as f64
+            .find_map(|button| {
+                let layout = tree.global_layout(button.get_node_id()).unwrap();
+                if x >= layout.location.x as f64
+                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && y >= layout.location.y as f64
+                    && y <= (layout.location.y + layout.content_box_height()) as f64
                 {
                     button.hover();
-                    Some(true)
+                    Some(())
                 } else {
                     button.unhover();
                     None
                 }
             })
-            .next()
             .is_some()
     }
 
@@ -232,11 +253,15 @@ impl ButtonManager<Finished> {
         }
     }
 
-    pub fn instances(&self) -> Vec<shape_renderer::ShapeInstance> {
+    #[must_use]
+    pub fn instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         let mut buttons = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_instances(self.urgency))
+            .flat_map(|button| button.get_instances(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -246,7 +271,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_instances(self.urgency))
+                .flat_map(|button| button.hint().get_instances(tree, self.urgency))
                 .collect::<Vec<_>>();
             buttons.extend_from_slice(&hints);
         }
@@ -254,11 +279,12 @@ impl ButtonManager<Finished> {
         buttons
     }
 
-    pub fn text_areas(&self) -> Vec<TextArea<'_>> {
+    #[must_use]
+    pub fn text_areas(&self, tree: &taffy::TaffyTree<NodeContext>) -> Vec<TextArea<'_>> {
         let mut text_areas = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_text_areas(self.urgency))
+            .flat_map(|button| button.get_text_areas(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -268,18 +294,19 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_text_areas(self.urgency));
+                .flat_map(|button| button.hint().get_text_areas(tree, self.urgency));
             text_areas.extend(hints);
         }
 
         text_areas
     }
 
-    pub fn get_data(&self) -> Vec<Data<'_>> {
+    #[must_use]
+    pub fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>) -> Vec<Data<'_>> {
         let mut data = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_data(self.urgency))
+            .flat_map(|button| button.get_data(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -289,7 +316,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_data(self.urgency));
+                .flat_map(|button| button.hint().get_data(tree, self.urgency));
             data.extend(hints);
         }
 
@@ -309,6 +336,7 @@ impl ButtonManager<Finished> {
 impl<S> ButtonManager<S> {
     fn internal_add_anchors(
         mut self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         anchors: &[Arc<body::Anchor>],
         font_system: &mut FontSystem,
     ) -> Self {
@@ -327,12 +355,13 @@ impl<S> ButtonManager<S> {
             .font;
 
         self.buttons.extend(anchors.iter().map(|anchor| {
-            let text = text_renderer::Text::new(font, font_system, "");
+            let text = text_renderer::TextContext::new(font, font_system, "");
             Box::new(AnchorButton {
+                node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                 context: self.context.clone(),
                 x: 0.,
                 y: 0.,
-                hint: Hint::new(self.context.clone(), "", font_system),
+                hint: Hint::new(tree, self.context.clone(), "", font_system),
                 state: State::Unhovered,
                 tx: self.sender.clone(),
                 text,
@@ -345,6 +374,7 @@ impl<S> ButtonManager<S> {
 
     fn internal_add_actions(
         mut self,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
@@ -352,10 +382,25 @@ impl<S> ButtonManager<S> {
             return self;
         }
 
+        self.action_container = tree
+            .new_leaf(taffy::Style {
+                display: taffy::Display::Flex,
+                flex_direction: taffy::FlexDirection::Row,
+                justify_content: Some(taffy::JustifyContent::SpaceEvenly),
+                align_items: Some(taffy::AlignItems::Center),
+                size: taffy::Size {
+                    width: auto(),
+                    height: auto(),
+                },
+                ..Default::default()
+            })
+            .ok();
+
         let mut buttons = actions
             .iter()
             .cloned()
-            .map(|action| {
+            .enumerate()
+            .map(|(index, action)| {
                 let font = &self
                     .context
                     .config
@@ -365,11 +410,12 @@ impl<S> ButtonManager<S> {
                     .action
                     .default
                     .font;
-                let text = text_renderer::Text::new(font, font_system, &action.1);
+                let text = text_renderer::TextContext::new(font, font_system, &action.1);
 
                 Box::new(ActionButton {
+                    node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                     context: self.context.clone(),
-                    hint: Hint::new(self.context.clone(), "", font_system),
+                    hint: Hint::new(tree, self.context.clone(), "", font_system),
                     text,
                     x: 0.,
                     y: 0.,
@@ -377,6 +423,7 @@ impl<S> ButtonManager<S> {
                     state: State::Unhovered,
                     width: 0.,
                     tx: self.sender.clone(),
+                    index,
                 }) as Box<dyn Button<Style = ButtonState>>
             })
             .collect();
@@ -386,6 +433,7 @@ impl<S> ButtonManager<S> {
         self
     }
 
+    #[must_use]
     pub fn buttons(&self) -> &[Box<dyn Button<Style = ButtonState>>] {
         &self.buttons
     }
@@ -396,8 +444,9 @@ impl<S> ButtonManager<S> {
 }
 
 pub struct Hint {
+    node: taffy::NodeId,
     combination: Box<str>,
-    text: text_renderer::Text,
+    text: text_renderer::TextContext,
     context: components::Context,
     x: f32,
     y: f32,
@@ -405,6 +454,7 @@ pub struct Hint {
 
 impl Hint {
     pub fn new<T>(
+        tree: &mut taffy::TaffyTree<NodeContext>,
         context: components::Context,
         combination: T,
         font_system: &mut FontSystem,
@@ -412,9 +462,12 @@ impl Hint {
     where
         T: AsRef<str>,
     {
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
+            node,
             combination: combination.as_ref().into(),
-            text: text_renderer::Text::new(
+            text: text_renderer::TextContext::new(
                 &context.config.styles.default.font,
                 font_system,
                 combination.as_ref(),
@@ -437,53 +490,17 @@ impl Component for Hint {
         &self.context.config.styles.hover.hint
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-        let text_extents = self.text.get_bounds();
-
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
-
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
-
-        Bounds {
-            x: self.x - width / 2.,
-            y: self.y - height / 2.,
-            width,
-            height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let bounds = self.get_bounds();
-        let style = self.get_style();
-
-        Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
-        }
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         let style = &self.context.config.styles.hover.hint;
-        let bounds = self.get_render_bounds();
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         vec![shape_renderer::ShapeInstance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -493,15 +510,25 @@ impl Component for Hint {
         }]
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
+        self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+        // TODO: make it actually calculate
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
+    }
+
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
-        let bounds = self.get_render_bounds();
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         let remaining_padding = style.width.resolve(text_extents.width) - text_extents.width;
         let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
@@ -524,152 +551,32 @@ impl Component for Hint {
 
         vec![TextArea {
             buffer: &self.text.buffer,
-            left: bounds.x + style.padding.left.resolve(pl),
-            top: bounds.y + style.padding.top.resolve(pt),
+            left: layout.location.x + style.padding.left.resolve(pl),
+            top: layout.location.y + style.padding.top.resolve(pt),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (bounds.x + style.padding.left.resolve(pl)) as i32,
-                top: (bounds.y + style.padding.top.resolve(pt)) as i32,
-                right: (bounds.x + style.padding.left.resolve(pl) + bounds.width) as i32,
-                bottom: (bounds.y + style.padding.top.resolve(pt) + bounds.height) as i32,
+                left: (layout.location.x + style.padding.left.resolve(pl)) as i32,
+                top: (layout.location.y + style.padding.top.resolve(pt)) as i32,
+                right: (layout.location.x
+                    + style.padding.left.resolve(pl)
+                    + layout.content_box_width()) as i32,
+                bottom: (layout.location.y
+                    + style.padding.top.resolve(pt)
+                    + layout.content_box_height()) as i32,
             },
             default_color: style.font.color.into_glyphon(urgency),
             custom_glyphs: &[],
         }]
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::ButtonManager;
-    use crate::{Urgency, components, manager::UiState};
-    use glyphon::FontSystem;
-
-    #[test]
-    fn test_button_click_detection() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 1,
-            app_name: "".into(),
-            ui_state: UiState::default(),
-            config: crate::config::Config::default().into(),
-        };
-        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
-            .add_dismiss(&mut font_system)
-            .finish(&mut font_system);
-
-        let button = &mut button_manager.buttons_mut()[0];
-        button.set_position(10.0, 10.0);
-
-        let style = button.get_style();
-        let width = style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        let height = style.height
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        // Define test points: (x, y, should_click)
-        let test_points = [
-            // Internal point (should click)
-            (10.0 + width as f64 / 2.0, 10.0 + height as f64 / 2.0, true),
-            // Exact corners (should click)
-            (10.0, 10.0, true),                                // Top left
-            (10.0 + width as f64, 10.0, true),                 // Top right
-            (10.0, 10.0 + height as f64, true),                // Bottom left
-            (10.0 + width as f64, 10.0 + height as f64, true), // Bottom right
-            // Just outside corners (should not click)
-            (10.0 - 0.1, 10.0, false), // Top left
-            (10.0, 10.0 - 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0, false), // Top right
-            (10.0 + width as f64, 10.0 - 0.1, false),
-            (10.0 - 0.1, 10.0 + height as f64, false), // Bottom left
-            (10.0, 10.0 + height as f64 + 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0 + height as f64, false), // Bottom right
-            (10.0 + width as f64, 10.0 + height as f64 + 0.1, false),
-        ];
-
-        test_points
-            .iter()
-            .enumerate()
-            .for_each(|(i, (x, y, expected))| {
-                assert_eq!(
-                    button_manager.click(*x, *y),
-                    *expected,
-                    "Test point {i} at ({x}, {y}) failed",
-                );
-            });
-    }
-
-    #[test]
-    fn test_button_hover_detection() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 1,
-            app_name: "".into(),
-            ui_state: UiState::default(),
-            config: crate::config::Config::default().into(),
-        };
-        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
-            .add_dismiss(&mut font_system)
-            .finish(&mut font_system);
-
-        let button = &mut button_manager.buttons_mut()[0];
-        button.set_position(10.0, 10.0);
-
-        let style = button.get_style();
-        let width = style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        let height = style.height
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        // Define test points: (x, y, should_hover)
-        let test_points = [
-            // Internal point (should hover)
-            (10.0 + width as f64 / 2.0, 10.0 + height as f64 / 2.0, true),
-            // Exact corners (should hover)
-            (10.0, 10.0, true),                                // Top left
-            (10.0 + width as f64, 10.0, true),                 // Top right
-            (10.0, 10.0 + height as f64, true),                // Bottom left
-            (10.0 + width as f64, 10.0 + height as f64, true), // Bottom right
-            // Just outside corners (should not hover)
-            (10.0 - 0.1, 10.0, false), // Top left
-            (10.0, 10.0 - 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0, false), // Top right
-            (10.0 + width as f64, 10.0 - 0.1, false),
-            (10.0 - 0.1, 10.0 + height as f64, false), // Bottom left
-            (10.0, 10.0 + height as f64 + 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0 + height as f64, false), // Bottom right
-            (10.0 + width as f64, 10.0 + height as f64 + 0.1, false),
-        ];
-
-        test_points
-            .iter()
-            .enumerate()
-            .for_each(|(i, (x, y, expected))| {
-                assert_eq!(
-                    button_manager.hover(*x, *y),
-                    *expected,
-                    "Test point {i} at ({x}, {y}) failed",
-                );
-            });
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }

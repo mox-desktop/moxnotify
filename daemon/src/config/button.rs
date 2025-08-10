@@ -9,7 +9,7 @@ pub struct Buttons {
 impl Default for Buttons {
     fn default() -> Self {
         Self {
-            dismiss: Button::default(),
+            dismiss: Button::default_dismiss(),
             action: Button::default_action(),
         }
     }
@@ -146,12 +146,16 @@ impl Button {
             },
         }
     }
-}
 
-impl Default for Button {
-    fn default() -> Self {
+    pub fn default_dismiss() -> Self {
         Self {
-            default: ButtonState::default(),
+            default: ButtonState {
+                margin: Insets {
+                    left: Size::Auto,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
             hover: ButtonState::default_hover(),
         }
     }

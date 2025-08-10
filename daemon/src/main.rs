@@ -34,7 +34,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 use tokio::sync::broadcast;
-use utils::image_data::ImageData;
+use utils::image_data::ImageContext;
 use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
     globals::{GlobalList, registry_queue_init},
@@ -453,7 +453,7 @@ impl Moxnotify {
 pub enum Image {
     Name(Box<str>),
     File(Box<Path>),
-    Data(ImageData),
+    Data(ImageContext),
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Default, Debug, Clone, Copy)]

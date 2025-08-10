@@ -8,6 +8,7 @@ use crate::{
     Urgency,
     config::{Config, StyleState},
     manager::UiState,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
@@ -65,23 +66,65 @@ pub trait Component {
 
     fn get_style(&self) -> &Self::Style;
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance>;
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance>;
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>>;
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>>;
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>>;
+    fn get_textures(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>>;
 
-    fn get_bounds(&self) -> Bounds;
+    fn get_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        let style = tree.style(self.get_node_id()).unwrap();
 
-    fn get_render_bounds(&self) -> Bounds;
+        Bounds {
+            x: layout.location.x - style.margin.left.into_raw().value(),
+            y: layout.location.y - style.margin.top.into_raw().value(),
+            width: layout.size.width
+                + style.margin.left.into_raw().value()
+                + style.margin.right.into_raw().value(),
+            height: layout.size.height
+                + style.margin.top.into_raw().value()
+                + style.margin.bottom.into_raw().value(),
+        }
+    }
 
-    fn set_position(&mut self, x: f32, y: f32);
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
-    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
-        self.get_instances(urgency)
+        Bounds {
+            x: layout.location.x,
+            y: layout.location.y,
+            width: layout.size.width,
+            height: layout.size.height,
+        }
+    }
+
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>);
+
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>);
+
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, urgency: Urgency) -> Vec<Data<'_>> {
+        self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
-            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .chain(
+                self.get_text_areas(tree, urgency)
+                    .into_iter()
+                    .map(Data::TextArea),
+            )
             .collect()
     }
+
+    fn get_node_id(&self) -> taffy::NodeId;
 }

@@ -5,7 +5,7 @@ use std::str::FromStr;
 use zbus::zvariant::{Signature, Structure};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct ImageData {
+pub struct ImageContext {
     width: u32,
     height: u32,
     rowstride: i32,
@@ -15,7 +15,7 @@ pub struct ImageData {
     data: Vec<u8>,
 }
 
-impl ImageData {
+impl ImageContext {
     #[must_use]
     pub fn to_rgba(self) -> Self {
         if !self.has_alpha {
@@ -87,7 +87,7 @@ impl ImageData {
     }
 }
 
-impl TryFrom<DynamicImage> for ImageData {
+impl TryFrom<DynamicImage> for ImageContext {
     type Error = anyhow::Error;
 
     fn try_from(value: DynamicImage) -> Result<Self, Self::Error> {
@@ -114,7 +114,7 @@ impl TryFrom<DynamicImage> for ImageData {
     }
 }
 
-impl<'a> TryFrom<Structure<'a>> for ImageData {
+impl<'a> TryFrom<Structure<'a>> for ImageContext {
     type Error = zbus::Error;
 
     fn try_from(value: Structure<'a>) -> zbus::Result<Self> {
@@ -210,7 +210,7 @@ mod tests {
         img.put_pixel(0, 1, Rgb([0, 0, 255]));
         img.put_pixel(1, 1, Rgb([255, 255, 255]));
 
-        let image_data = ImageData::try_from(DynamicImage::ImageRgb8(img)).unwrap();
+        let image_data = ImageContext::try_from(DynamicImage::ImageRgb8(img)).unwrap();
         let converted = image_data.to_rgba().resize(2);
 
         assert_eq!(converted.as_ref().unwrap().channels, 4);
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn resizes_image_properly() {
         let img = RgbaImage::from_raw(4, 4, vec![255; 4 * 4 * 4]).unwrap();
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
+        let image_data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         let resized = image_data.to_rgba().resize(2);
 
@@ -235,7 +235,7 @@ mod tests {
     fn preserves_alpha_channel_premultiplied() {
         let mut img = RgbaImage::new(2, 2);
         img.put_pixel(0, 0, image::Rgba([255, 0, 0, 128]));
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
+        let image_data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         let converted = image_data.to_rgba().resize(2).unwrap();
 
@@ -246,7 +246,7 @@ mod tests {
     #[test]
     fn converts_from_dynamic_image() {
         let img = RgbaImage::new(32, 32);
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
+        let image_data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         assert_eq!(image_data.width, 32);
         assert_eq!(image_data.height, 32);

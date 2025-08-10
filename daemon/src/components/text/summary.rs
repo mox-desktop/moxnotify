@@ -3,12 +3,15 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
+    utils::taffy::{GlobalLayout, NodeContext},
 };
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
+use taffy::style_helpers::{auto, length, line};
 
 pub struct Summary {
+    node: taffy::NodeId,
     context: components::Context,
     pub buffer: Buffer,
     x: f32,
@@ -52,13 +55,17 @@ impl Component for Summary {
         &self.get_notification_style().summary
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: Urgency,
+    ) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         vec![shape_renderer::ShapeInstance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -68,9 +75,13 @@ impl Component for Summary {
         }]
     }
 
-    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+        urgency: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
 
         if bounds.width == 0. {
             return Vec::new();
@@ -107,11 +118,14 @@ impl Component for Summary {
         }]
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
-    fn get_bounds(&self) -> Bounds {
+    fn get_bounds(&self, _: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let style = self.get_style();
         let (width, total_lines) = self
             .buffer
@@ -149,9 +163,10 @@ impl Component for Summary {
         }
     }
 
-    fn get_render_bounds(&self) -> Bounds {
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let style = self.get_style();
-        let bounds = self.get_bounds();
+        let bounds = self.get_bounds(tree);
+
         Bounds {
             x: bounds.x + style.margin.left,
             y: bounds.y + style.margin.top,
@@ -160,22 +175,86 @@ impl Component for Summary {
         }
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
+        let style = self.get_style();
+        let summary_size = self.get_render_bounds(tree);
+
+        self.node = tree
+            .new_leaf(taffy::Style {
+                grid_row: line(1),
+                grid_column: line(2),
+                size: taffy::Size {
+                    width: auto(),
+                    height: length(summary_size.height),
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                },
+                padding: taffy::Rect {
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    top: length(style.padding.top.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
     }
 
-    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
-        self.get_instances(urgency)
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
+    }
+
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, urgency: Urgency) -> Vec<Data<'_>> {
+        self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
-            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .chain(
+                self.get_text_areas(tree, urgency)
+                    .into_iter()
+                    .map(Data::TextArea),
+            )
             .collect()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 
 impl Summary {
-    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
+    pub fn new(
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        context: components::Context,
+        font_system: &mut FontSystem,
+    ) -> Self {
         let dpi = 96.0;
         let font_size = context.config.styles.default.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
@@ -185,11 +264,14 @@ impl Summary {
         buffer.shape_until_scroll(font_system, true);
         buffer.set_size(font_system, None, None);
 
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
             buffer,
             x: 0.,
             y: 0.,
             context,
+            node,
         }
     }
 }

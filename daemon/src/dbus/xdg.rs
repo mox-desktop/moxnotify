@@ -1,4 +1,4 @@
-use crate::{EmitEvent, Event, Image, Urgency, utils::image_data::ImageData};
+use crate::{EmitEvent, Event, Image, Urgency, utils::image_data::ImageContext};
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -104,7 +104,7 @@ impl NotificationHints {
                     }
                     "image-data" | "image_data" | "icon_data" => {
                         if let zbus::zvariant::Value::Structure(v) = v {
-                            if let Ok(image) = ImageData::try_from(v) {
+                            if let Ok(image) = ImageContext::try_from(v) {
                                 nh.image = Some(Image::Data(image));
                             } else {
                                 log::warn!("Invalid image data");

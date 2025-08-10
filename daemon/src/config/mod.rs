@@ -146,7 +146,11 @@ impl Default for General {
     fn default() -> Self {
         Self {
             theme: None,
-            margin: Insets::default(),
+            margin: Insets {
+                top: Size::Value(5.),
+                bottom: Size::Value(5.),
+                ..Default::default()
+            },
             history: History::default(),
             default_sound_file: SoundFile::default(),
             ignore_sound_file: false,
@@ -316,13 +320,19 @@ impl<'de> Deserialize<'de> for Selector {
     }
 }
 
-#[derive(Default, Clone, Copy, Deserialize, Debug)]
+#[derive(Clone, Copy, Deserialize, Debug)]
 #[serde(default)]
 pub struct Insets {
     pub left: Size,
     pub right: Size,
     pub top: Size,
     pub bottom: Size,
+}
+
+impl Default for Insets {
+    fn default() -> Self {
+        Self::size(Size::Value(0.))
+    }
 }
 
 impl Insets {
@@ -419,14 +429,10 @@ impl Default for Icon {
         Self {
             border: Border {
                 color: Color::default(),
-                size: Insets::size(Size::Value(0.)),
+                size: Insets::default(),
                 radius: BorderRadius::default(),
             },
-            margin: Insets {
-                right: Size::Value(10.),
-                left: Size::Value(5.),
-                ..Default::default()
-            },
+            margin: Insets::default(),
             padding: Insets::default(),
         }
     }
@@ -540,10 +546,8 @@ impl Default for Progress {
     fn default() -> Self {
         Self {
             margin: Insets {
-                left: Size::Auto,
-                right: Size::Auto,
-                top: Size::Value(10.),
-                bottom: Size::Value(0.),
+                //top: Size::Value(10.),
+                ..Default::default()
             },
             height: Size::Value(20.),
             width: Size::Auto,
@@ -694,7 +698,7 @@ impl Default for StyleState {
             font: Font::default(),
             border: Border::default(),
             margin: Insets::size(Size::Value(5.)),
-            padding: Insets::size(Size::Value(10.)),
+            padding: Insets::size(Size::Value(5.)),
             icon: Icon::default(),
             app_icon: Icon::default(),
             progress: Progress::default(),
@@ -768,9 +772,9 @@ impl<'de> Deserialize<'de> for Styles {
                         style: style.style.clone(),
                         default_timeout: style.default_timeout,
                         ignore_timeout: style.ignore_timeout,
-                        default_sound_file: style.default_sound_file.clone(),
+                        default_sound_file: style.default_sound_file.as_ref().map(|s| s.clone()),
                         ignore_sound_file: style.ignore_sound_file,
-                        theme: style.theme.clone(),
+                        theme: style.theme.as_ref().map(Arc::clone),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -813,10 +817,6 @@ impl<'de> Deserialize<'de> for Styles {
                 }
                 (Selector::NextCounter, _) => styles.next.apply(&style.style),
                 (Selector::PrevCounter, _) => styles.prev.apply(&style.style),
-                (Selector::Summary, State::ContainerHover) => {
-                    styles.default.summary.apply(&style.style);
-                    styles.hover.summary.apply(&style.style);
-                }
                 (Selector::Summary, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
                         .notification
@@ -838,10 +838,6 @@ impl<'de> Deserialize<'de> for Styles {
                 (Selector::Summary, _) => {
                     styles.default.summary.apply(&style.style);
                     styles.hover.summary.apply(&style.style);
-                }
-                (Selector::Body, State::ContainerHover) => {
-                    styles.default.body.apply(&style.style);
-                    styles.hover.body.apply(&style.style);
                 }
                 (Selector::Body, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
@@ -889,10 +885,6 @@ impl<'de> Deserialize<'de> for Styles {
                 (Selector::Progress, _) => {
                     styles.default.progress.apply(&style.style);
                     styles.hover.progress.apply(&style.style);
-                }
-                (Selector::Icon, State::ContainerHover) => {
-                    styles.default.icon.apply(&style.style);
-                    styles.hover.icon.apply(&style.style);
                 }
                 (Selector::Icon, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
@@ -1052,7 +1044,7 @@ impl Default for Styles {
                             },
                             ..Default::default()
                         },
-                        ..Default::default()
+                        ..Button::default_dismiss()
                     },
                     ..Default::default()
                 },
