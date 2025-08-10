@@ -418,14 +418,14 @@ impl NotificationManager {
         self.ui_state.selected.store(false, Ordering::Relaxed);
 
         let old_id = self.ui_state.selected_id.load(Ordering::Relaxed);
-        if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id) {
-            if let Some(notification) = self.notifications.get_mut(index) {
-                notification.unhover();
-                match self.config.general.queue {
-                    Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
-                    Queue::Unordered => notification.start_timer(&self.loop_handle),
-                    Queue::FIFO => {}
-                }
+        if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id)
+            && let Some(notification) = self.notifications.get_mut(index)
+        {
+            notification.unhover();
+            match self.config.general.queue {
+                Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
+                Queue::Unordered => notification.start_timer(&self.loop_handle),
+                Queue::FIFO => {}
             }
         }
     }
@@ -520,10 +520,10 @@ impl NotificationManager {
             self.promote_notifications();
         }
 
-        if let Queue::FIFO = self.config.general.queue {
-            if let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
-                notification.start_timer(&self.loop_handle);
-            }
+        if let Queue::FIFO = self.config.general.queue
+            && let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered())
+        {
+            notification.start_timer(&self.loop_handle);
         }
 
         // Deselect if there are no notifications left
@@ -537,22 +537,21 @@ impl NotificationManager {
             .visible
             .clone()
             .for_each(|notification_idx| {
-                if let Some(notification_state) = self.notifications.get_mut(notification_idx) {
-                    if matches!(notification_state, NotificationState::Empty(_)) {
-                        if let NotificationState::Empty(notification) = std::mem::replace(
-                            notification_state,
-                            NotificationState::Empty(Notification::<Empty>::new_empty(
-                                Arc::clone(&self.config),
-                                NotificationData::default(),
-                                UiState::default(),
-                            )),
-                        ) {
-                            *notification_state = NotificationState::Ready(notification.promote(
-                                &mut self.font_system.borrow_mut(),
-                                Some(self.sender.clone()),
-                            ));
-                        }
-                    }
+                if let Some(notification_state) = self.notifications.get_mut(notification_idx)
+                    && matches!(notification_state, NotificationState::Empty(_))
+                    && let NotificationState::Empty(notification) = std::mem::replace(
+                        notification_state,
+                        NotificationState::Empty(Notification::<Empty>::new_empty(
+                            Arc::clone(&self.config),
+                            NotificationData::default(),
+                            UiState::default(),
+                        )),
+                    )
+                {
+                    *notification_state = NotificationState::Ready(notification.promote(
+                        &mut self.font_system.borrow_mut(),
+                        Some(self.sender.clone()),
+                    ));
                 }
             });
     }
@@ -670,14 +669,14 @@ impl Moxnotify {
         }
 
         self.update_surface_size();
-        if let Some(surface) = self.surface.as_mut() {
-            if let Err(e) = surface.render(
+        if let Some(surface) = self.surface.as_mut()
+            && let Err(e) = surface.render(
                 &self.wgpu_state.device,
                 &self.wgpu_state.queue,
                 &self.notifications,
-            ) {
-                log::error!("Render error: {e}");
-            }
+            )
+        {
+            log::error!("Render error: {e}");
         }
 
         if self.notifications.notifications().is_empty() {

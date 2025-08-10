@@ -287,31 +287,30 @@ impl Moxnotify {
                 self.dismiss_by_id(id, Some(Reason::CloseNotificationCall));
             }
             Event::FocusSurface => {
-                if let Some(surface) = self.surface.as_mut() {
-                    if surface.focus_reason.is_none() {
-                        log::info!("Focusing notification surface");
-                        surface.focus(FocusReason::Ctl);
+                if let Some(surface) = self.surface.as_mut()
+                    && surface.focus_reason.is_none()
+                {
+                    log::info!("Focusing notification surface");
+                    surface.focus(FocusReason::Ctl);
 
-                        let should_select_last =
-                            self.notifications.notifications().iter().any(|n| {
-                                n.id()
-                                    == self
-                                        .notifications
-                                        .ui_state
-                                        .selected_id
-                                        .load(Ordering::Relaxed)
-                            });
-
-                        if should_select_last {
-                            let last_id = self
+                    let should_select_last = self.notifications.notifications().iter().any(|n| {
+                        n.id()
+                            == self
                                 .notifications
                                 .ui_state
                                 .selected_id
-                                .load(Ordering::Relaxed);
-                            self.notifications.select(last_id);
-                        } else {
-                            self.notifications.next();
-                        }
+                                .load(Ordering::Relaxed)
+                    });
+
+                    if should_select_last {
+                        let last_id = self
+                            .notifications
+                            .ui_state
+                            .selected_id
+                            .load(Ordering::Relaxed);
+                        self.notifications.select(last_id);
+                    } else {
+                        self.notifications.next();
                     }
                 }
             }
@@ -655,10 +654,10 @@ impl Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ()> for Moxnotify {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_activation_token_v1::Event::Done { token } = event {
-            if let Some(surface) = state.surface.as_mut() {
-                surface.token = Some(token.into());
-            }
+        if let xdg_activation_token_v1::Event::Done { token } = event
+            && let Some(surface) = state.surface.as_mut()
+        {
+            surface.token = Some(token.into());
         }
     }
 }
@@ -778,10 +777,10 @@ async fn main() -> anyhow::Result<()> {
     event_loop
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
-            if let calloop::channel::Event::Msg(event) = event {
-                if let Err(e) = moxnotify.handle_app_event(event) {
-                    log::error!("Failed to handle event: {e}");
-                }
+            if let calloop::channel::Event::Msg(event) = event
+                && let Err(e) = moxnotify.handle_app_event(event)
+            {
+                log::error!("Failed to handle event: {e}");
             }
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
