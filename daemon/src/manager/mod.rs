@@ -577,7 +577,9 @@ impl Moxnotify {
             return;
         }
 
-        ids.iter().for_each(|id| self.notifications.dismiss(*id));
+        for id in ids {
+            self.notifications.dismiss(id)
+        }
     }
 
     pub fn dismiss_by_id(&mut self, id: u32, reason: Option<Reason>) {

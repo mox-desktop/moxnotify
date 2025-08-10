@@ -23,6 +23,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
+use taffy::{PrintTree, TaffyResult};
 use taffy::{
     TaffyTree,
     style_helpers::{auto, fr, length, line, span},
@@ -87,6 +88,7 @@ impl NotificationState {
         }
     }
 
+    #[must_use]
     pub fn get_render_bounds(&self) -> Bounds {
         match self {
             Self::Empty(_) => unreachable!(),
@@ -225,78 +227,11 @@ impl Component for Notification<Ready> {
         Vec::new()
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
-
-        let extents = self.get_render_bounds();
-        let action_buttons_count = self
-            .buttons
-            .as_ref()
-            .map(|buttons| {
-                buttons
-                    .buttons()
-                    .iter()
-                    .filter(|button| button.button_type() == ButtonType::Action)
-                    .count()
-            })
-            .unwrap_or_default();
-
+    fn set_position(&mut self, _: f32, _: f32) {
         let mut tree: TaffyTree<()> = TaffyTree::new();
-        let icons_size = self
-            .icons
-            .as_ref()
-            .map(|i| i.get_bounds())
-            .unwrap_or_default();
-        let summary_size = self
-            .summary
-            .as_ref()
-            .map(|s| s.get_bounds())
-            .unwrap_or_default();
-        let progress_size = self
-            .progress
-            .as_ref()
-            .map(|p| p.get_bounds())
-            .unwrap_or_default();
-
-        let dismiss_size = self
-            .buttons
-            .as_ref()
-            .and_then(|buttons| {
-                buttons
-                    .buttons()
-                    .iter()
-                    .find(|button| button.button_type() == ButtonType::Dismiss)
-                    .map(|button| button.get_bounds())
-            })
-            .unwrap_or_default();
-
-        let action_buttons_height = if action_buttons_count > 0 {
-            self.buttons
-                .as_ref()
-                .and_then(|buttons| {
-                    buttons
-                        .buttons()
-                        .iter()
-                        .filter(|b| b.button_type() == ButtonType::Action)
-                        .map(|b| b.get_bounds().height)
-                        .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-                })
-                .unwrap_or(0.0)
-        } else {
-            0.0
-        };
-
         let container_node = {
             let style = self.get_style();
             tree.new_leaf(taffy::Style {
-                position: taffy::Position::Absolute,
-                inset: taffy::Rect {
-                    left: length(x),
-                    right: auto(),
-                    top: length(y),
-                    bottom: auto(),
-                },
                 size: taffy::Size {
                     width: if style.width.is_auto() {
                         auto()
@@ -337,18 +272,15 @@ impl Component for Notification<Ready> {
                         length(style.margin.bottom.resolve(0.))
                     },
                 },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
                 display: taffy::Display::Grid,
-                grid_template_rows: vec![
-                    length(summary_size.height.max(dismiss_size.height)),
-                    auto(),
-                    length(action_buttons_height),
-                    length(progress_size.height),
-                ],
-                grid_template_columns: vec![
-                    length(icons_size.width),
-                    fr(1.),
-                    length(dismiss_size.width),
-                ],
+                grid_template_rows: vec![auto(), auto(), auto(), auto()],
+                grid_template_columns: vec![auto(), fr(1.), auto()],
                 ..Default::default()
             })
             .unwrap()
@@ -362,16 +294,8 @@ impl Component for Notification<Ready> {
                     grid_row: span(2),
                     grid_column: line(1),
                     size: taffy::Size {
-                        width: if style.width.is_auto() {
-                            auto()
-                        } else {
-                            length(style.width.resolve(0.))
-                        },
-                        height: if style.height.is_auto() {
-                            auto()
-                        } else {
-                            length(style.height.resolve(0.))
-                        },
+                        width: length(icons.get_render_bounds().width),
+                        height: length(icons.get_render_bounds().height),
                     },
                     padding: taffy::Rect {
                         top: length(style.padding.top.resolve(0.)),
@@ -401,6 +325,12 @@ impl Component for Notification<Ready> {
                             length(style.margin.bottom.resolve(0.))
                         },
                     },
+                    border: taffy::Rect {
+                        left: length(style.border.size.left.resolve(0.)),
+                        right: length(style.border.size.left.resolve(0.)),
+                        top: length(style.border.size.left.resolve(0.)),
+                        bottom: length(style.border.size.left.resolve(0.)),
+                    },
                     ..Default::default()
                 })
                 .unwrap();
@@ -412,6 +342,11 @@ impl Component for Notification<Ready> {
 
         let summary_node = if let Some(summary) = self.summary.as_ref() {
             let style = summary.get_style();
+            let summary_size = self
+                .summary
+                .as_ref()
+                .map(super::Component::get_render_bounds)
+                .unwrap_or_default();
 
             let node = tree
                 .new_leaf(taffy::Style {
@@ -449,6 +384,12 @@ impl Component for Notification<Ready> {
                         top: length(style.padding.top.resolve(0.)),
                         bottom: length(style.padding.bottom.resolve(0.)),
                     },
+                    border: taffy::Rect {
+                        left: length(style.border.size.left.resolve(0.)),
+                        right: length(style.border.size.left.resolve(0.)),
+                        top: length(style.border.size.left.resolve(0.)),
+                        bottom: length(style.border.size.left.resolve(0.)),
+                    },
                     ..Default::default()
                 })
                 .unwrap();
@@ -479,10 +420,10 @@ impl Component for Notification<Ready> {
                     } else {
                         length(style.width.resolve(0.))
                     },
-                    height: if style.width.is_auto() {
+                    height: if style.height.is_auto() {
                         auto()
                     } else {
-                        length(style.width.resolve(0.))
+                        length(style.height.resolve(0.))
                     },
                 },
                 margin: taffy::Rect {
@@ -513,6 +454,12 @@ impl Component for Notification<Ready> {
                     top: length(style.padding.top.resolve(0.)),
                     bottom: length(style.padding.bottom.resolve(0.)),
                 },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
                 ..Default::default()
             })
             .unwrap()
@@ -524,10 +471,13 @@ impl Component for Notification<Ready> {
             let node = tree
                 .new_leaf(taffy::Style {
                     grid_row: line(2),
-                    grid_column: line(2),
+                    grid_column: taffy::Line {
+                        start: line(2),
+                        end: span(2),
+                    },
                     size: taffy::Size {
-                        width: length(body.get_bounds().width),
-                        height: length(body.get_bounds().height),
+                        width: length(body.get_render_bounds().width),
+                        height: length(body.get_render_bounds().height),
                     },
                     margin: taffy::Rect {
                         left: if style.margin.left.is_auto() {
@@ -557,6 +507,12 @@ impl Component for Notification<Ready> {
                         top: length(style.padding.top.resolve(0.)),
                         bottom: length(style.padding.bottom.resolve(0.)),
                     },
+                    border: taffy::Rect {
+                        left: length(style.border.size.left.resolve(0.)),
+                        right: length(style.border.size.left.resolve(0.)),
+                        top: length(style.border.size.left.resolve(0.)),
+                        bottom: length(style.border.size.left.resolve(0.)),
+                    },
                     flex_grow: 1.0,
                     ..Default::default()
                 })
@@ -567,22 +523,105 @@ impl Component for Notification<Ready> {
             None
         };
 
+        let action_buttons_count = self
+            .buttons
+            .as_ref()
+            .map(|buttons| {
+                buttons
+                    .buttons()
+                    .iter()
+                    .filter(|button| button.button_type() == ButtonType::Action)
+                    .count()
+            })
+            .unwrap_or_default();
+
+        let mut action_button_nodes = Vec::new();
         let action_buttons_node = if action_buttons_count > 0 {
             let node = tree
                 .new_leaf(taffy::Style {
                     grid_row: line(3),
                     grid_column: span(3),
-                    display: taffy::Display::Flex,
-                    flex_direction: taffy::FlexDirection::Row,
-                    justify_content: Some(taffy::JustifyContent::SpaceBetween),
                     size: taffy::Size {
                         width: auto(),
-                        height: length(action_buttons_height),
+                        height: auto(),
                     },
+                    display: taffy::Display::Grid,
+                    grid_template_columns: vec![fr(1.); action_buttons_count],
                     ..Default::default()
                 })
                 .unwrap();
             tree.add_child(container_node, node).unwrap();
+
+            if let Some(buttons) = self.buttons.as_mut() {
+                let mut action_buttons: Vec<_> = buttons
+                    .buttons_mut()
+                    .iter_mut()
+                    .filter(|b| b.button_type() == ButtonType::Action)
+                    .collect();
+
+                action_buttons
+                    .iter_mut()
+                    .enumerate()
+                    .for_each(|(index, button)| {
+                        let style = button.get_style();
+                        let button_node = tree
+                            .new_leaf(taffy::Style {
+                                grid_column: line(index as i16 + 1),
+                                size: taffy::Size {
+                                    width: if style.width.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.width.resolve(0.))
+                                    },
+                                    height: if style.height.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.height.resolve(0.))
+                                    },
+                                },
+                                padding: taffy::Rect {
+                                    left: length(style.padding.left.resolve(0.)),
+                                    right: length(style.padding.right.resolve(0.)),
+                                    top: length(style.padding.top.resolve(0.)),
+                                    bottom: length(style.padding.bottom.resolve(0.)),
+                                },
+                                margin: taffy::Rect {
+                                    left: if style.margin.left.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.margin.left.resolve(0.))
+                                    },
+                                    right: if style.margin.right.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.margin.right.resolve(0.))
+                                    },
+                                    top: if style.margin.top.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.margin.top.resolve(0.))
+                                    },
+                                    bottom: if style.margin.bottom.is_auto() {
+                                        auto()
+                                    } else {
+                                        length(style.margin.bottom.resolve(0.))
+                                    },
+                                },
+                                border: taffy::Rect {
+                                    left: length(style.border.size.left.resolve(0.)),
+                                    right: length(style.border.size.left.resolve(0.)),
+                                    top: length(style.border.size.left.resolve(0.)),
+                                    bottom: length(style.border.size.left.resolve(0.)),
+                                },
+                                ..Default::default()
+                            })
+                            .unwrap();
+
+                        tree.add_child(node, button_node).unwrap();
+                        action_button_nodes.push(button_node);
+                    });
+            }
+
             Some(node)
         } else {
             None
@@ -628,6 +667,12 @@ impl Component for Notification<Ready> {
                             length(style.margin.bottom.resolve(0.))
                         },
                     },
+                    border: taffy::Rect {
+                        left: length(style.border.size.left.resolve(0.)),
+                        right: length(style.border.size.left.resolve(0.)),
+                        top: length(style.border.size.left.resolve(0.)),
+                        bottom: length(style.border.size.left.resolve(0.)),
+                    },
                     ..Default::default()
                 })
                 .unwrap();
@@ -640,14 +685,14 @@ impl Component for Notification<Ready> {
         tree.compute_layout(
             container_node,
             taffy::Size {
-                width: taffy::AvailableSpace::Definite(extents.width),
+                width: taffy::AvailableSpace::MinContent,
                 height: taffy::AvailableSpace::MinContent,
             },
         )
         .unwrap();
 
         if let Some(icons) = icons_node {
-            let res = tree.layout(icons).unwrap();
+            let res = tree.global_layout(icons).unwrap();
             self.icons
                 .as_mut()
                 .unwrap()
@@ -655,14 +700,14 @@ impl Component for Notification<Ready> {
         }
 
         if let Some(summary) = summary_node {
-            let res = tree.layout(summary).unwrap();
+            let res = tree.global_layout(summary).unwrap();
             self.summary
                 .as_mut()
                 .unwrap()
                 .set_position(res.location.x, res.location.y);
         }
 
-        let res = tree.layout(dismiss_node).unwrap();
+        let res = tree.global_layout(dismiss_node).unwrap();
         if let Some(buttons) = self.buttons.as_mut()
             && let Some(dismiss_button) = buttons
                 .buttons_mut()
@@ -673,51 +718,48 @@ impl Component for Notification<Ready> {
         }
 
         if let Some(body) = body_node {
-            let res = tree.layout(body).unwrap();
+            let res = tree.global_layout(body).unwrap();
             self.body
                 .as_mut()
                 .unwrap()
                 .set_position(res.location.x, res.location.y);
         }
 
-        if let Some(actions) = action_buttons_node {
-            let res = tree.layout(actions).unwrap();
-
+        if !action_button_nodes.is_empty() {
             if let Some(buttons) = self.buttons.as_mut() {
-                let action_buttons: Vec<_> = buttons
+                let mut action_buttons: Vec<_> = buttons
                     .buttons_mut()
                     .iter_mut()
                     .filter(|b| b.button_type() == ButtonType::Action)
                     .collect();
 
-                let button_spacing = if action_buttons.len() > 1 {
-                    (res.size.width
-                        - action_buttons
-                            .iter()
-                            .map(|b| b.get_bounds().width)
-                            .sum::<f32>())
-                        / (action_buttons.len() - 1) as f32
-                } else {
-                    0.0
-                };
+                for (button_node, button) in
+                    action_button_nodes.iter().zip(action_buttons.iter_mut())
+                {
+                    let layout = tree.global_layout(*button_node).unwrap();
+                    button.set_position(layout.location.x, layout.location.y);
+                }
 
-                let mut current_x = res.location.x;
-                for button in action_buttons {
-                    button.set_position(current_x, res.location.y);
-                    current_x += button.get_bounds().width + button_spacing;
+                // Set common width for action buttons (using first button's width)
+                if let Some(first_node) = action_button_nodes.first() {
+                    let layout = tree.global_layout(*first_node).unwrap();
+                    buttons.set_action_widths(layout.size.width);
                 }
             }
         }
 
         if let Some(progress) = progress_node {
-            let res = tree.layout(progress).unwrap();
+            let res = tree.global_layout(progress).unwrap();
             self.progress
                 .as_mut()
                 .unwrap()
                 .set_position(res.location.x, res.location.y);
-            println!("{:?}", res.size);
             self.progress.as_mut().unwrap().set_width(res.size.width);
         }
+
+        let res = tree.global_layout(container_node).unwrap();
+        self.x = res.location.x;
+        self.y = res.location.y;
     }
 
     fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
@@ -1227,5 +1269,25 @@ impl Notification<Ready> {
                 base_height.clamp(min_height, max_height)
             }
         }
+    }
+}
+
+trait GlobalLayout {
+    fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout>;
+}
+
+impl GlobalLayout for TaffyTree<()> {
+    fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout> {
+        let mut current_node = node;
+        let mut global_rect = self.layout(node)?.clone();
+
+        while let Some(parent) = self.parent(current_node) {
+            let parent_layout = self.layout(parent)?;
+            global_rect.location.x += parent_layout.location.x;
+            global_rect.location.y += parent_layout.location.y;
+            current_node = parent;
+        }
+
+        Ok(global_rect)
     }
 }

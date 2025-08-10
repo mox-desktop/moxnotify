@@ -770,9 +770,9 @@ impl<'de> Deserialize<'de> for Styles {
                         style: style.style.clone(),
                         default_timeout: style.default_timeout,
                         ignore_timeout: style.ignore_timeout,
-                        default_sound_file: style.default_sound_file.clone(),
+                        default_sound_file: style.default_sound_file.as_ref().map(|s| s.clone()),
                         ignore_sound_file: style.ignore_sound_file,
-                        theme: style.theme.clone(),
+                        theme: style.theme.as_ref().map(Arc::clone),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -815,10 +815,6 @@ impl<'de> Deserialize<'de> for Styles {
                 }
                 (Selector::NextCounter, _) => styles.next.apply(&style.style),
                 (Selector::PrevCounter, _) => styles.prev.apply(&style.style),
-                (Selector::Summary, State::ContainerHover) => {
-                    styles.default.summary.apply(&style.style);
-                    styles.hover.summary.apply(&style.style);
-                }
                 (Selector::Summary, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
                         .notification
@@ -840,10 +836,6 @@ impl<'de> Deserialize<'de> for Styles {
                 (Selector::Summary, _) => {
                     styles.default.summary.apply(&style.style);
                     styles.hover.summary.apply(&style.style);
-                }
-                (Selector::Body, State::ContainerHover) => {
-                    styles.default.body.apply(&style.style);
-                    styles.hover.body.apply(&style.style);
                 }
                 (Selector::Body, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
@@ -891,10 +883,6 @@ impl<'de> Deserialize<'de> for Styles {
                 (Selector::Progress, _) => {
                     styles.default.progress.apply(&style.style);
                     styles.hover.progress.apply(&style.style);
-                }
-                (Selector::Icon, State::ContainerHover) => {
-                    styles.default.icon.apply(&style.style);
-                    styles.hover.icon.apply(&style.style);
                 }
                 (Selector::Icon, State::NamedContainerHover(app_name)) => {
                     if let Some(notification) = styles
