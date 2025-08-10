@@ -70,6 +70,7 @@
           pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
             inherit buildInputs;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+            MOLD_PATH = "${pkgs.mold}/bin/mold";
           };
       });
 
