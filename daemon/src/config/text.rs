@@ -102,8 +102,8 @@ impl Default for Body {
             size: 10.,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
-            margin: Insets::default(),
-            padding: Insets::default(),
+            margin: Insets::size(super::Size::Value(0.)),
+            padding: Insets::size(super::Size::Value(0.)),
             border: Border {
                 size: Insets::default(),
                 ..Default::default()

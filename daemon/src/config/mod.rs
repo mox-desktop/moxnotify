@@ -318,13 +318,19 @@ impl<'de> Deserialize<'de> for Selector {
     }
 }
 
-#[derive(Default, Clone, Copy, Deserialize, Debug)]
+#[derive(Clone, Copy, Deserialize, Debug)]
 #[serde(default)]
 pub struct Insets {
     pub left: Size,
     pub right: Size,
     pub top: Size,
     pub bottom: Size,
+}
+
+impl Default for Insets {
+    fn default() -> Self {
+        Self::size(Size::Value(0.))
+    }
 }
 
 impl Insets {
@@ -433,11 +439,7 @@ impl Default for Icon {
                 size: Insets::size(Size::Value(0.)),
                 radius: BorderRadius::default(),
             },
-            margin: Insets {
-                right: Size::Value(10.),
-                left: Size::Value(5.),
-                ..Default::default()
-            },
+            margin: Insets::default(),
             padding: Insets::default(),
         }
     }
@@ -551,8 +553,8 @@ impl Default for Progress {
     fn default() -> Self {
         Self {
             margin: Insets {
-                left: Size::Auto,
-                right: Size::Auto,
+                left: Size::Value(0.),
+                right: Size::Value(0.),
                 top: Size::Value(10.),
                 bottom: Size::Value(0.),
             },
@@ -1063,7 +1065,7 @@ impl Default for Styles {
                             },
                             ..Default::default()
                         },
-                        ..Default::default()
+                        ..Button::default_dismiss()
                     },
                     ..Default::default()
                 },

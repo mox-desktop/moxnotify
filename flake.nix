@@ -31,12 +31,16 @@
           let
             inherit (pkgs) lib;
             buildInputs = [
-              (pkgs.rust-bin.stable.latest.default.override {
-                extensions = [
-                  "rust-src"
-                  "rustfmt"
-                ];
-              })
+              (pkgs.rust-bin.selectLatestNightlyWith (
+                toolchain:
+                toolchain.default.override {
+                  extensions = [
+                    "rustc-codegen-cranelift-preview"
+                    "rust-src"
+                    "rustfmt"
+                  ];
+                }
+              ))
             ]
             ++ builtins.attrValues {
               inherit (pkgs)
@@ -59,6 +63,7 @@
           pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
             inherit buildInputs;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
+            MOLD_PATH = "${pkgs.mold}/bin/mold";
           };
       });
 
@@ -66,7 +71,7 @@
         default = pkgs.callPackage ./nix/package.nix {
           rustPlatform =
             let
-              rust-bin = pkgs.rust-bin.stable.latest.default;
+              rust-bin = (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal));
             in
             pkgs.makeRustPlatform {
               cargo = rust-bin;
