@@ -162,25 +162,21 @@ impl NotificationManager {
     }
 
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
-        self.notification_view
-            .visible
-            .clone()
-            .filter_map(|index| {
-                if let Some(notification) = self.notifications.get(index) {
-                    let extents = notification.get_render_bounds();
-                    let x_within_bounds =
-                        x >= extents.x as f64 && x <= (extents.x + extents.width) as f64;
-                    let y_within_bounds =
-                        y >= extents.y as f64 && y <= (extents.y + extents.height) as f64;
+        self.notification_view.visible.clone().find_map(|index| {
+            if let Some(notification) = self.notifications.get(index) {
+                let extents = notification.get_render_bounds();
+                let x_within_bounds =
+                    x >= extents.x as f64 && x <= (extents.x + extents.width) as f64;
+                let y_within_bounds =
+                    y >= extents.y as f64 && y <= (extents.y + extents.height) as f64;
 
-                    if x_within_bounds && y_within_bounds {
-                        return Some(notification);
-                    }
+                if x_within_bounds && y_within_bounds {
+                    return Some(notification);
                 }
+            }
 
-                None
-            })
-            .next()
+            None
+        })
     }
 
     pub fn click(&mut self, x: f64, y: f64) -> bool {
@@ -638,7 +634,9 @@ impl Moxnotify {
             return;
         }
 
-        ids.iter().for_each(|id| self.notifications.dismiss(*id));
+        for id in ids {
+            self.notifications.dismiss(id)
+        }
     }
 
     pub fn dismiss_by_id(&mut self, id: u32, reason: Option<Reason>) {

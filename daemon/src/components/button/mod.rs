@@ -178,10 +178,11 @@ impl ButtonManager<Ready> {
 }
 
 impl ButtonManager<Finished> {
+    #[must_use]
     pub fn click(&self, x: f64, y: f64) -> bool {
         self.buttons
             .iter()
-            .filter_map(|button| {
+            .find_map(|button| {
                 let bounds = button.get_render_bounds();
                 if x >= bounds.x as f64
                     && y >= bounds.y as f64
@@ -194,14 +195,13 @@ impl ButtonManager<Finished> {
                     None
                 }
             })
-            .next()
             .is_some()
     }
 
     pub fn hover(&mut self, x: f64, y: f64) -> bool {
         self.buttons
             .iter_mut()
-            .filter_map(|button| {
+            .find_map(|button| {
                 let bounds = button.get_render_bounds();
                 if x >= bounds.x as f64
                     && y >= bounds.y as f64
@@ -215,7 +215,6 @@ impl ButtonManager<Finished> {
                     None
                 }
             })
-            .next()
             .is_some()
     }
 
@@ -232,6 +231,7 @@ impl ButtonManager<Finished> {
         }
     }
 
+    #[must_use]
     pub fn instances(&self) -> Vec<buffers::Instance> {
         let mut buttons = self
             .buttons
@@ -254,6 +254,7 @@ impl ButtonManager<Finished> {
         buttons
     }
 
+    #[must_use]
     pub fn text_areas(&self) -> Vec<TextArea<'_>> {
         let mut text_areas = self
             .buttons
@@ -275,6 +276,7 @@ impl ButtonManager<Finished> {
         text_areas
     }
 
+    #[must_use]
     pub fn get_data(&self) -> Vec<Data<'_>> {
         let mut data = self
             .buttons
@@ -386,6 +388,7 @@ impl<S> ButtonManager<S> {
         self
     }
 
+    #[must_use]
     pub fn buttons(&self) -> &[Box<dyn Button<Style = ButtonState>>] {
         &self.buttons
     }

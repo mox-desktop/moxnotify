@@ -5,10 +5,19 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    treefmt = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { nixpkgs, rust-overlay, ... }:
+    {
+      nixpkgs,
+      rust-overlay,
+      treefmt,
+      ...
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -66,6 +75,10 @@
             MOLD_PATH = "${pkgs.mold}/bin/mold";
           };
       });
+
+      formatter = forAllSystems (
+        pkgs: (treefmt.lib.evalModule pkgs ./nix/treefmt.nix).config.build.wrapper
+      );
 
       packages = forAllSystems (pkgs: {
         default = pkgs.callPackage ./nix/package.nix {
