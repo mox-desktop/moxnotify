@@ -102,9 +102,10 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
                 parts[0].parse::<u8>().ok(),
                 parts[1].parse::<u8>().ok(),
                 parts[2].parse::<u8>().ok(),
-            ) {
-                return Some(glyphon::Color::rgba(r, g, b, 255));
-            }
+            )
+        {
+            return Some(glyphon::Color::rgba(r, g, b, 255));
+        }
     } else if value.starts_with("rgba(") && value.ends_with(')') {
         let rgba = &value[5..value.len() - 1];
         let parts: Vec<&str> = rgba.split(',').map(str::trim).collect();
@@ -114,9 +115,10 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
                 parts[1].parse::<u8>().ok(),
                 parts[2].parse::<u8>().ok(),
                 (parts[3].parse::<f32>().ok().map(|a| (a * 255.0) as u8)),
-            ) {
-                return Some(glyphon::Color::rgba(r, g, b, a));
-            }
+            )
+        {
+            return Some(glyphon::Color::rgba(r, g, b, a));
+        }
     }
 
     None
