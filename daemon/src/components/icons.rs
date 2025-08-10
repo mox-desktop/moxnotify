@@ -51,6 +51,7 @@ pub struct Icons {
 }
 
 impl Icons {
+    #[must_use]
     pub fn new(
         context: components::Context,
         image: Option<&Image>,
@@ -79,9 +80,10 @@ impl Icons {
             )
         });
 
-        let (final_app_icon, final_icon) = match icon.is_some() {
-            true => (app_icon, icon),
-            false => (None, app_icon),
+        let (final_app_icon, final_icon) = if icon.is_some() {
+            (app_icon, icon)
+        } else {
+            (None, app_icon)
         };
 
         Self {
