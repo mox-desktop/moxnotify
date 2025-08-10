@@ -317,7 +317,7 @@ impl Text for Body {
         self.buffer
             .set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
 
-        for anchor in anchors.iter_mut() {
+        for anchor in &mut anchors {
             if let Some(line) = self.buffer.layout_runs().nth(anchor.line) {
                 let first = line.glyphs.get(anchor.start);
                 let last = line.glyphs.get(anchor.end);
