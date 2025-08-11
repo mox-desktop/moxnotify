@@ -13,7 +13,7 @@
 let
   cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
 in
-rustPlatform.buildRustPackage rec {
+rustPlatform.buildRustPackage (finalAttrs: {
   pname = "moxnotify";
   inherit (cargoToml.workspace.package) version;
 
@@ -80,7 +80,7 @@ rustPlatform.buildRustPackage rec {
     substitute $src/pl.mox.notify.service.in $out/share/dbus-1/services/pl.mox.notify.service --replace-fail '@bindir@' "$out/bin"
     chmod 0644 $out/share/dbus-1/services/pl.mox.notify.service
 
-    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/bin/moxnotifyd
+    patchelf --set-rpath "${lib.makeLibraryPath finalAttrs.buildInputs}" $out/bin/moxnotifyd
   '';
 
   dontPatchELF = false;
@@ -93,4 +93,4 @@ rustPlatform.buildRustPackage rec {
     platforms = platforms.linux;
     mainProgram = "moxnotify";
   };
-}
+})

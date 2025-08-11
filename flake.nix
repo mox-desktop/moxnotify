@@ -53,6 +53,7 @@
             ]
             ++ builtins.attrValues {
               inherit (pkgs)
+                npins
                 rust-analyzer-unwrapped
                 nixd
                 pkg-config
@@ -73,6 +74,7 @@
             inherit buildInputs;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
             MOLD_PATH = "${pkgs.mold}/bin/mold";
+            RUSTFLAGS = "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
           };
       });
 
