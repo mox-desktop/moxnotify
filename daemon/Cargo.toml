@@ -46,7 +46,7 @@ symphonia = { version = "0.5.4", features = [
 ], default-features = false }
 freedesktop-sound = "0.1.0"
 serde_json = "1.0.140"
-rusqlite = { version = "0.35.0", features = ["bundled"] }
+rusqlite = { version = "0.37.0", features = ["bundled"] }
 tracing = { version = "0.1.41", default-features = false }
 log = "0.4.27"
 inotify = { version = "0.11.0", default-features = false }
