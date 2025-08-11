@@ -1,7 +1,7 @@
 use crate::{
     Image,
     components::{self, Bounds, Component},
-    config::StyleState,
+    config,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
     utils::{buffers, image_data::ImageData},
 };
@@ -97,14 +97,14 @@ impl Icons {
 }
 
 impl Component for Icons {
-    type Style = StyleState;
+    type Style = config::Icon;
 
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
-        self.get_notification_style()
+        &self.get_notification_style().icon
     }
 
     fn get_bounds(&self) -> Bounds {
