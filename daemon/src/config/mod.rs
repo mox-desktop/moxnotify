@@ -425,7 +425,7 @@ impl Default for Icon {
         Self {
             border: Border {
                 color: Color::default(),
-                size: Insets::size(Size::Value(0.)),
+                size: Insets::default(),
                 radius: BorderRadius::default(),
             },
             margin: Insets::default(),
@@ -542,10 +542,8 @@ impl Default for Progress {
     fn default() -> Self {
         Self {
             margin: Insets {
-                left: Size::Value(0.),
-                right: Size::Value(0.),
-                top: Size::Value(10.),
-                bottom: Size::Value(0.),
+                //top: Size::Value(10.),
+                ..Default::default()
             },
             height: Size::Value(20.),
             width: Size::Auto,
@@ -696,7 +694,7 @@ impl Default for StyleState {
             font: Font::default(),
             border: Border::default(),
             margin: Insets::size(Size::Value(5.)),
-            padding: Insets::size(Size::Value(10.)),
+            padding: Insets::size(Size::Value(5.)),
             icon: Icon::default(),
             app_icon: Icon::default(),
             progress: Progress::default(),

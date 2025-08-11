@@ -12,7 +12,7 @@ use crate::{
     Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
     config::{Size, StyleState},
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use calloop::{
     LoopHandle, RegistrationToken,
@@ -23,10 +23,9 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use taffy::{PrintTree, TaffyResult};
 use taffy::{
     TaffyTree,
-    style_helpers::{auto, fr, length, line, span},
+    style_helpers::{auto, fr, length, line, max_content, span},
 };
 
 pub enum NotificationState {
@@ -227,7 +226,7 @@ impl Component for Notification<Ready> {
         Vec::new()
     }
 
-    fn set_position(&mut self, _: f32, _: f32) {
+    fn set_position(&mut self) {
         let mut tree: TaffyTree<()> = TaffyTree::new();
         let container_node = {
             let style = self.get_style();
@@ -279,6 +278,7 @@ impl Component for Notification<Ready> {
                     bottom: length(style.border.size.left.resolve(0.)),
                 },
                 display: taffy::Display::Grid,
+                grid_auto_rows: vec![max_content()],
                 grid_template_rows: vec![auto(), auto(), auto(), auto()],
                 grid_template_columns: vec![auto(), fr(1.), auto()],
                 ..Default::default()
@@ -536,7 +536,7 @@ impl Component for Notification<Ready> {
             .unwrap_or_default();
 
         let mut action_button_nodes = Vec::new();
-        let action_buttons_node = if action_buttons_count > 0 {
+        if action_buttons_count > 0 {
             let node = tree
                 .new_leaf(taffy::Style {
                     grid_row: line(3),
@@ -621,11 +621,7 @@ impl Component for Notification<Ready> {
                         action_button_nodes.push(button_node);
                     });
             }
-
-            Some(node)
-        } else {
-            None
-        };
+        }
 
         let progress_node = if let Some(progress) = self.progress.as_ref() {
             let style = progress.get_style();
@@ -691,6 +687,14 @@ impl Component for Notification<Ready> {
         )
         .unwrap();
 
+        for child in tree.children(container_node).unwrap() {
+            println!(
+                "Child {:?} layout: {:?}",
+                child,
+                tree.layout(child).unwrap()
+            );
+        }
+
         if let Some(icons) = icons_node {
             let res = tree.global_layout(icons).unwrap();
             self.icons
@@ -740,7 +744,6 @@ impl Component for Notification<Ready> {
                     button.set_position(layout.location.x, layout.location.y);
                 }
 
-                // Set common width for action buttons (using first button's width)
                 if let Some(first_node) = action_button_nodes.first() {
                     let layout = tree.global_layout(*first_node).unwrap();
                     buttons.set_action_widths(layout.size.width);
@@ -1271,23 +1274,23 @@ impl Notification<Ready> {
         }
     }
 }
-
-trait GlobalLayout {
-    fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout>;
-}
-
-impl GlobalLayout for TaffyTree<()> {
-    fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout> {
-        let mut current_node = node;
-        let mut global_rect = self.layout(node)?.clone();
-
-        while let Some(parent) = self.parent(current_node) {
-            let parent_layout = self.layout(parent)?;
-            global_rect.location.x += parent_layout.location.x;
-            global_rect.location.y += parent_layout.location.y;
-            current_node = parent;
-        }
-
-        Ok(global_rect)
-    }
-}
+ 
+ trait GlobalLayout {
+     fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout>;
+ }
+ 
+ impl GlobalLayout for TaffyTree<()> {
+     fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout> {
+         let mut current_node = node;
+        let mut global_layout = self.layout(node)?.clone();
+ 
+         while let Some(parent) = self.parent(current_node) {
+             let parent_layout = self.layout(parent)?;
+            global_layout.location.x += parent_layout.location.x + parent_layout.margin.left;
+            global_layout.location.y += parent_layout.location.y + parent_layout.margin.top;
+             current_node = parent;
+         }
+ 
+        Ok(global_layout)
+     }
+ }
