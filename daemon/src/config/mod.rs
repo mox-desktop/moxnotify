@@ -698,7 +698,7 @@ impl Default for StyleState {
                 urgency_normal: [22, 22, 30, 255],
                 urgency_critical: [22, 22, 30, 255],
             },
-            width: Size::Value(300.),
+            width: Size::Value(450.),
             min_height: Size::Auto,
             max_height: Size::Auto,
             height: Size::Auto,
