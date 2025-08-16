@@ -120,11 +120,11 @@ impl NotificationManager {
         let mut text_areas = Vec::new();
         let mut textures = Vec::new();
 
-        self.notifications
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| self.notification_view.visible.contains(i))
-            .filter_map(|(_, notification)| match notification {
+        self.notification_view
+            .visible
+            .clone()
+            .filter_map(|i| self.notifications.get(i))
+            .filter_map(|notification| match notification {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),
             })
@@ -136,8 +136,10 @@ impl NotificationManager {
             });
 
         let total_width = self
-            .notifications
-            .iter()
+            .notification_view
+            .visible
+            .clone()
+            .filter_map(|i| self.notifications.get(i))
             .filter_map(|notification| match notification {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),

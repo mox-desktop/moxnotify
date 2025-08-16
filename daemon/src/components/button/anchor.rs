@@ -35,10 +35,10 @@ impl Component for AnchorButton {
         vec![buffers::Instance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
-            rect_color: style.background.to_linear(urgency),
+            rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
-            border_color: style.border.color.to_linear(urgency),
+            border_color: style.border.color.color(urgency),
             scale: 0.,
             depth: 0.8,
         }]

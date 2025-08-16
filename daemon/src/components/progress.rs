@@ -144,10 +144,10 @@ impl Component for Progress {
             instances.push(buffers::Instance {
                 rect_pos: [extents.x, extents.y],
                 rect_size: [complete_width, extents.height],
-                rect_color: style.complete_color.to_linear(urgency),
+                rect_color: style.complete_color.color(urgency),
                 border_radius: border_radius.into(),
                 border_size: border_size.into(),
-                border_color: style.border.color.to_linear(urgency),
+                border_color: style.border.color.color(urgency),
                 scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 depth: 0.8,
             });
@@ -179,10 +179,10 @@ impl Component for Progress {
                 instances.push(buffers::Instance {
                     rect_pos: [extents.x + complete_width, extents.y],
                     rect_size: [incomplete_width, extents.height],
-                    rect_color: style.incomplete_color.to_linear(urgency),
+                    rect_color: style.incomplete_color.color(urgency),
                     border_radius: border_radius.into(),
                     border_size: border_size.into(),
-                    border_color: style.border.color.to_linear(urgency),
+                    border_color: style.border.color.color(urgency),
                     scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                     depth: 0.8,
                 });

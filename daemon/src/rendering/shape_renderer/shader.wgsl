@@ -81,6 +81,18 @@ struct FragmentOutput {
     @builtin(frag_depth) depth: f32,
 };
 
+fn srgb_to_linear(c: vec3<f32>) -> vec3<f32> {
+    var result = vec3<f32>(0.0);
+    for (var i = 0; i < 3; i = i + 1) {
+        if c[i] <= 0.04045 {
+            result[i] = c[i] / 12.92;
+        } else {
+            result[i] = pow((c[i] + 0.055) / 1.055, 2.4);
+        }
+    }
+    return result;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> FragmentOutput {
     let inner_center = in.rect_pos + in.rect_size / 2.0;
@@ -97,11 +109,16 @@ fn fs_main(in: VertexOutput) -> FragmentOutput {
     let outer_alpha = smoothstep(-outer_aa, outer_aa, -outer_dist);
     let border_alpha = outer_alpha - inner_alpha;
 
-    let inner_color = in.rect_color * inner_alpha;
-    let border_color = in.border_color * border_alpha;
+    // sRGB to linear + premultiply
+    let inner_rgb = srgb_to_linear(in.rect_color.rgb);
+    let inner_color = vec4<f32>(inner_rgb * in.rect_color.a, in.rect_color.a) * inner_alpha;
+
+    let border_rgb = srgb_to_linear(in.border_color.rgb);
+    let border_color = vec4<f32>(border_rgb * in.border_color.a, in.border_color.a) * border_alpha;
 
     var out: FragmentOutput;
     out.color = inner_color + border_color;
     out.depth = in.clip_position.z / in.clip_position.w;
     return out;
 }
+

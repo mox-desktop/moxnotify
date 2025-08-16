@@ -100,24 +100,15 @@ impl Color {
         }
     }
 
-    pub fn to_linear(self, urgency: Urgency) -> [f32; 4] {
-        let srgb_to_linear = |c: u8| {
-            let normalized = c as f32 / 255.0;
-            if normalized > 0.04045 {
-                ((normalized + 0.055) / 1.055).powf(2.4)
-            } else {
-                normalized / 12.92
-            }
-        };
-
+    pub fn color(self, urgency: Urgency) -> [f32; 4] {
         let rgba = self.get(urgency);
 
-        let r = srgb_to_linear(rgba[0]);
-        let g = srgb_to_linear(rgba[1]);
-        let b = srgb_to_linear(rgba[2]);
-        let a = rgba[3] as f32 / 255.0;
-
-        [r * a, g * a, b * a, a]
+        [
+            rgba[0] as f32 / 255.0,
+            rgba[1] as f32 / 255.0,
+            rgba[2] as f32 / 255.0,
+            rgba[3] as f32 / 255.0,
+        ]
     }
 
     pub fn into_glyphon(self, urgency: Urgency) -> glyphon::Color {

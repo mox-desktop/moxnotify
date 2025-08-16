@@ -37,10 +37,10 @@ impl Component for ActionButton {
                 bounds.width - style.border.size.left - style.border.size.right,
                 bounds.height - style.border.size.top - style.border.size.bottom,
             ],
-            rect_color: style.background.to_linear(urgency),
+            rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
-            border_color: style.border.color.to_linear(urgency),
+            border_color: style.border.color.color(urgency),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
