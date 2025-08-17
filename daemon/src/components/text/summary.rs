@@ -10,6 +10,7 @@ use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {
+    node: taffy::NodeId,
     context: components::Context,
     pub buffer: Buffer,
     x: f32,
@@ -161,7 +162,7 @@ impl Component for Summary {
         }
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
     }
@@ -173,10 +174,18 @@ impl Component for Summary {
             .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
             .collect()
     }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
+    }
 }
 
 impl Summary {
-    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
+    pub fn new(
+        tree: &mut taffy::TaffyTree<()>,
+        context: components::Context,
+        font_system: &mut FontSystem,
+    ) -> Self {
         let dpi = 96.0;
         let font_size = context.config.styles.default.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
@@ -186,11 +195,14 @@ impl Summary {
         buffer.shape_until_scroll(font_system, true);
         buffer.set_size(font_system, None, None);
 
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
             buffer,
             x: 0.,
             y: 0.,
             context,
+            node,
         }
     }
 }

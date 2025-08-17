@@ -77,7 +77,7 @@ pub trait Component {
 
     fn get_render_bounds(&self) -> Bounds;
 
-    fn set_position(&mut self, x: f32, y: f32);
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32);
 
     fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)
@@ -86,4 +86,6 @@ pub trait Component {
             .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
             .collect()
     }
+
+    fn get_node_id(&self) -> taffy::NodeId;
 }

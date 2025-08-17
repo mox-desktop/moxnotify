@@ -8,6 +8,7 @@ use crate::{
 use std::sync::Arc;
 
 pub struct AnchorButton {
+    pub node: taffy::NodeId,
     pub context: components::Context,
     pub x: f32,
     pub y: f32,
@@ -77,16 +78,20 @@ impl Component for AnchorButton {
         self.get_bounds()
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
 
         let bounds = self.get_render_bounds();
-        self.hint.set_position(bounds.x, bounds.y);
+        self.hint.set_position(tree, bounds.x, bounds.y);
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 

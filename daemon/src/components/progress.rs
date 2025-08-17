@@ -8,6 +8,7 @@ use crate::{
 use std::sync::atomic::Ordering;
 
 pub struct Progress {
+    node: taffy::NodeId,
     context: components::Context,
     value: i32,
     x: f32,
@@ -66,7 +67,7 @@ impl Component for Progress {
         }
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
     }
@@ -195,17 +196,24 @@ impl Component for Progress {
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
+    }
 }
 
 impl Progress {
     #[must_use]
-    pub fn new(context: components::Context, value: i32) -> Self {
+    pub fn new(tree: &mut taffy::TaffyTree, context: components::Context, value: i32) -> Self {
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
             context,
             value,
             x: 0.,
             y: 0.,
             width: 0.,
+            node,
         }
     }
 
