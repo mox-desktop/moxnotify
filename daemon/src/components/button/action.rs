@@ -9,6 +9,7 @@ use crate::{
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct ActionButton {
+    pub node: taffy::NodeId,
     pub context: components::Context,
     pub x: f32,
     pub y: f32,
@@ -142,17 +143,21 @@ impl Component for ActionButton {
         }
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
         self.text.set_buffer_position(x, y);
 
         let bounds = self.get_render_bounds();
-        self.hint.set_position(bounds.x, bounds.y);
+        self.hint.set_position(tree, bounds.x, bounds.y);
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 

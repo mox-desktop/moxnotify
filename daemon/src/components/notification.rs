@@ -64,10 +64,10 @@ impl NotificationState {
         }
     }
 
-    pub fn set_position(&mut self, x: f32, y: f32) {
+    pub fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         match self {
             Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.set_position(x, y),
+            Self::Ready(n) => n.set_position(tree, x, y),
         }
     }
 
@@ -104,13 +104,14 @@ impl NotificationState {
 
     pub fn replace(
         &mut self,
+        tree: &mut taffy::TaffyTree<()>,
         font_system: &mut FontSystem,
         data: NotificationData,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.replace(font_system, data, sender),
+            Self::Empty(n) => unreachable!(),
+            Self::Ready(n) => n.replace(tree, font_system, data, sender),
         }
     }
 
@@ -144,6 +145,7 @@ pub struct Notification<State> {
     pub summary: Option<Summary>,
     pub body: Option<Body>,
     context: components::Context,
+    node: taffy::NodeId,
     _state: std::marker::PhantomData<State>,
 }
 
@@ -226,8 +228,7 @@ impl Component for Notification<Ready> {
         Vec::new()
     }
 
-    fn set_position(&mut self) {
-        let mut tree: TaffyTree<()> = TaffyTree::new();
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         let container_node = {
             let style = self.get_style();
             tree.new_leaf(taffy::Style {
@@ -286,59 +287,9 @@ impl Component for Notification<Ready> {
             .unwrap()
         };
 
-        let icons_node = if let Some(icons) = self.icons.as_ref() {
-            let style = icons.get_style();
-
-            let node = tree
-                .new_leaf(taffy::Style {
-                    grid_row: span(2),
-                    grid_column: line(1),
-                    size: taffy::Size {
-                        width: length(icons.get_render_bounds().width),
-                        height: length(icons.get_render_bounds().height),
-                    },
-                    padding: taffy::Rect {
-                        top: length(style.padding.top.resolve(0.)),
-                        left: length(style.padding.left.resolve(0.)),
-                        right: length(style.padding.right.resolve(0.)),
-                        bottom: length(style.padding.bottom.resolve(0.)),
-                    },
-                    margin: taffy::Rect {
-                        left: if style.margin.left.is_auto() {
-                            auto()
-                        } else {
-                            length(style.margin.left.resolve(0.))
-                        },
-                        right: if style.margin.right.is_auto() {
-                            auto()
-                        } else {
-                            length(style.margin.right.resolve(0.))
-                        },
-                        top: if style.margin.top.is_auto() {
-                            auto()
-                        } else {
-                            length(style.margin.top.resolve(0.))
-                        },
-                        bottom: if style.margin.bottom.is_auto() {
-                            auto()
-                        } else {
-                            length(style.margin.bottom.resolve(0.))
-                        },
-                    },
-                    border: taffy::Rect {
-                        left: length(style.border.size.left.resolve(0.)),
-                        right: length(style.border.size.left.resolve(0.)),
-                        top: length(style.border.size.left.resolve(0.)),
-                        bottom: length(style.border.size.left.resolve(0.)),
-                    },
-                    ..Default::default()
-                })
-                .unwrap();
-            tree.add_child(container_node, node).unwrap();
-            Some(node)
-        } else {
-            None
-        };
+        if let Some(icons) = self.icons.as_mut() {
+            icons.set_position(tree, 0., 0.);
+        }
 
         let summary_node = if let Some(summary) = self.summary.as_ref() {
             let style = summary.get_style();
@@ -695,20 +646,12 @@ impl Component for Notification<Ready> {
             );
         }
 
-        if let Some(icons) = icons_node {
-            let res = tree.global_layout(icons).unwrap();
-            self.icons
-                .as_mut()
-                .unwrap()
-                .set_position(res.location.x, res.location.y);
-        }
-
         if let Some(summary) = summary_node {
             let res = tree.global_layout(summary).unwrap();
             self.summary
                 .as_mut()
                 .unwrap()
-                .set_position(res.location.x, res.location.y);
+                .set_position(tree, res.location.x, res.location.y);
         }
 
         let res = tree.global_layout(dismiss_node).unwrap();
@@ -718,7 +661,7 @@ impl Component for Notification<Ready> {
                 .iter_mut()
                 .find(|button| button.button_type() == ButtonType::Dismiss)
         {
-            dismiss_button.set_position(res.location.x, res.location.y);
+            dismiss_button.set_position(tree, res.location.x, res.location.y);
         }
 
         if let Some(body) = body_node {
@@ -726,7 +669,7 @@ impl Component for Notification<Ready> {
             self.body
                 .as_mut()
                 .unwrap()
-                .set_position(res.location.x, res.location.y);
+                .set_position(tree, res.location.x, res.location.y);
         }
 
         if !action_button_nodes.is_empty() {
@@ -741,7 +684,7 @@ impl Component for Notification<Ready> {
                     action_button_nodes.iter().zip(action_buttons.iter_mut())
                 {
                     let layout = tree.global_layout(*button_node).unwrap();
-                    button.set_position(layout.location.x, layout.location.y);
+                    button.set_position(tree, layout.location.x, layout.location.y);
                 }
 
                 if let Some(first_node) = action_button_nodes.first() {
@@ -756,7 +699,7 @@ impl Component for Notification<Ready> {
             self.progress
                 .as_mut()
                 .unwrap()
-                .set_position(res.location.x, res.location.y);
+                .set_position(tree, res.location.x, res.location.y);
             self.progress.as_mut().unwrap().set_width(res.size.width);
         }
 
@@ -792,6 +735,10 @@ impl Component for Notification<Ready> {
 
         data
     }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
+    }
 }
 
 pub struct Empty;
@@ -800,6 +747,7 @@ pub struct Ready;
 impl<State> Notification<State> {
     #[must_use]
     pub fn new_empty(
+        node_id: taffy::NodeId,
         config: Arc<Config>,
         data: NotificationData,
         ui_state: UiState,
@@ -812,6 +760,7 @@ impl<State> Notification<State> {
         };
 
         Notification {
+            node: node_id,
             context,
             summary: None,
             progress: None,
@@ -829,6 +778,7 @@ impl<State> Notification<State> {
 
     #[must_use]
     pub fn new(
+        tree: &mut taffy::TaffyTree,
         config: Arc<Config>,
         font_system: &mut FontSystem,
         data: NotificationData,
@@ -846,6 +796,7 @@ impl<State> Notification<State> {
             || data.app_name == "prev_notification_count".into()
         {
             return Notification {
+                node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                 context,
                 y: 0.,
                 x: 0.,
@@ -863,12 +814,12 @@ impl<State> Notification<State> {
 
         let icons = match (data.hints.image.as_ref(), data.app_icon.as_deref()) {
             (None, None) => None,
-            (image, app_icon) => Some(Icons::new(context.clone(), image, app_icon)),
+            (image, app_icon) => Some(Icons::new(tree, context.clone(), image, app_icon)),
         };
 
         let mut buttons = ButtonManager::new(context.clone(), data.hints.urgency, sender)
-            .add_dismiss(font_system)
-            .add_actions(&data.actions, font_system);
+            .add_dismiss(tree, font_system)
+            .add_actions(tree, &data.actions, font_system);
 
         let dismiss_button = buttons
             .buttons()
@@ -881,7 +832,7 @@ impl<State> Notification<State> {
         let body = if data.body.is_empty() {
             None
         } else {
-            let mut body = Body::new(context.clone(), font_system);
+            let mut body = Body::new(tree, context.clone(), font_system);
             body.set_text(font_system, &data.body);
             body.set_size(
                 font_system,
@@ -896,7 +847,7 @@ impl<State> Notification<State> {
                 None,
             );
 
-            buttons = buttons.add_anchors(&body.anchors, font_system);
+            buttons = buttons.add_anchors(tree, &body.anchors, font_system);
 
             Some(body)
         };
@@ -904,7 +855,7 @@ impl<State> Notification<State> {
         let summary = if data.summary.is_empty() {
             None
         } else {
-            let mut summary = Summary::new(context.clone(), font_system);
+            let mut summary = Summary::new(tree, context.clone(), font_system);
             summary.set_text(font_system, &data.summary);
             summary.set_size(
                 font_system,
@@ -923,16 +874,17 @@ impl<State> Notification<State> {
         };
 
         Notification {
+            node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
             summary,
             progress: data
                 .hints
                 .value
-                .map(|value| Progress::new(context.clone(), value)),
+                .map(|value| Progress::new(tree, context.clone(), value)),
             context,
             y: 0.,
             x: 0.,
             icons,
-            buttons: Some(buttons.finish(font_system)),
+            buttons: Some(buttons.finish(tree, font_system)),
             data,
             hovered: false,
             registration_token: None,
@@ -943,6 +895,7 @@ impl<State> Notification<State> {
 
     pub fn replace(
         &mut self,
+        tree: &mut taffy::TaffyTree<()>,
         font_system: &mut FontSystem,
         data: NotificationData,
         sender: Option<calloop::channel::Sender<crate::Event>>,
@@ -954,7 +907,7 @@ impl<State> Notification<State> {
         ) {
             (Some(progress), Some(value), false) => progress.set_value(value),
             (None, Some(value), _) => {
-                self.progress = Some(Progress::new(self.context.clone(), value));
+                self.progress = Some(Progress::new(tree, self.context.clone(), value));
             }
             _ => {}
         }
@@ -962,27 +915,27 @@ impl<State> Notification<State> {
         match (self.body.as_mut(), self.data.body == data.body) {
             (Some(body), false) => body.set_text(font_system, &data.body),
             (None, _) => {
-                self.body = Some(Body::new(self.context.clone(), font_system));
+                self.body = Some(Body::new(tree, self.context.clone(), font_system));
             }
             _ => {}
         }
 
         if self.data.actions != data.actions || self.data.body != data.body {
             let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
-                .add_dismiss(font_system)
-                .add_actions(&data.actions, font_system);
+                .add_dismiss(tree, font_system)
+                .add_actions(tree, &data.actions, font_system);
 
             if let Some(body) = &self.body {
-                buttons = buttons.add_anchors(&body.anchors, font_system);
+                buttons = buttons.add_anchors(tree, &body.anchors, font_system);
             }
 
-            self.buttons = Some(buttons.finish(font_system));
+            self.buttons = Some(buttons.finish(tree, font_system));
         }
 
         match (self.summary.as_mut(), self.data.summary == data.summary) {
             (Some(summary), false) => summary.set_text(font_system, &data.summary),
             (None, _) => {
-                self.summary = Some(Summary::new(self.context.clone(), font_system));
+                self.summary = Some(Summary::new(tree, self.context.clone(), font_system));
             }
             _ => {}
         }
@@ -995,9 +948,8 @@ impl<State> Notification<State> {
             && self.registration_token.is_none()
         {
             log::debug!(
-                "Expiration timer started for notification, id: {}, timeout: {}",
+                "Expiration timer started for notification, id: {}, timeout: {timeout}",
                 self.id(),
-                timeout
             );
 
             let timer = Timer::from_duration(Duration::from_millis(timeout));
@@ -1098,6 +1050,7 @@ impl Notification<Empty> {
     #[must_use]
     pub fn promote(
         self,
+        tree: &mut taffy::TaffyTree<()>,
         font_system: &mut FontSystem,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification<Ready> {
@@ -1106,12 +1059,12 @@ impl Notification<Empty> {
             self.data.app_icon.as_deref(),
         ) {
             (None, None) => None,
-            (image, app_icon) => Some(Icons::new(self.context.clone(), image, app_icon)),
+            (image, app_icon) => Some(Icons::new(tree, self.context.clone(), image, app_icon)),
         };
 
         let mut buttons = ButtonManager::new(self.context.clone(), self.data.hints.urgency, sender)
-            .add_dismiss(font_system)
-            .add_actions(&self.data.actions, font_system);
+            .add_dismiss(tree, font_system)
+            .add_actions(tree, &self.data.actions, font_system);
 
         let dismiss_button = buttons
             .buttons()
@@ -1124,7 +1077,7 @@ impl Notification<Empty> {
         let body = if self.data.body.is_empty() {
             None
         } else {
-            let mut body = Body::new(self.context.clone(), font_system);
+            let mut body = Body::new(tree, self.context.clone(), font_system);
             body.set_text(font_system, &self.data.body);
             body.set_size(
                 font_system,
@@ -1139,7 +1092,7 @@ impl Notification<Empty> {
                 None,
             );
 
-            buttons = buttons.add_anchors(&body.anchors, font_system);
+            buttons = buttons.add_anchors(tree, &body.anchors, font_system);
 
             Some(body)
         };
@@ -1147,7 +1100,7 @@ impl Notification<Empty> {
         let summary = if self.data.summary.is_empty() {
             None
         } else {
-            let mut summary = Summary::new(self.context.clone(), font_system);
+            let mut summary = Summary::new(tree, self.context.clone(), font_system);
             summary.set_text(font_system, &self.data.summary);
             summary.set_size(
                 font_system,
@@ -1173,16 +1126,17 @@ impl Notification<Empty> {
                 .data
                 .hints
                 .value
-                .map(|value| Progress::new(self.context.clone(), value)),
+                .map(|value| Progress::new(tree, self.context.clone(), value)),
             y: 0.,
             x: 0.,
             icons,
-            buttons: Some(buttons.finish(font_system)),
+            buttons: Some(buttons.finish(tree, font_system)),
             data: self.data,
             hovered: false,
             registration_token: self.registration_token,
             body,
             context: self.context,
+            node: self.node,
             _state: std::marker::PhantomData,
         }
     }
