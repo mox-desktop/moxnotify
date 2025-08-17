@@ -28,6 +28,7 @@ impl Anchor {
 }
 
 pub struct Body {
+    node: taffy::NodeId,
     context: components::Context,
     pub anchors: Vec<Arc<Anchor>>,
     pub buffer: Buffer,
@@ -443,7 +444,7 @@ impl Component for Body {
         }
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
     }
@@ -455,10 +456,18 @@ impl Component for Body {
             .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
             .collect()
     }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
+    }
 }
 
 impl Body {
-    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
+    pub fn new(
+        tree: &mut taffy::TaffyTree<()>,
+        context: components::Context,
+        font_system: &mut FontSystem,
+    ) -> Self {
         let dpi = 96.0;
         let font_size = context.config.styles.default.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
@@ -467,12 +476,15 @@ impl Body {
         );
         buffer.shape_until_scroll(font_system, true);
 
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
             context,
             buffer,
             x: 0.,
             y: 0.,
             anchors: Vec::new(),
+            node,
         }
     }
 }

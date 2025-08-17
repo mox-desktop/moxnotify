@@ -1,9 +1,10 @@
+use super::Data;
 use crate::{
     Image,
     components::{self, Bounds, Component},
     config,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
-    utils::{buffers, image_data::ImageData},
+    utils::{buffers, image_data::ImageData, taffy::GlobalLayout},
 };
 use resvg::usvg;
 use std::{
@@ -11,8 +12,10 @@ use std::{
     path::Path,
     sync::{LazyLock, Mutex, atomic::Ordering},
 };
-
-use super::Data;
+use taffy::{
+    TaffyTree,
+    style_helpers::{auto, fr, length, line, max_content, span},
+};
 
 static ICON_CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
 type IconMap = BTreeMap<Box<Path>, ImageData>;
@@ -41,8 +44,8 @@ impl Cache {
     }
 }
 
-#[derive(Default)]
 pub struct Icons {
+    node: taffy::NodeId,
     icon: Option<ImageData>,
     app_icon: Option<ImageData>,
     x: f32,
@@ -53,6 +56,7 @@ pub struct Icons {
 impl Icons {
     #[must_use]
     pub fn new(
+        tree: &mut taffy::TaffyTree<()>,
         context: components::Context,
         image: Option<&Image>,
         app_icon: Option<&str>,
@@ -86,7 +90,10 @@ impl Icons {
             (None, app_icon)
         };
 
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
+            node,
             context,
             icon: final_icon,
             app_icon: final_app_icon,
@@ -167,9 +174,60 @@ impl Component for Icons {
         Vec::new()
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
+        let style = self.get_style();
+
+        let node = tree
+            .new_leaf(taffy::Style {
+                grid_row: span(2),
+                grid_column: line(1),
+                size: taffy::Size {
+                    width: length(self.get_render_bounds().width),
+                    height: length(self.get_render_bounds().height),
+                },
+                padding: taffy::Rect {
+                    top: length(style.padding.top.resolve(0.)),
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
+        //tree.add_child(container_node, node).unwrap(); TODO
+
+        let res = tree.global_layout(node).unwrap();
+
+        self.x = res.location.x;
+        self.y = res.location.y;
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
@@ -233,6 +291,10 @@ impl Component for Icons {
 
     fn get_data(&self, _: crate::Urgency) -> Vec<Data<'_>> {
         self.get_textures().into_iter().map(Data::Texture).collect()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 

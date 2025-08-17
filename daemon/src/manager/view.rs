@@ -42,7 +42,11 @@ impl NotificationView {
         }
     }
 
-    pub fn update_notification_count(&mut self, notification_count: usize) {
+    pub fn update_notification_count(
+        &mut self,
+        tree: &mut taffy::TaffyTree<()>,
+        notification_count: usize,
+    ) {
         if self.visible.start > 0 {
             let summary = self
                 .config
@@ -59,6 +63,7 @@ impl NotificationView {
                     .set_text(&mut font_system, &summary);
             } else {
                 self.prev = Some(Notification::<Ready>::new(
+                    tree,
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -89,6 +94,7 @@ impl NotificationView {
                     .set_text(&mut font_system, &summary);
             } else {
                 self.next = Some(Notification::<Ready>::new(
+                    tree,
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {

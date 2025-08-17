@@ -80,17 +80,27 @@ impl ButtonManager<NotReady> {
 
     pub fn add_actions(
         self,
+        tree: &mut taffy::TaffyTree<()>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        self.internal_add_actions(actions, font_system)
+        self.internal_add_actions(tree, actions, font_system)
     }
 
-    pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
-        self.internal_add_anchors(anchors, font_system)
+    pub fn add_anchors(
+        self,
+        tree: &mut taffy::TaffyTree,
+        anchors: &[Arc<body::Anchor>],
+        font_system: &mut FontSystem,
+    ) -> Self {
+        self.internal_add_anchors(tree, anchors, font_system)
     }
 
-    pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
+    pub fn add_dismiss(
+        mut self,
+        tree: &mut taffy::TaffyTree<()>,
+        font_system: &mut FontSystem,
+    ) -> ButtonManager<Ready> {
         let font = &self
             .context
             .config
@@ -103,7 +113,8 @@ impl ButtonManager<NotReady> {
         let text = text_renderer::Text::new(font, font_system, "X");
 
         let button = DismissButton {
-            hint: Hint::new(self.context.clone(), "", font_system),
+            node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
+            hint: Hint::new(tree, self.context.clone(), "", font_system),
             text,
             x: 0.,
             y: 0.,
@@ -127,17 +138,27 @@ impl ButtonManager<NotReady> {
 impl ButtonManager<Ready> {
     pub fn add_actions(
         self,
+        tree: &mut taffy::TaffyTree<()>,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
-        self.internal_add_actions(actions, font_system)
+        self.internal_add_actions(tree, actions, font_system)
     }
 
-    pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
-        self.internal_add_anchors(anchors, font_system)
+    pub fn add_anchors(
+        self,
+        tree: &mut taffy::TaffyTree<()>,
+        anchors: &[Arc<body::Anchor>],
+        font_system: &mut FontSystem,
+    ) -> Self {
+        self.internal_add_anchors(tree, anchors, font_system)
     }
 
-    pub fn finish(mut self, font_system: &mut FontSystem) -> ButtonManager<Finished> {
+    pub fn finish(
+        mut self,
+        tree: &mut taffy::TaffyTree<()>,
+        font_system: &mut FontSystem,
+    ) -> ButtonManager<Finished> {
         let hint_chars: Vec<char> = self
             .context
             .config
@@ -162,7 +183,7 @@ impl ButtonManager<Ready> {
 
             indices.reverse();
             let combination: String = indices.into_iter().map(|i| hint_chars[i]).collect();
-            let hint = Hint::new(self.context.clone(), &combination, font_system);
+            let hint = Hint::new(tree, self.context.clone(), &combination, font_system);
 
             button.set_hint(hint);
         });
@@ -311,6 +332,7 @@ impl ButtonManager<Finished> {
 impl<S> ButtonManager<S> {
     fn internal_add_anchors(
         mut self,
+        tree: &mut taffy::TaffyTree,
         anchors: &[Arc<body::Anchor>],
         font_system: &mut FontSystem,
     ) -> Self {
@@ -331,10 +353,11 @@ impl<S> ButtonManager<S> {
         self.buttons.extend(anchors.iter().map(|anchor| {
             let text = text_renderer::Text::new(font, font_system, "");
             Box::new(AnchorButton {
+                node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                 context: self.context.clone(),
                 x: 0.,
                 y: 0.,
-                hint: Hint::new(self.context.clone(), "", font_system),
+                hint: Hint::new(tree, self.context.clone(), "", font_system),
                 state: State::Unhovered,
                 tx: self.sender.clone(),
                 text,
@@ -347,6 +370,7 @@ impl<S> ButtonManager<S> {
 
     fn internal_add_actions(
         mut self,
+        tree: &mut taffy::TaffyTree,
         actions: &[(Arc<str>, Arc<str>)],
         font_system: &mut FontSystem,
     ) -> Self {
@@ -370,8 +394,9 @@ impl<S> ButtonManager<S> {
                 let text = text_renderer::Text::new(font, font_system, &action.1);
 
                 Box::new(ActionButton {
+                    node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                     context: self.context.clone(),
-                    hint: Hint::new(self.context.clone(), "", font_system),
+                    hint: Hint::new(tree, self.context.clone(), "", font_system),
                     text,
                     x: 0.,
                     y: 0.,
@@ -399,6 +424,7 @@ impl<S> ButtonManager<S> {
 }
 
 pub struct Hint {
+    node: taffy::NodeId,
     combination: Box<str>,
     text: text_renderer::Text,
     context: components::Context,
@@ -408,6 +434,7 @@ pub struct Hint {
 
 impl Hint {
     pub fn new<T>(
+        tree: &mut taffy::TaffyTree<()>,
         context: components::Context,
         combination: T,
         font_system: &mut FontSystem,
@@ -415,7 +442,10 @@ impl Hint {
     where
         T: AsRef<str>,
     {
+        let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+
         Self {
+            node,
             combination: combination.as_ref().into(),
             text: text_renderer::Text::new(
                 &context.config.styles.default.font,
@@ -496,7 +526,7 @@ impl Component for Hint {
         }]
     }
 
-    fn set_position(&mut self, x: f32, y: f32) {
+    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
         self.x = x;
         self.y = y;
     }
@@ -543,6 +573,10 @@ impl Component for Hint {
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
+    }
+
+    fn get_node_id(&self) -> taffy::NodeId {
+        self.node
     }
 }
 

@@ -60,6 +60,7 @@ pub struct NotificationManager {
     inhibited: bool,
     pub ui_state: UiState,
     pub history: History,
+    tree: taffy::TaffyTree<()>,
 }
 
 impl NotificationManager {
@@ -86,6 +87,7 @@ impl NotificationManager {
             config,
             ui_state,
             history: History::Hidden,
+            tree: taffy::TaffyTree::new(),
         }
     }
 
@@ -431,10 +433,17 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) {
+        let nodes: Vec<_> = data
+            .iter()
+            .map(|_| self.tree.new_leaf(taffy::Style::DEFAULT).unwrap())
+            .collect();
+
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
-            .map(|data| {
+            .zip(nodes.into_par_iter())
+            .map(|(data, node)| {
                 NotificationState::Empty(Notification::<Empty>::new_empty(
+                    node,
                     Arc::clone(&self.config),
                     data,
                     self.ui_state.clone(),
@@ -460,6 +469,7 @@ impl NotificationManager {
             .find(|(_, n)| n.id() == data.id)
         {
             notification.replace(
+                &mut self.tree,
                 &mut self.font_system.borrow_mut(),
                 data,
                 Some(self.sender.clone()),
@@ -471,6 +481,7 @@ impl NotificationManager {
             }
         } else {
             let mut notification = Notification::<Empty>::new_empty(
+                self.tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                 Arc::clone(&self.config),
                 data,
                 self.ui_state.clone(),
@@ -538,6 +549,7 @@ impl NotificationManager {
                     && let NotificationState::Empty(notification) = std::mem::replace(
                         notification_state,
                         NotificationState::Empty(Notification::<Empty>::new_empty(
+                            self.tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                             Arc::clone(&self.config),
                             NotificationData::default(),
                             UiState::default(),
@@ -545,6 +557,7 @@ impl NotificationManager {
                     )
                 {
                     *notification_state = NotificationState::Ready(notification.promote(
+                        &mut self.tree,
                         &mut self.font_system.borrow_mut(),
                         Some(self.sender.clone()),
                     ));
@@ -564,7 +577,7 @@ impl NotificationManager {
             .abs() as f32;
 
         if let Some(prev) = self.notification_view.prev.as_mut() {
-            prev.set_position(0., 0.);
+            prev.set_position(&mut self.tree, 0., 0.);
         }
 
         let mut start = self
@@ -576,17 +589,17 @@ impl NotificationManager {
 
         self.notification_view.visible.clone().for_each(|i| {
             if let Some(notification) = self.notifications.get_mut(i) {
-                notification.set_position(x_offset, start);
+                notification.set_position(&mut self.tree, x_offset, start);
                 start += notification.get_bounds().height;
             }
         });
 
         if let Some(next) = self.notification_view.next.as_mut() {
-            next.set_position(0., start);
+            next.set_position(&mut self.tree, 0., start);
         }
 
         self.notification_view
-            .update_notification_count(self.notifications.len());
+            .update_notification_count(&mut self.tree, self.notifications.len());
     }
 }
 
@@ -958,7 +971,7 @@ mod tests {
         manager.add(data);
 
         if let Some(notification) = manager.notifications.get_mut(0) {
-            notification.set_position(10.0, 20.0);
+            notification.set_position(&mut manager.tree, 10.0, 20.0);
         }
 
         let x = 10.0 + style.margin.left.resolve(0.) as f64;
