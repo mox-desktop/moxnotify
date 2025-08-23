@@ -97,4 +97,4 @@ rustPlatform.buildRustPackage {
     platforms = lib.platforms.linux;
     mainProgram = "moxnotifyd";
   };
-})
+}

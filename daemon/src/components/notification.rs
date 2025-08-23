@@ -23,6 +23,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
+use symphonia::core::util::bits::contains_ones_byte_u16;
 use taffy::{
     TaffyTree,
     style_helpers::{auto, fr, length, line, max_content, span},
@@ -289,6 +290,7 @@ impl Component for Notification<Ready> {
 
         if let Some(icons) = self.icons.as_mut() {
             icons.set_position(tree, 0., 0.);
+            tree.add_child(self.get_node_id(), icons.get_node_id());
         }
 
         let summary_node = if let Some(summary) = self.summary.as_ref() {
@@ -1228,23 +1230,3 @@ impl Notification<Ready> {
         }
     }
 }
- 
- trait GlobalLayout {
-     fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout>;
- }
- 
- impl GlobalLayout for TaffyTree<()> {
-     fn global_layout(&self, node: taffy::NodeId) -> taffy::TaffyResult<taffy::Layout> {
-         let mut current_node = node;
-        let mut global_layout = self.layout(node)?.clone();
- 
-         while let Some(parent) = self.parent(current_node) {
-             let parent_layout = self.layout(parent)?;
-            global_layout.location.x += parent_layout.location.x + parent_layout.margin.left;
-            global_layout.location.y += parent_layout.location.y + parent_layout.margin.top;
-             current_node = parent;
-         }
- 
-        Ok(global_layout)
-     }
- }

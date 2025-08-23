@@ -23,7 +23,6 @@ categories = [
   "multimedia",
 ]
 edition = "2024"
-homepage = "https://pipewire.org"
 license = "MIT"
 repository = "https://github.com/mox-desktop/moxnotify"
 version = "0.1.0"
