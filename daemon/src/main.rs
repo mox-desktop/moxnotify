@@ -353,11 +353,13 @@ impl Moxnotify {
             Event::ShowHistory => {
                 if self.notifications.history == History::Hidden {
                     self.db.execute(
-                        "DELETE FROM notifications WHERE rowid IN (
-                            SELECT rowid FROM notifications 
-                            ORDER BY rowid ASC 
-                            LIMIT MAX(0, (SELECT COUNT(*) FROM notifications) - ?)
-                        )",
+                        "
+                        DELETE FROM notifications WHERE rowid IN (
+                            SELECT rowid FROM notifications
+                            ORDER BY rowid ASC
+                            LIMIT max (0, (SELECT COUNT (*) FROM notifications) - ?)
+                        )
+                        ",
                         params![self.config.general.history.size],
                     )?;
 
@@ -367,7 +369,12 @@ impl Moxnotify {
                         .emit_sender
                         .send(EmitEvent::HistoryStateChanged(self.notifications.history));
                     self.dismiss_range(.., Some(Reason::Expired));
-                    let mut stmt = self.db.prepare("SELECT rowid, app_name, app_icon, summary, body, actions, hints FROM notifications ORDER BY rowid DESC")?;
+                    let mut stmt = self.db.prepare(
+                        "
+                        SELECT rowid, app_name, app_icon, summary, body, actions, hints
+                        FROM notifications
+                        ORDER BY rowid DESC",
+                    )?;
                     let rows = stmt.query_map([], |row| {
                         Ok(NotificationData {
                             id: row.get(0)?,
@@ -397,11 +404,12 @@ impl Moxnotify {
             Event::HideHistory => {
                 if self.notifications.history == History::Shown {
                     self.db.execute(
-                        "DELETE FROM notifications WHERE rowid IN (
-                        SELECT rowid FROM notifications ORDER BY rowid ASC LIMIT (
-                            SELECT MAX(COUNT(*) + 1 - ?, 0) FROM notifications
-                        )
-                    )",
+                        "
+                        DELETE FROM notifications WHERE rowid IN (
+                            SELECT rowid FROM notifications ORDER BY rowid ASC LIMIT (
+                                SELECT max (COUNT (*) + 1 - ?, 0) FROM notifications
+                            )
+                        )",
                         params![self.config.general.history.size],
                     )?;
 
@@ -434,7 +442,12 @@ impl Moxnotify {
                     let count = self.notifications.waiting();
                     log::debug!("Processing {count} waiting notifications");
 
-                    let mut stmt = self.db.prepare("SELECT id, app_name, app_icon, summary, body, timeout, actions, hints FROM notifications ORDER BY rowid DESC LIMIT ?1")?;
+                    let mut stmt = self.db.prepare(
+                        "
+                        SELECT id, app_name, app_icon, summary, body, timeout, actions, hints
+                        FROM notifications
+                        ORDER BY rowid DESC LIMIT ? 1",
+                    )?;
                     let rows = stmt.query_map([count], |row| {
                         Ok(NotificationData {
                             id: row.get(0)?,
