@@ -9,8 +9,8 @@
   pipewire,
   llvmPackages,
   libGL,
+  egl-wayland,
 }:
-
 let
   cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
 in
@@ -54,6 +54,7 @@ rustPlatform.buildRustPackage {
     libxkbcommon
     wayland
     pipewire
+    egl-wayland
   ];
 
   doCheck = false;

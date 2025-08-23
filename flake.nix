@@ -53,6 +53,8 @@
                 pipewire
                 libnotify
                 libclang
+                libGL
+                egl-wayland
                 ;
             };
           in
