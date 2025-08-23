@@ -8,12 +8,13 @@
   vulkan-loader,
   pipewire,
   llvmPackages,
+  libGL,
 }:
 
 let
   cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
 in
-rustPlatform.buildRustPackage rec {
+rustPlatform.buildRustPackage {
   pname = "moxnotify";
   inherit (cargoToml.workspace.package) version;
 
@@ -52,7 +53,6 @@ rustPlatform.buildRustPackage rec {
     lua5_4
     libxkbcommon
     wayland
-    vulkan-loader
     pipewire
   ];
 
@@ -80,17 +80,20 @@ rustPlatform.buildRustPackage rec {
     substitute $src/pl.mox.notify.service.in $out/share/dbus-1/services/pl.mox.notify.service --replace-fail '@bindir@' "$out/bin"
     chmod 0644 $out/share/dbus-1/services/pl.mox.notify.service
 
-    patchelf --set-rpath "${lib.makeLibraryPath buildInputs}" $out/bin/moxnotifyd
+    patchelf \
+      --add-needed "${libGL}/lib/libEGL.so.1" \
+      --add-needed "${vulkan-loader}/lib/libvulkan.so.1" \
+      $out/bin/moxnotifyd
   '';
 
   dontPatchELF = false;
 
-  meta = with lib; {
+  meta = {
     description = "Mox desktop environment notification system";
     homepage = "https://github.com/mox-desktop/moxnotify";
-    license = licenses.mit;
-    maintainers = [ maintainers.unixpariah ];
-    platforms = platforms.linux;
+    license = lib.licenses.mit;
+    maintainers = builtins.attrValues { inherit (lib.maintainers) unixpariah; };
+    platforms = lib.platforms.linux;
     mainProgram = "moxnotify";
   };
 }
