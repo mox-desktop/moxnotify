@@ -7,11 +7,12 @@ use crate::{
     utils::{buffers, taffy::GlobalLayout},
 };
 use std::sync::{Arc, atomic::Ordering};
-use taffy::style_helpers::{auto, length};
+use taffy::style_helpers::{auto, length, line};
 
 pub struct ActionButton {
     pub node: taffy::NodeId,
     pub context: components::Context,
+    pub index: usize,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
@@ -148,7 +149,7 @@ impl Component for ActionButton {
         let style = self.get_style();
         self.node = tree
             .new_leaf(taffy::Style {
-                //grid_column: line(index as i16 + 1), TODO: get index
+                grid_column: line(self.index as i16 + 1),
                 size: taffy::Size {
                     width: if style.width.is_auto() {
                         auto()
@@ -198,12 +199,15 @@ impl Component for ActionButton {
                 ..Default::default()
             })
             .unwrap();
+
+        self.hint.update_layout(tree);
     }
 
     fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
+        self.width = layout.content_box_width();
         self.text.set_buffer_position(self.x, self.y);
         self.hint.apply_computed_layout(tree);
     }

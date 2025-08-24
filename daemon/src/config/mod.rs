@@ -147,7 +147,11 @@ impl Default for General {
     fn default() -> Self {
         Self {
             theme: None,
-            margin: Insets::default(),
+            margin: Insets {
+                top: Size::Value(5.),
+                bottom: Size::Value(5.),
+                ..Default::default()
+            },
             history: History::default(),
             default_sound_file: SoundFile::default(),
             ignore_sound_file: false,
