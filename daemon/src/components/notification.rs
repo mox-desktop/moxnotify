@@ -11,7 +11,7 @@ use crate::rendering::texture_renderer;
 use crate::{
     Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
-    config::{Size, StyleState},
+    config::StyleState,
     utils::{buffers, taffy::GlobalLayout},
 };
 use calloop::{
@@ -91,18 +91,18 @@ impl NotificationState {
     }
 
     #[must_use]
-    pub fn get_bounds(&self) -> Bounds {
+    pub fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
         match self {
             Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.get_bounds(),
+            Self::Ready(n) => n.get_bounds(tree),
         }
     }
 
     #[must_use]
-    pub fn get_render_bounds(&self) -> Bounds {
+    pub fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
         match self {
             Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.get_render_bounds(),
+            Self::Ready(n) => n.get_render_bounds(tree),
         }
     }
 
@@ -177,43 +177,12 @@ impl Component for Notification<Ready> {
         self.get_notification_style()
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-
-        Bounds {
-            x: 0.,
-            y: self.y,
-            width: self.width()
-                + style.border.size.left
-                + style.border.size.right
-                + style.padding.left
-                + style.padding.right
-                + style.margin.left
-                + style.margin.right,
-            height: self.height()
-                + style.border.size.top
-                + style.border.size.bottom
-                + style.padding.top
-                + style.padding.bottom
-                + style.margin.top
-                + style.margin.bottom,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let extents = self.get_bounds();
-        let style = self.get_style();
-
-        Bounds {
-            x: extents.x + style.margin.left + self.x + self.data.hints.x as f32,
-            y: extents.y + style.margin.top,
-            width: extents.width - style.margin.left - style.margin.right,
-            height: extents.height - style.margin.top - style.margin.bottom,
-        }
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
-        let extents = self.get_render_bounds();
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<buffers::Instance> {
+        let extents = self.get_render_bounds(tree);
         let style = self.get_style();
 
         vec![buffers::Instance {
@@ -231,11 +200,15 @@ impl Component for Notification<Ready> {
         }]
     }
 
-    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<()>,
+        _: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -389,29 +362,33 @@ impl Component for Notification<Ready> {
         self.y = layout.location.y;
     }
 
-    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
         let mut data = self
-            .get_instances(urgency)
+            .get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
-            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .chain(
+                self.get_text_areas(tree, urgency)
+                    .into_iter()
+                    .map(Data::TextArea),
+            )
             .collect::<Vec<_>>();
 
         if let Some(progress) = self.progress.as_ref() {
-            data.extend(progress.get_data(urgency));
+            data.extend(progress.get_data(tree, urgency));
         }
 
         if let Some(icons) = self.icons.as_ref() {
-            data.extend(icons.get_data(urgency));
+            data.extend(icons.get_data(tree, urgency));
         }
         if let Some(buttons) = self.buttons.as_ref() {
-            data.extend(buttons.get_data());
+            data.extend(buttons.get_data(tree));
         }
         if let Some(summary) = self.summary.as_ref() {
-            data.extend(summary.get_data(urgency));
+            data.extend(summary.get_data(tree, urgency));
         }
         if let Some(body) = self.body.as_ref() {
-            data.extend(body.get_data(urgency));
+            data.extend(body.get_data(tree, urgency));
         }
 
         data
@@ -506,7 +483,7 @@ impl<State> Notification<State> {
             .buttons()
             .iter()
             .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map_or(0.0, |button| button.get_render_bounds().width);
+            .map_or(0.0, |button| button.get_render_bounds(tree).width);
 
         let style = context.config.find_style(&data.app_name, false);
 
@@ -521,7 +498,7 @@ impl<State> Notification<State> {
                     style.width
                         - icons
                             .as_ref()
-                            .map(|icons| icons.get_bounds().width)
+                            .map(|icons| icons.get_bounds(tree).width)
                             .unwrap_or_default()
                         - dismiss_button,
                 ),
@@ -544,7 +521,7 @@ impl<State> Notification<State> {
                     style.width
                         - icons
                             .as_ref()
-                            .map(|icons| icons.get_bounds().width)
+                            .map(|icons| icons.get_bounds(tree).width)
                             .unwrap_or_default()
                         - dismiss_button,
                 ),
@@ -751,7 +728,7 @@ impl Notification<Empty> {
             .buttons()
             .iter()
             .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map_or(0.0, |button| button.get_render_bounds().width);
+            .map_or(0.0, |button| button.get_render_bounds(tree).width);
 
         let style = self.context.config.find_style(&self.data.app_name, false);
 
@@ -766,7 +743,7 @@ impl Notification<Empty> {
                     style.width
                         - icons
                             .as_ref()
-                            .map(|icons| icons.get_bounds().width)
+                            .map(|icons| icons.get_bounds(tree).width)
                             .unwrap_or_default()
                         - dismiss_button,
                 ),
@@ -789,7 +766,7 @@ impl Notification<Empty> {
                     style.width
                         - icons
                             .as_ref()
-                            .map(|icons| icons.get_bounds().width)
+                            .map(|icons| icons.get_bounds(tree).width)
                             .unwrap_or_default()
                         - dismiss_button,
                 ),
@@ -819,93 +796,6 @@ impl Notification<Empty> {
             context: self.context,
             node: self.node,
             _state: std::marker::PhantomData,
-        }
-    }
-
-    #[must_use]
-    pub fn height(&self) -> f32 {
-        0.
-    }
-}
-
-impl Notification<Ready> {
-    #[must_use]
-    pub fn height(&self) -> f32 {
-        let style = self.get_style();
-
-        let dismiss_button = self
-            .buttons
-            .as_ref()
-            .and_then(|buttons| {
-                buttons
-                    .buttons()
-                    .iter()
-                    .find(|button| button.button_type() == ButtonType::Dismiss)
-                    .map(|b| b.get_bounds().height)
-            })
-            .unwrap_or_default();
-
-        let action_button = self
-            .buttons
-            .as_ref()
-            .and_then(|buttons| {
-                buttons
-                    .buttons()
-                    .iter()
-                    .filter_map(|button| match button.button_type() {
-                        ButtonType::Action => Some(button.get_bounds()),
-                        _ => None,
-                    })
-                    .max_by(|a, b| {
-                        a.height
-                            .partial_cmp(&b.height)
-                            .unwrap_or(std::cmp::Ordering::Equal)
-                    })
-            })
-            .unwrap_or_default();
-
-        let progress = if self.progress.is_some() {
-            style.progress.height + style.progress.margin.top + style.progress.margin.bottom
-        } else {
-            0.0
-        };
-
-        let min_height = match style.min_height {
-            Size::Auto => 0.0,
-            Size::Value(value) => value,
-        };
-
-        let max_height = match style.max_height {
-            Size::Auto => f32::INFINITY,
-            Size::Value(value) => value,
-        };
-
-        match style.height {
-            Size::Value(height) => height.clamp(min_height, max_height),
-            Size::Auto => {
-                let text_height = self
-                    .body
-                    .as_ref()
-                    .map(|body| body.get_bounds().height)
-                    .unwrap_or_default()
-                    + self
-                        .summary
-                        .as_ref()
-                        .map(|summary| summary.get_bounds().height)
-                        .unwrap_or_default()
-                    + progress;
-                let icon_height = self
-                    .icons
-                    .as_ref()
-                    .map(|icons| icons.get_bounds().height)
-                    .unwrap_or_default()
-                    + progress;
-                let base_height = (text_height.max(icon_height).max(dismiss_button)
-                    + action_button.height)
-                    .max(dismiss_button + action_button.height)
-                    + style.padding.bottom;
-                base_height.clamp(min_height, max_height)
-            }
         }
     }
 }

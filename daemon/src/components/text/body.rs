@@ -350,9 +350,13 @@ impl Component for Body {
         &self.get_notification_style().body
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
 
         vec![buffers::Instance {
             rect_pos: [bounds.x, bounds.y],
@@ -366,9 +370,13 @@ impl Component for Body {
         }]
     }
 
-    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
-        let render_bounds = self.get_render_bounds();
+        let render_bounds = self.get_render_bounds(tree);
 
         let content_width = render_bounds.width
             - style.border.size.left
@@ -401,11 +409,14 @@ impl Component for Body {
         }]
     }
 
-    fn get_textures(&self) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+    ) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
-    fn get_bounds(&self) -> Bounds {
+    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
         let style = self.get_style();
         let (width, total_lines) = self
             .buffer
@@ -434,9 +445,9 @@ impl Component for Body {
         }
     }
 
-    fn get_render_bounds(&self) -> Bounds {
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
         let style = self.get_style();
-        let bounds = self.get_bounds();
+        let bounds = self.get_bounds(tree);
         Bounds {
             x: bounds.x + style.margin.left,
             y: bounds.y + style.margin.top,
@@ -447,6 +458,8 @@ impl Component for Body {
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
         let style = self.get_style();
+        let bounds = self.get_render_bounds(tree);
+
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: line(2),
@@ -455,8 +468,8 @@ impl Component for Body {
                     end: span(2),
                 },
                 size: taffy::Size {
-                    width: length(self.get_render_bounds().width),
-                    height: length(self.get_render_bounds().height),
+                    width: length(bounds.width),
+                    height: length(bounds.height),
                 },
                 margin: taffy::Rect {
                     left: if style.margin.left.is_auto() {
@@ -504,11 +517,15 @@ impl Component for Body {
         self.y = layout.location.y;
     }
 
-    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
-        self.get_instances(urgency)
+    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
+        self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
-            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .chain(
+                self.get_text_areas(tree, urgency)
+                    .into_iter()
+                    .map(Data::TextArea),
+            )
             .collect()
     }
 
