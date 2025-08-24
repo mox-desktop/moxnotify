@@ -11,7 +11,7 @@ use crate::{
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer,
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 
 #[derive(Clone, Default)]
@@ -67,25 +67,60 @@ pub trait Component {
 
     fn get_style(&self) -> &Self::Style;
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance>;
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<buffers::Instance>;
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>>;
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>>;
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>>;
+    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>>;
 
-    fn get_bounds(&self) -> Bounds;
+    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        let style = tree.style(self.get_node_id()).unwrap();
 
-    fn get_render_bounds(&self) -> Bounds;
+        Bounds {
+            x: layout.location.x - style.margin.left.into_raw().value(),
+            y: layout.location.y - style.margin.top.into_raw().value(),
+            width: layout.size.width
+                + style.margin.left.into_raw().value()
+                + style.margin.right.into_raw().value(),
+            height: layout.size.height
+                + style.margin.top.into_raw().value()
+                + style.margin.bottom.into_raw().value(),
+        }
+    }
+
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+
+        Bounds {
+            x: layout.location.x,
+            y: layout.location.y,
+            width: layout.size.width,
+            height: layout.size.height,
+        }
+    }
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
 
     fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
 
-    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
-        self.get_instances(urgency)
+    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
+        self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
-            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .chain(
+                self.get_text_areas(tree, urgency)
+                    .into_iter()
+                    .map(Data::TextArea),
+            )
             .collect()
     }
 

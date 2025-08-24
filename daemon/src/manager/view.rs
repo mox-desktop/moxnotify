@@ -110,9 +110,13 @@ impl NotificationView {
         }
     }
 
-    pub fn prev_data(&self, total_width: f32) -> Option<(buffers::Instance, TextArea<'_>)> {
+    pub fn prev_data(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        total_width: f32,
+    ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(prev) = self.prev.as_ref() {
-            let extents = prev.get_render_bounds();
+            let extents = prev.get_render_bounds(tree);
             let style = &self.config.styles.prev;
             let instance = buffers::Instance {
                 rect_pos: [extents.x, extents.y],
@@ -133,7 +137,7 @@ impl NotificationView {
                 prev.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::Urgency::Low)
+                    .get_text_areas(tree, crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }
@@ -141,9 +145,13 @@ impl NotificationView {
         None
     }
 
-    pub fn next_data(&self, total_width: f32) -> Option<(buffers::Instance, TextArea<'_>)> {
+    pub fn next_data(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        total_width: f32,
+    ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(next) = self.next.as_ref() {
-            let extents = next.get_render_bounds();
+            let extents = next.get_render_bounds(tree);
             let style = &self.config.styles.prev;
             let instance = buffers::Instance {
                 rect_pos: [extents.x, extents.y],
@@ -164,7 +172,7 @@ impl NotificationView {
                 next.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::Urgency::Low)
+                    .get_text_areas(tree, crate::Urgency::Low)
                     .swap_remove(0),
             ));
         }

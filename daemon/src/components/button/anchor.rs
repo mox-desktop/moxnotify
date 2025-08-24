@@ -1,6 +1,6 @@
 use super::{Button, Component, Hint, State};
 use crate::{
-    components::{self, Bounds, text::body::Anchor},
+    components::{self, text::body::Anchor},
     config::button::ButtonState,
     rendering::{text_renderer::Text, texture_renderer},
     utils::{buffers, taffy::GlobalLayout},
@@ -30,9 +30,13 @@ impl Component for AnchorButton {
         &self.context.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: crate::Urgency,
+    ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
         vec![buffers::Instance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
@@ -45,7 +49,11 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
@@ -63,21 +71,6 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let anchor_extents = self.anchor.get_bounds();
-
-        Bounds {
-            x: self.x + anchor_extents.x,
-            y: self.y + anchor_extents.y,
-            width: anchor_extents.width,
-            height: anchor_extents.height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        self.get_bounds()
-    }
-
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
         self.hint.update_layout(tree);
         self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
@@ -89,7 +82,7 @@ impl Component for AnchorButton {
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

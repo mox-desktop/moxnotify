@@ -5,7 +5,7 @@ mod dismiss;
 use super::text::body;
 use crate::{
     Urgency,
-    components::{self, Bounds, Component, Data},
+    components::{self, Component, Data},
     config::{
         self,
         button::ButtonState,
@@ -205,11 +205,11 @@ impl ButtonManager<Ready> {
 
 impl ButtonManager<Finished> {
     #[must_use]
-    pub fn click(&self, x: f64, y: f64) -> bool {
+    pub fn click(&self, tree: &taffy::TaffyTree<()>, x: f64, y: f64) -> bool {
         self.buttons
             .iter()
             .find_map(|button| {
-                let bounds = button.get_render_bounds();
+                let bounds = button.get_render_bounds(tree);
                 if x >= bounds.x as f64
                     && y >= bounds.y as f64
                     && x <= (bounds.x + bounds.width) as f64
@@ -224,11 +224,11 @@ impl ButtonManager<Finished> {
             .is_some()
     }
 
-    pub fn hover(&mut self, x: f64, y: f64) -> bool {
+    pub fn hover(&mut self, tree: &taffy::TaffyTree<()>, x: f64, y: f64) -> bool {
         self.buttons
             .iter_mut()
             .find_map(|button| {
-                let bounds = button.get_render_bounds();
+                let bounds = button.get_render_bounds(tree);
                 if x >= bounds.x as f64
                     && y >= bounds.y as f64
                     && x <= (bounds.x + bounds.width) as f64
@@ -258,11 +258,11 @@ impl ButtonManager<Finished> {
     }
 
     #[must_use]
-    pub fn instances(&self) -> Vec<buffers::Instance> {
+    pub fn instances(&self, tree: &taffy::TaffyTree<()>) -> Vec<buffers::Instance> {
         let mut buttons = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_instances(self.urgency))
+            .flat_map(|button| button.get_instances(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -272,7 +272,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_instances(self.urgency))
+                .flat_map(|button| button.hint().get_instances(tree, self.urgency))
                 .collect::<Vec<_>>();
             buttons.extend_from_slice(&hints);
         }
@@ -281,11 +281,11 @@ impl ButtonManager<Finished> {
     }
 
     #[must_use]
-    pub fn text_areas(&self) -> Vec<TextArea<'_>> {
+    pub fn text_areas(&self, tree: &taffy::TaffyTree<()>) -> Vec<TextArea<'_>> {
         let mut text_areas = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_text_areas(self.urgency))
+            .flat_map(|button| button.get_text_areas(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -295,7 +295,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_text_areas(self.urgency));
+                .flat_map(|button| button.hint().get_text_areas(tree, self.urgency));
             text_areas.extend(hints);
         }
 
@@ -303,11 +303,11 @@ impl ButtonManager<Finished> {
     }
 
     #[must_use]
-    pub fn get_data(&self) -> Vec<Data<'_>> {
+    pub fn get_data(&self, tree: &taffy::TaffyTree<()>) -> Vec<Data<'_>> {
         let mut data = self
             .buttons
             .iter()
-            .flat_map(|button| button.get_data(self.urgency))
+            .flat_map(|button| button.get_data(tree, self.urgency))
             .collect::<Vec<_>>();
 
         if self.context.ui_state.mode.load(Ordering::Relaxed) == keymaps::Mode::Hint
@@ -317,7 +317,7 @@ impl ButtonManager<Finished> {
             let hints = self
                 .buttons
                 .iter()
-                .flat_map(|button| button.hint().get_data(self.urgency));
+                .flat_map(|button| button.hint().get_data(tree, self.urgency));
             data.extend(hints);
         }
 
@@ -490,49 +490,13 @@ impl Component for Hint {
         &self.context.config.styles.hover.hint
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-        let text_extents = self.text.get_bounds();
-
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
-
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
-
-        Bounds {
-            x: self.x - width / 2.,
-            y: self.y - height / 2.,
-            width,
-            height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let bounds = self.get_bounds();
-        let style = self.get_style();
-
-        Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
-        }
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<buffers::Instance> {
         let style = &self.context.config.styles.hover.hint;
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
 
         vec![buffers::Instance {
             rect_pos: [bounds.x, bounds.y],
@@ -557,10 +521,10 @@ impl Component for Hint {
         self.y = layout.location.y;
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
+    fn get_text_areas(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
 
         let remaining_padding = style.width.resolve(text_extents.width) - text_extents.width;
         let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
@@ -597,7 +561,7 @@ impl Component for Hint {
         }]
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

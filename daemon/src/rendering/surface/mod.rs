@@ -4,7 +4,7 @@ use crate::{
     Moxnotify, Output,
     config::{self, Anchor, Config},
     manager::NotificationManager,
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
     wgpu_state,
 };
 use glyphon::FontSystem;
@@ -311,8 +311,11 @@ impl Moxnotify {
     pub fn update_surface_size(&mut self) {
         self.notifications.update_size();
 
-        let total_height = self.notifications.height();
-        let total_width = self.notifications.width();
+        let layout = self
+            .notifications
+            .tree
+            .global_layout(self.notifications.node_id)
+            .unwrap();
 
         if self.surface.is_none() {
             let wl_surface = self.compositor.create_surface(&self.qh, ());
@@ -335,7 +338,7 @@ impl Moxnotify {
                 .store(scale, Ordering::Relaxed);
         }
 
-        if total_width == 0. || total_height == 0. {
+        if layout.size.width == 0. || layout.size.height == 0. {
             if let Some(surface) = self.surface.take() {
                 drop(surface);
             }
@@ -346,7 +349,7 @@ impl Moxnotify {
         if let Some(surface) = self.surface.as_ref() {
             surface
                 .layer_surface
-                .set_size(total_width as u32, total_height as u32);
+                .set_size(layout.size.width as u32, layout.size.height as u32);
             surface.wl_surface.commit();
         }
     }

@@ -61,8 +61,8 @@ pub struct NotificationManager {
     inhibited: bool,
     pub ui_state: UiState,
     pub history: History,
-    tree: taffy::TaffyTree<()>,
-    node_id: taffy::NodeId,
+    pub tree: taffy::TaffyTree<()>,
+    pub node_id: taffy::NodeId,
 }
 
 impl NotificationManager {
@@ -142,7 +142,7 @@ impl NotificationManager {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),
             })
-            .flat_map(|notification| notification.get_data(notification.urgency()))
+            .flat_map(|notification| notification.get_data(&self.tree, notification.urgency()))
             .for_each(|data_item| match data_item {
                 Data::Instance(instance) => instances.push(instance),
                 Data::TextArea(text_area) => text_areas.push(text_area),
@@ -159,17 +159,22 @@ impl NotificationManager {
                 NotificationState::Ready(notification) => Some(notification),
             })
             .map(|notification| {
-                notification.get_render_bounds().x + notification.get_render_bounds().width
+                notification.get_render_bounds(&self.tree).x
+                    + notification.get_render_bounds(&self.tree).width
             })
             .max_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or_default();
 
-        if let Some((instance, text_area)) = self.notification_view.prev_data(total_width) {
+        if let Some((instance, text_area)) =
+            self.notification_view.prev_data(&self.tree, total_width)
+        {
             instances.push(instance);
             text_areas.push(text_area);
         }
 
-        if let Some((instance, text_area)) = self.notification_view.next_data(total_width) {
+        if let Some((instance, text_area)) =
+            self.notification_view.next_data(&self.tree, total_width)
+        {
             instances.push(instance);
             text_areas.push(text_area);
         }
@@ -180,7 +185,7 @@ impl NotificationManager {
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
         self.notification_view.visible.clone().find_map(|index| {
             if let Some(notification) = self.notifications.get(index) {
-                let extents = notification.get_render_bounds();
+                let extents = notification.get_render_bounds(&self.tree);
                 let x_within_bounds =
                     x >= extents.x as f64 && x <= (extents.x + extents.width) as f64;
                 let y_within_bounds =
@@ -203,7 +208,7 @@ impl NotificationManager {
                     notification
                         .buttons_mut()
                         .as_mut()
-                        .map(|buttons| buttons.click(x, y))
+                        .map(|buttons| buttons.click(&self.tree, x, y))
                 })
                 .unwrap_or_default()
         })
@@ -216,54 +221,10 @@ impl NotificationManager {
                 .and_then(|notification| {
                     notification
                         .buttons_mut()
-                        .map(|buttons| buttons.hover(x, y))
+                        .map(|buttons| buttons.hover(&self.tree, x, y))
                 })
                 .unwrap_or_default()
         })
-    }
-
-    pub fn height(&self) -> f32 {
-        let height = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map_or(0., |n| n.get_bounds().height);
-        self.notification_view
-            .visible
-            .clone()
-            .fold(height, |acc, i| {
-                if let Some(notification) = self.notifications.get(i) {
-                    let extents = notification.get_bounds();
-                    return acc + extents.height;
-                }
-
-                acc
-            })
-            + self
-                .notification_view
-                .next
-                .as_ref()
-                .map_or(0., |n| n.get_bounds().height)
-    }
-
-    pub fn width(&self) -> f32 {
-        let (min_x, max_x) = self
-            .notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
-            .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
-                let extents = notification.get_bounds();
-                let left = extents.x + notification.data().hints.x as f32;
-                let right = extents.x + extents.width + notification.data().hints.x as f32;
-                (min_x.min(left), max_x.max(right))
-            });
-
-        if min_x == f32::MAX || max_x == f32::MIN {
-            0.0
-        } else {
-            max_x - min_x
-        }
     }
 
     /// Returns the ID of the currently selected notification, if any.
@@ -347,7 +308,7 @@ impl NotificationManager {
                     .buttons()
                     .iter()
                     .find(|button| button.button_type() == ButtonType::Dismiss)
-                    .map(|button| button.get_render_bounds().width)
+                    .map(|button| button.get_render_bounds(&self.tree).width)
             })
             .unwrap_or_default();
 
@@ -355,7 +316,7 @@ impl NotificationManager {
         let icons_width = notification
             .icons
             .as_ref()
-            .map(|icons| icons.get_bounds().width)
+            .map(|icons| icons.get_bounds(&self.tree).width)
             .unwrap_or_default();
 
         if let Some(body) = notification.body.as_mut() {
