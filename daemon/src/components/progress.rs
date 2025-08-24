@@ -3,9 +3,10 @@ use crate::{
     components::{self, Bounds, Component},
     config::{self, Insets, Size, border::BorderRadius},
     rendering::texture_renderer,
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use std::sync::atomic::Ordering;
+use taffy::style_helpers::{auto, length, line, span};
 
 pub struct Progress {
     node: taffy::NodeId,
@@ -67,9 +68,61 @@ impl Component for Progress {
         }
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let style = self.get_style();
+        self.node = tree
+            .new_leaf(taffy::Style {
+                grid_row: line(4),
+                grid_column: span(3),
+                size: taffy::Size {
+                    width: if style.width.is_auto() {
+                        auto()
+                    } else {
+                        length(style.width.resolve(0.))
+                    },
+                    height: if style.height.is_auto() {
+                        auto()
+                    } else {
+                        length(style.height.resolve(0.))
+                    },
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
+    }
+
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_render_bounds(&self) -> Bounds {
@@ -244,7 +297,7 @@ mod tests {
         };
         let mut progress = Progress::new(context, value);
         progress.set_width(300.0);
-        progress.set_position(0.0, 0.0);
+        progress.update_layout(0.0, 0.0);
 
         progress
     }
@@ -439,7 +492,7 @@ mod tests {
     fn test_set_position() {
         let mut progress = create_test_progress(50);
 
-        progress.set_position(10.0, 20.0);
+        progress.update_layout(10.0, 20.0);
 
         assert_eq!(progress.x, 10.0);
         assert_eq!(progress.y, 20.0);

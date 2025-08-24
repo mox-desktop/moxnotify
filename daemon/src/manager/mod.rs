@@ -10,7 +10,7 @@ use crate::{
     },
     config::{Config, Queue, keymaps},
     rendering::texture_renderer::TextureArea,
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -28,6 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
+use taffy::style_helpers::{auto, fr, length, max_content};
 use view::NotificationView;
 
 #[derive(Clone)]
@@ -61,6 +62,7 @@ pub struct NotificationManager {
     pub ui_state: UiState,
     pub history: History,
     tree: taffy::TaffyTree<()>,
+    node_id: taffy::NodeId,
 }
 
 impl NotificationManager {
@@ -71,6 +73,7 @@ impl NotificationManager {
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
         let ui_state = UiState::default();
+        let mut tree = taffy::TaffyTree::new();
 
         Self {
             sender,
@@ -87,7 +90,16 @@ impl NotificationManager {
             config,
             ui_state,
             history: History::Hidden,
-            tree: taffy::TaffyTree::new(),
+            node_id: tree
+                .new_leaf(taffy::Style {
+                    size: taffy::Size {
+                        width: auto(),
+                        height: auto(),
+                    },
+                    ..Default::default()
+                })
+                .unwrap(),
+            tree,
         }
     }
 
@@ -566,37 +578,63 @@ impl NotificationManager {
     }
 
     pub fn update_size(&mut self) {
-        let x_offset = self
-            .notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
-            .map(|n| n.data().hints.x)
-            .min()
-            .unwrap_or_default()
-            .abs() as f32;
+        self.tree.clear();
+
+        self.node_id = self
+            .tree
+            .new_leaf(taffy::Style {
+                display: taffy::Display::Flex,
+                flex_direction: taffy::FlexDirection::Column,
+                size: taffy::Size {
+                    width: auto(),
+                    height: auto(),
+                },
+                gap: taffy::Size {
+                    width: length(0.0),
+                    height: length(5.0),
+                },
+                ..Default::default()
+            })
+            .unwrap();
 
         if let Some(prev) = self.notification_view.prev.as_mut() {
-            prev.set_position(&mut self.tree, 0., 0.);
+            prev.update_layout(&mut self.tree);
+            self.tree
+                .add_child(self.node_id, prev.get_node_id())
+                .unwrap();
         }
-
-        let mut start = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map(|n| n.get_bounds().y + n.get_bounds().height)
-            .unwrap_or_default();
 
         self.notification_view.visible.clone().for_each(|i| {
             if let Some(notification) = self.notifications.get_mut(i) {
-                notification.set_position(&mut self.tree, x_offset, start);
-                start += notification.get_bounds().height;
+                notification.update_layout(&mut self.tree);
+                self.tree
+                    .add_child(self.node_id, notification.get_node_id())
+                    .unwrap();
             }
         });
 
         if let Some(next) = self.notification_view.next.as_mut() {
-            next.set_position(&mut self.tree, 0., start);
+            next.update_layout(&mut self.tree);
+            self.tree
+                .add_child(self.node_id, next.get_node_id())
+                .unwrap();
         }
+
+        self.tree
+            .compute_layout(
+                self.node_id,
+                taffy::Size {
+                    width: taffy::AvailableSpace::MaxContent,
+                    height: taffy::AvailableSpace::MaxContent,
+                },
+            )
+            .unwrap();
+
+        self.notification_view.visible.clone().for_each(|i| {
+            if let Some(notification) = self.notifications.get_mut(i) {
+                notification.apply_computed_layout(&mut self.tree);
+            }
+        });
 
         self.notification_view
             .update_notification_count(&mut self.tree, self.notifications.len());
@@ -971,7 +1009,7 @@ mod tests {
         manager.add(data);
 
         if let Some(notification) = manager.notifications.get_mut(0) {
-            notification.set_position(&mut manager.tree, 10.0, 20.0);
+            notification.update_layout(&mut manager.tree, 10.0, 20.0);
         }
 
         let x = 10.0 + style.margin.left.resolve(0.) as f64;

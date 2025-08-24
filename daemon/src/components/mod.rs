@@ -77,7 +77,9 @@ pub trait Component {
 
     fn get_render_bounds(&self) -> Bounds;
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32);
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
+
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
 
     fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)

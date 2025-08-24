@@ -12,7 +12,7 @@ use crate::{
         keymaps::{self},
     },
     rendering::{text_renderer, texture_renderer},
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use action::ActionButton;
 use anchor::AnchorButton;
@@ -526,9 +526,15 @@ impl Component for Hint {
         }]
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+        // TODO: make it actually calculate
+    }
+
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
@@ -601,7 +607,7 @@ mod tests {
             .finish(&mut font_system);
 
         let button = &mut button_manager.buttons_mut()[0];
-        button.set_position(10.0, 10.0);
+        button.update_layout(10.0, 10.0);
 
         let style = button.get_style();
         let width = style.width
@@ -663,7 +669,7 @@ mod tests {
             .finish(&mut font_system);
 
         let button = &mut button_manager.buttons_mut()[0];
-        button.set_position(10.0, 10.0);
+        button.update_layout(10.0, 10.0);
 
         let style = button.get_style();
         let width = style.width

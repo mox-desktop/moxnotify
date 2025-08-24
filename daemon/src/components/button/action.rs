@@ -4,9 +4,10 @@ use crate::{
     components::{self, Bounds, Component},
     config::button::ButtonState,
     rendering::{text_renderer, texture_renderer},
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use std::sync::{Arc, atomic::Ordering};
+use taffy::style_helpers::{auto, length};
 
 pub struct ActionButton {
     pub node: taffy::NodeId,
@@ -143,13 +144,68 @@ impl Component for ActionButton {
         }
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
-        self.text.set_buffer_position(x, y);
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let style = self.get_style();
+        self.node = tree
+            .new_leaf(taffy::Style {
+                //grid_column: line(index as i16 + 1), TODO: get index
+                size: taffy::Size {
+                    width: if style.width.is_auto() {
+                        auto()
+                    } else {
+                        length(style.width.resolve(0.))
+                    },
+                    height: if style.height.is_auto() {
+                        auto()
+                    } else {
+                        length(style.height.resolve(0.))
+                    },
+                },
+                padding: taffy::Rect {
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    top: length(style.padding.top.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                ..Default::default()
+            })
+            .unwrap();
+    }
 
-        let bounds = self.get_render_bounds();
-        self.hint.set_position(tree, bounds.x, bounds.y);
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
+        self.text.set_buffer_position(self.x, self.y);
+        self.hint.apply_computed_layout(tree);
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
