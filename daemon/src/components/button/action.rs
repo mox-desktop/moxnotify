@@ -150,6 +150,8 @@ impl Component for ActionButton {
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_column: line(self.index as i16 + 1),
+                flex_grow: 1.0,
+                flex_basis: auto(),
                 size: taffy::Size {
                     width: if style.width.is_auto() {
                         auto()
