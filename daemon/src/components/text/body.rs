@@ -6,10 +6,11 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use std::sync::{Arc, atomic::Ordering};
+use taffy::style_helpers::{auto, length, line, span};
 
 #[derive(Debug)]
 pub struct Anchor {
@@ -444,9 +445,63 @@ impl Component for Body {
         }
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let style = self.get_style();
+        self.node = tree
+            .new_leaf(taffy::Style {
+                grid_row: line(2),
+                grid_column: taffy::Line {
+                    start: line(2),
+                    end: span(2),
+                },
+                size: taffy::Size {
+                    width: length(self.get_render_bounds().width),
+                    height: length(self.get_render_bounds().height),
+                },
+                margin: taffy::Rect {
+                    left: if style.margin.left.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.left.resolve(0.))
+                    },
+                    right: if style.margin.right.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.right.resolve(0.))
+                    },
+                    bottom: if style.margin.bottom.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.bottom.resolve(0.))
+                    },
+                    top: if style.margin.top.is_auto() {
+                        auto()
+                    } else {
+                        length(style.margin.top.resolve(0.))
+                    },
+                },
+                padding: taffy::Rect {
+                    left: length(style.padding.left.resolve(0.)),
+                    right: length(style.padding.right.resolve(0.)),
+                    top: length(style.padding.top.resolve(0.)),
+                    bottom: length(style.padding.bottom.resolve(0.)),
+                },
+                border: taffy::Rect {
+                    left: length(style.border.size.left.resolve(0.)),
+                    right: length(style.border.size.left.resolve(0.)),
+                    top: length(style.border.size.left.resolve(0.)),
+                    bottom: length(style.border.size.left.resolve(0.)),
+                },
+                flex_grow: 1.0,
+                ..Default::default()
+            })
+            .unwrap();
+    }
+
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
@@ -753,7 +808,7 @@ mod tests {
         };
         let mut body = Body::new(context, &mut font_system);
 
-        body.set_position(10.0, 20.0);
+        body.update_layout(10.0, 20.0);
         body.set_text(
             &mut font_system,
             "Line 1\n<span color=\"blue\">Line 2</span>\n<span weight=\"bold\">Line 3</span>",
@@ -777,7 +832,7 @@ mod tests {
         };
         let mut body = Body::new(context, &mut font_system);
 
-        body.set_position(10.0, 20.0);
+        body.update_layout(10.0, 20.0);
         body.set_text(&mut font_system, "<span color=\"blue\">Blue text</span>");
 
         let data = body.get_data(Urgency::Normal);

@@ -3,7 +3,7 @@ use crate::{
     components::{self, Bounds, text::body::Anchor},
     config::button::ButtonState,
     rendering::{text_renderer::Text, texture_renderer},
-    utils::buffers,
+    utils::{buffers, taffy::GlobalLayout},
 };
 use std::sync::Arc;
 
@@ -78,12 +78,15 @@ impl Component for AnchorButton {
         self.get_bounds()
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
-        self.x = x;
-        self.y = y;
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        self.hint.update_layout(tree);
+        self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+    }
 
-        let bounds = self.get_render_bounds();
-        self.hint.set_position(tree, bounds.x, bounds.y);
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {

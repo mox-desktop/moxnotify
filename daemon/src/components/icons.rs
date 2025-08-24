@@ -12,10 +12,7 @@ use std::{
     path::Path,
     sync::{LazyLock, Mutex, atomic::Ordering},
 };
-use taffy::{
-    TaffyTree,
-    style_helpers::{auto, fr, length, line, max_content, span},
-};
+use taffy::style_helpers::{auto, length, line, span};
 
 static ICON_CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
 type IconMap = BTreeMap<Box<Path>, ImageData>;
@@ -174,10 +171,10 @@ impl Component for Icons {
         Vec::new()
     }
 
-    fn set_position(&mut self, tree: &mut taffy::TaffyTree<()>, x: f32, y: f32) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
         let style = self.get_style();
 
-        let node = tree
+        self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: span(2),
                 grid_column: line(1),
@@ -222,12 +219,12 @@ impl Component for Icons {
                 ..Default::default()
             })
             .unwrap();
-        //tree.add_child(container_node, node).unwrap(); TODO
+    }
 
-        let res = tree.global_layout(node).unwrap();
-
-        self.x = res.location.x;
-        self.y = res.location.y;
+    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
