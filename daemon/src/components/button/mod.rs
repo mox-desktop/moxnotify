@@ -19,6 +19,7 @@ use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
 use std::sync::{Arc, atomic::Ordering};
+use taffy::style_helpers::auto;
 
 #[derive(Clone, Copy, Debug)]
 pub enum State {
@@ -57,6 +58,7 @@ pub struct Finished;
 
 pub struct ButtonManager<State = NotReady> {
     context: components::Context,
+    pub action_container: Option<taffy::NodeId>,
     buttons: Vec<Box<dyn Button<Style = ButtonState>>>,
     urgency: Urgency,
     sender: Option<calloop::channel::Sender<crate::Event>>,
@@ -70,6 +72,7 @@ impl ButtonManager<NotReady> {
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Self {
         Self {
+            action_container: None,
             context,
             buttons: Vec::new(),
             urgency,
@@ -130,6 +133,7 @@ impl ButtonManager<NotReady> {
             buttons: self.buttons,
             urgency: self.urgency,
             sender: self.sender,
+            action_container: self.action_container,
             _state: std::marker::PhantomData,
         }
     }
@@ -193,6 +197,7 @@ impl ButtonManager<Ready> {
             urgency: self.urgency,
             sender: self.sender,
             context: self.context,
+            action_container: self.action_container,
             _state: std::marker::PhantomData,
         }
     }
@@ -377,6 +382,19 @@ impl<S> ButtonManager<S> {
         if actions.is_empty() {
             return self;
         }
+
+        self.action_container = tree
+            .new_leaf(taffy::Style {
+                display: taffy::Display::Flex,
+                flex_direction: taffy::FlexDirection::Row,
+                justify_content: Some(taffy::JustifyContent::SpaceEvenly),
+                size: taffy::Size {
+                    width: auto(),
+                    height: auto(),
+                },
+                ..Default::default()
+            })
+            .ok();
 
         let mut buttons = actions
             .iter()
