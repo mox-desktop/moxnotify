@@ -328,54 +328,42 @@ impl Component for Notification<Ready> {
         }
 
         if let Some(buttons) = self.buttons.as_mut() {
-            let has_actions = buttons
-                .buttons()
-                .iter()
-                .any(|b| b.button_type() == ButtonType::Action);
+            let action_container = tree
+                .new_leaf(taffy::Style {
+                    display: taffy::Display::Flex,
+                    flex_direction: taffy::FlexDirection::Row,
+                    justify_content: Some(taffy::JustifyContent::SpaceEvenly),
+                    size: taffy::Size {
+                        width: auto(),
+                        height: auto(),
+                    },
+                    ..Default::default()
+                })
+                .ok();
 
-            if has_actions {
-                let action_container = tree
-                    .new_leaf(taffy::Style {
-                        display: taffy::Display::Flex,
-                        flex_direction: taffy::FlexDirection::Row,
-                        justify_content: Some(taffy::JustifyContent::SpaceEvenly),
-                        size: taffy::Size {
-                            width: auto(),
-                            height: auto(),
-                        },
-                        ..Default::default()
-                    })
-                    .unwrap();
-
-                buttons
-                    .buttons_mut()
-                    .iter_mut()
-                    .for_each(|button| match button.button_type() {
-                        ButtonType::Action => {
+            buttons
+                .buttons_mut()
+                .iter_mut()
+                .for_each(|button| match button.button_type() {
+                    ButtonType::Action => {
+                        if let Some(action_container) = action_container {
                             button.update_layout(tree);
-
-                            tree.set_style(
-                                button.get_node_id(),
-                                taffy::Style {
-                                    flex_grow: 1.0,
-                                    flex_basis: auto(),
-                                    ..tree.style(button.get_node_id()).unwrap().clone()
-                                },
-                            )
-                            .unwrap();
-
                             tree.add_child(action_container, button.get_node_id())
                                 .unwrap();
                         }
-                        ButtonType::Dismiss | ButtonType::Anchor => {
-                            button.update_layout(tree);
-                            tree.add_child(container_node, button.get_node_id())
-                                .unwrap();
-                        }
-                    });
+                    }
+                    ButtonType::Dismiss | ButtonType::Anchor => {
+                        button.update_layout(tree);
+                        tree.add_child(container_node, button.get_node_id())
+                            .unwrap();
+                    }
+                });
 
+            if let Some(action_container) = action_container {
                 tree.add_child(container_node, action_container).unwrap();
             }
+
+            buttons.action_container = action_container;
         }
     }
 

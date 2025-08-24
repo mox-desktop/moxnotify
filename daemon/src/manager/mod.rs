@@ -28,7 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
-use taffy::style_helpers::{auto, length};
+use taffy::style_helpers::auto;
 use view::NotificationView;
 
 #[derive(Clone)]
@@ -616,6 +616,9 @@ impl NotificationManager {
                 .unwrap();
         }
 
+        self.notification_view
+            .update_notification_count(&mut self.tree, self.notifications.len());
+
         self.tree
             .compute_layout(
                 self.node_id,
@@ -631,9 +634,6 @@ impl NotificationManager {
                 notification.apply_computed_layout(&mut self.tree);
             }
         });
-
-        self.notification_view
-            .update_notification_count(&mut self.tree, self.notifications.len());
     }
 }
 
