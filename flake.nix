@@ -71,7 +71,6 @@
           pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
             inherit buildInputs;
             LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-            RUSTFLAGS = "-C link-arg=-fuse-ld=${pkgs.mold}/bin/mold";
           };
       });
 
@@ -99,9 +98,6 @@
 
             # format toml
             fd "$@" -t f -e toml -x taplo format '{}'
-
-            # format rust
-            cargo fmt
           '';
         }
       );

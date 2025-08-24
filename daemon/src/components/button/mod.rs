@@ -381,7 +381,8 @@ impl<S> ButtonManager<S> {
         let mut buttons = actions
             .iter()
             .cloned()
-            .map(|action| {
+            .enumerate()
+            .map(|(index, action)| {
                 let font = &self
                     .context
                     .config
@@ -404,6 +405,7 @@ impl<S> ButtonManager<S> {
                     state: State::Unhovered,
                     width: 0.,
                     tx: self.sender.clone(),
+                    index,
                 }) as Box<dyn Button<Style = ButtonState>>
             })
             .collect();

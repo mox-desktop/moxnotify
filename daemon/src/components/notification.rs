@@ -305,6 +305,11 @@ impl Component for Notification<Ready> {
                 .unwrap();
         }
 
+        if let Some(body) = self.body.as_mut() {
+            body.update_layout(tree);
+            tree.add_child(container_node, body.get_node_id()).unwrap();
+        }
+
         if let Some(icons) = self.icons.as_mut() {
             icons.update_layout(tree);
             tree.add_child(container_node, icons.get_node_id()).unwrap();
@@ -316,20 +321,59 @@ impl Component for Notification<Ready> {
                 .unwrap();
         }
 
-        self.buttons.as_mut().map(|buttons| {
-            buttons.buttons_mut().iter_mut().for_each(|button| {
-                button.update_layout(tree);
-                tree.add_child(container_node, button.get_node_id())
+        if let Some(buttons) = self.buttons.as_mut() {
+            let has_actions = buttons
+                .buttons()
+                .iter()
+                .any(|b| b.button_type() == ButtonType::Action);
+
+            if has_actions {
+                let action_container = tree
+                    .new_leaf(taffy::Style {
+                        display: taffy::Display::Flex,
+                        flex_direction: taffy::FlexDirection::Row,
+                        justify_content: Some(taffy::JustifyContent::SpaceEvenly),
+                        size: taffy::Size {
+                            width: auto(),
+                            height: auto(),
+                        },
+                        ..Default::default()
+                    })
                     .unwrap();
-            })
-        });
+
+                buttons
+                    .buttons_mut()
+                    .iter_mut()
+                    .for_each(|button| match button.button_type() {
+                        ButtonType::Action => {
+                            button.update_layout(tree);
+
+                            tree.set_style(
+                                button.get_node_id(),
+                                taffy::Style {
+                                    flex_grow: 1.0,
+                                    flex_basis: auto(),
+                                    ..tree.style(button.get_node_id()).unwrap().clone()
+                                },
+                            )
+                            .unwrap();
+
+                            tree.add_child(action_container, button.get_node_id())
+                                .unwrap();
+                        }
+                        ButtonType::Dismiss | ButtonType::Anchor => {
+                            button.update_layout(tree);
+                            tree.add_child(container_node, button.get_node_id())
+                                .unwrap();
+                        }
+                    });
+
+                tree.add_child(container_node, action_container).unwrap();
+            }
+        }
     }
 
     fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
-        let layout = tree.global_layout(self.get_node_id()).unwrap();
-        self.x = layout.location.x;
-        self.y = layout.location.y;
-
         if let Some(icons) = self.icons.as_mut() {
             icons.apply_computed_layout(tree);
         }
@@ -342,11 +386,19 @@ impl Component for Notification<Ready> {
             summary.apply_computed_layout(tree);
         }
 
+        if let Some(body) = self.body.as_mut() {
+            body.apply_computed_layout(tree);
+        }
+
         self.buttons.as_mut().map(|buttons| {
             buttons.buttons_mut().iter_mut().for_each(|button| {
                 button.apply_computed_layout(tree);
             })
         });
+
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        self.x = layout.location.x;
+        self.y = layout.location.y;
     }
 
     fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {

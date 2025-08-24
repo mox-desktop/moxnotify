@@ -9,7 +9,7 @@ use crate::{
     config::{Config, keymaps},
     history,
     rendering::texture_renderer::TextureArea,
-    utils::{buffers, taffy::GlobalLayout},
+    utils::buffers,
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -26,7 +26,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
-use taffy::style_helpers::{auto, fr, length, max_content};
+use taffy::style_helpers::{auto, length};
 use view::NotificationView;
 
 #[derive(Clone)]
@@ -535,10 +535,6 @@ impl NotificationManager {
                 size: taffy::Size {
                     width: auto(),
                     height: auto(),
-                },
-                gap: taffy::Size {
-                    width: length(0.0),
-                    height: length(5.0),
                 },
                 ..Default::default()
             })
