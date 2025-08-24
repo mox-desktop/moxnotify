@@ -1,7 +1,7 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::{
     Urgency,
-    components::{self, Bounds, Component},
+    components::{self, Component},
     config::button::ButtonState,
     rendering::{text_renderer, texture_renderer},
     utils::{buffers, taffy::GlobalLayout},
@@ -35,9 +35,13 @@ impl Component for DismissButton {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds();
+        let bounds = self.get_render_bounds(tree);
 
         vec![buffers::Instance {
             rect_pos: [bounds.x, bounds.y],
@@ -54,8 +58,12 @@ impl Component for DismissButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
-        let extents = self.get_render_bounds();
+    fn get_text_areas(
+        &self,
+        tree: &taffy::TaffyTree<()>,
+        urgency: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
+        let extents = self.get_render_bounds(tree);
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
@@ -99,46 +107,6 @@ impl Component for DismissButton {
             custom_glyphs: &[],
             default_color: style.font.color.into_glyphon(urgency),
         }]
-    }
-
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-        let text_extents = self.text.get_bounds();
-
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
-
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
-
-        Bounds {
-            x: self.x,
-            y: self.y,
-            width,
-            height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let bounds = self.get_bounds();
-        let style = self.get_style();
-
-        Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
-        }
     }
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
@@ -208,7 +176,7 @@ impl Component for DismissButton {
         self.hint.apply_computed_layout(tree);
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

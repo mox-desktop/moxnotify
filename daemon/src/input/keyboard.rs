@@ -149,9 +149,10 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                             {
                                 return;
                             }
-                        }
 
-                            if let Some(token) = state.seat.keyboard.repeat.registration_token.take() {
+                            if let Some(token) =
+                                state.seat.keyboard.repeat.registration_token.take()
+                            {
                                 state.loop_handle.remove(token);
                             }
                         }

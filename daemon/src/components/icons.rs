@@ -1,7 +1,7 @@
 use super::Data;
 use crate::{
     Image,
-    components::{self, Bounds, Component},
+    components::{self, Component},
     config,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
     utils::{buffers, image_data::ImageData, taffy::GlobalLayout},
@@ -111,76 +111,33 @@ impl Component for Icons {
         &self.get_notification_style().icon
     }
 
-    fn get_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
-        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
-            (
-                i.width() as f32
-                    + style.icon.padding.right
-                    + style.icon.padding.left
-                    + style.icon.margin.left
-                    + style.icon.margin.right,
-                i.height() as f32
-                    + style.icon.padding.top
-                    + style.icon.padding.bottom
-                    + style.icon.margin.top
-                    + style.icon.margin.bottom,
-            )
-        });
-
-        Bounds {
-            x: self.x,
-            y: self.y,
-            width,
-            height,
-        }
-    }
-
-    fn get_render_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
-        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
-            (
-                i.width() as f32 + style.icon.padding.right + style.icon.padding.left,
-                i.height() as f32 + style.icon.padding.top + style.icon.padding.bottom,
-            )
-        });
-
-        Bounds {
-            x: self.x + style.icon.margin.left,
-            y: self.y + style.icon.margin.top,
-            width,
-            height,
-        }
-    }
-
-    fn get_instances(&self, _: crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, _: &taffy::TaffyTree<()>, _: crate::Urgency) -> Vec<buffers::Instance> {
         Vec::new()
     }
 
-    fn get_text_areas(&self, _: crate::Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<()>,
+        _: crate::Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
         let style = self.get_style();
 
+        let (width, height) = self
+            .icon
+            .as_ref()
+            .map_or((0., 0.), |i| (i.width() as f32, i.height() as f32));
+
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: span(2),
                 grid_column: line(1),
                 size: taffy::Size {
-                    width: length(self.get_render_bounds().width),
-                    height: length(self.get_render_bounds().height),
+                    width: length(width),
+                    height: length(height),
                 },
                 padding: taffy::Rect {
                     top: length(style.padding.top.resolve(0.)),
@@ -227,7 +184,7 @@ impl Component for Icons {
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
         let style = self.get_config().find_style(
@@ -236,7 +193,7 @@ impl Component for Icons {
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
-        let mut bounds = self.get_render_bounds();
+        let mut bounds = self.get_render_bounds(tree);
 
         if let Some(icon) = self.icon.as_ref() {
             texture_areas.push(TextureArea {
@@ -286,8 +243,11 @@ impl Component for Icons {
         texture_areas
     }
 
-    fn get_data(&self, _: crate::Urgency) -> Vec<Data<'_>> {
-        self.get_textures().into_iter().map(Data::Texture).collect()
+    fn get_data(&self, tree: &taffy::TaffyTree<()>, _: crate::Urgency) -> Vec<Data<'_>> {
+        self.get_textures(tree)
+            .into_iter()
+            .map(Data::Texture)
+            .collect()
     }
 
     fn get_node_id(&self) -> taffy::NodeId {
