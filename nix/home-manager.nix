@@ -36,6 +36,8 @@ let
 
 in
 {
+  imports = [ ./stylix.nix ];
+
   options.services.moxnotify = {
     enable = lib.mkEnableOption "moxnotify";
     package = lib.mkPackageOption pkgs "moxnotify" { };
