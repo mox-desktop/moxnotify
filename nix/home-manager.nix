@@ -34,6 +34,7 @@ let
     else
       generators.${builtins.typeOf value} value;
 
+  inherit (lib) types;
 in
 {
   imports = [ ./stylix.nix ];
@@ -44,17 +45,18 @@ in
 
     settings = lib.mkOption {
       type =
-        with lib.types;
         let
-          valueType = nullOr (oneOf [
-            bool
-            int
-            float
-            str
-            path
-            (attrsOf valueType)
-            (listOf valueType)
-          ]);
+          valueType = types.nullOr (
+            types.oneOf [
+              types.bool
+              types.int
+              types.float
+              types.str
+              types.path
+              (types.attrsOf valueType)
+              (types.listOf valueType)
+            ]
+          );
         in
         valueType;
       default = { };
