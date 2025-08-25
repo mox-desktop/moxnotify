@@ -51,7 +51,7 @@ impl Component for AnchorButton {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<()>,
         urgency: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
@@ -82,7 +82,7 @@ impl Component for AnchorButton {
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

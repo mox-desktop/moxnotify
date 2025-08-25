@@ -88,7 +88,6 @@ impl NotificationManager {
             notifications: VecDeque::new(),
             config,
             ui_state,
-             tree: taffy::TaffyTree::new(),
             node_id: tree
                 .new_leaf(taffy::Style {
                     size: taffy::Size {

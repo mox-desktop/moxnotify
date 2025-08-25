@@ -121,7 +121,7 @@ impl NotificationState {
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match self {
-            Self::Empty(n) => unreachable!(),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.replace(tree, font_system, data, sender),
         }
     }
