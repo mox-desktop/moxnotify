@@ -113,7 +113,7 @@ impl ButtonManager<NotReady> {
             .dismiss
             .default
             .font;
-        let text = text_renderer::Text::new(font, font_system, "X");
+        let text = text_renderer::TextContext::new(font, font_system, "X");
 
         let button = DismissButton {
             node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
@@ -356,7 +356,7 @@ impl<S> ButtonManager<S> {
             .font;
 
         self.buttons.extend(anchors.iter().map(|anchor| {
-            let text = text_renderer::Text::new(font, font_system, "");
+            let text = text_renderer::TextContext::new(font, font_system, "");
             Box::new(AnchorButton {
                 node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
                 context: self.context.clone(),
@@ -410,7 +410,7 @@ impl<S> ButtonManager<S> {
                     .action
                     .default
                     .font;
-                let text = text_renderer::Text::new(font, font_system, &action.1);
+                let text = text_renderer::TextContext::new(font, font_system, &action.1);
 
                 Box::new(ActionButton {
                     node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
@@ -446,7 +446,7 @@ impl<S> ButtonManager<S> {
 pub struct Hint {
     node: taffy::NodeId,
     combination: Box<str>,
-    text: text_renderer::Text,
+    text: text_renderer::TextContext,
     context: components::Context,
     x: f32,
     y: f32,
@@ -467,7 +467,7 @@ impl Hint {
         Self {
             node,
             combination: combination.as_ref().into(),
-            text: text_renderer::Text::new(
+            text: text_renderer::TextContext::new(
                 &context.config.styles.default.font,
                 font_system,
                 combination.as_ref(),
@@ -561,7 +561,7 @@ impl Component for Hint {
         }]
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

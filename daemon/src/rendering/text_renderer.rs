@@ -3,19 +3,8 @@ use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Shaping, SwashCache, TextArea, TextAtlas, TextRenderer,
     Viewport, Weight,
 };
+use taffy::AvailableSpace;
 use wgpu::{MultisampleState, TextureFormat};
-
-fn create_buffer(font: &Font, font_system: &mut FontSystem, max_width: Option<f32>) -> Buffer {
-    let dpi = 96.0;
-    let font_size = font.size * dpi / 72.0;
-    let mut buffer = Buffer::new(
-        font_system,
-        glyphon::Metrics::new(font_size, font_size * 1.2),
-    );
-    buffer.shape_until_scroll(font_system, true);
-    buffer.set_size(font_system, max_width, None);
-    buffer
-}
 
 pub struct Text {
     pub buffer: Buffer,
@@ -32,14 +21,44 @@ impl Text {
             .metadata(0.6_f32.to_bits() as usize)
             .family(glyphon::Family::Name(&font.family))
             .weight(Weight::BOLD);
-        let mut buffer = create_buffer(font, font_system, None);
+
+        let dpi = 96.0;
+        let font_size = font.size * dpi / 72.0;
+        let mut buffer = Buffer::new_empty(glyphon::Metrics::new(font_size, font_size * 1.2));
+        buffer.set_size(font_system, None, None);
         buffer.set_text(font_system, body.as_ref(), &attrs, Shaping::Advanced);
+        buffer.shape_until_scroll(font_system, false);
 
         Self {
             buffer,
             x: 0.,
             y: 0.,
         }
+    }
+
+    pub fn measure(
+        &mut self,
+        known_dimensions: taffy::Size<Option<f32>>,
+        available_space: taffy::Size<taffy::AvailableSpace>,
+        font_system: &mut FontSystem,
+    ) -> taffy::Size<f32> {
+        let width_constraint = known_dimensions.width.or(match available_space.width {
+            AvailableSpace::MinContent => Some(0.),
+            AvailableSpace::MaxContent => None,
+            AvailableSpace::Definite(width) => Some(width),
+        });
+        self.buffer.set_size(font_system, width_constraint, None);
+        self.buffer.shape_until_scroll(font_system, false);
+
+        let (width, total_lines) = self
+            .buffer
+            .layout_runs()
+            .fold((0., 0usize), |(width, total_lines), run| {
+                (run.line_w.max(width), total_lines + 1)
+            });
+        let height = total_lines as f32 * self.buffer.metrics().line_height;
+
+        taffy::Size { width, height }
     }
 
     pub fn set_buffer_position(&mut self, x: f32, y: f32) {

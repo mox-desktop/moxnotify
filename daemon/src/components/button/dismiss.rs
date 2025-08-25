@@ -15,7 +15,7 @@ pub struct DismissButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: text_renderer::Text,
+    pub text: text_renderer::TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
 }
@@ -176,7 +176,7 @@ impl Component for DismissButton {
         self.hint.apply_computed_layout(tree);
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -234,7 +234,7 @@ mod tests {
         },
         config::Config,
         manager::UiState,
-        rendering::text_renderer::Text,
+        rendering::text_renderer::TextContext,
     };
     use glyphon::FontSystem;
 
@@ -254,7 +254,7 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(
+            text: TextContext::new(
                 &context.config.styles.default.font,
                 &mut FontSystem::new(),
                 "",

@@ -122,7 +122,7 @@ impl Component for Summary {
         Vec::new()
     }
 
-    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_bounds(&self, _: &taffy::TaffyTree<()>) -> Bounds {
         let style = self.get_style();
         let (width, total_lines) = self
             .buffer

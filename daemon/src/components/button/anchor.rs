@@ -2,7 +2,7 @@ use super::{Button, Component, Hint, State};
 use crate::{
     components::{self, text::body::Anchor},
     config::button::ButtonState,
-    rendering::{text_renderer::Text, texture_renderer},
+    rendering::{text_renderer::TextContext, texture_renderer},
     utils::{buffers, taffy::GlobalLayout},
 };
 use std::sync::Arc;
@@ -13,7 +13,7 @@ pub struct AnchorButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: Text,
+    pub text: TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
     pub anchor: Arc<Anchor>,
@@ -51,7 +51,7 @@ impl Component for AnchorButton {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<()>,
         urgency: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
@@ -82,7 +82,7 @@ impl Component for AnchorButton {
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

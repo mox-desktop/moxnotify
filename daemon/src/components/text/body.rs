@@ -411,12 +411,12 @@ impl Component for Body {
 
     fn get_textures(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<()>,
     ) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
-    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_bounds(&self, _: &taffy::TaffyTree<()>) -> Bounds {
         let style = self.get_style();
         let (width, total_lines) = self
             .buffer
