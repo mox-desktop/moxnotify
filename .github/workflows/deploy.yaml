@@ -20,3 +20,11 @@ jobs:
         signingKey: '${{ secrets.CACHIX_SIGNING_KEY }}'
     - run: nix build --no-link --print-out-paths > /tmp/paths
     - run: cat /tmp/paths | cachix push moxnotify
+
+    - name: Trigger mox-flake update
+      run: |
+        curl -X POST \
+          -H "Authorization: token ${{ secrets.REPO_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/mox-desktop/mox-flake/dispatches \
+          -d '{"event_type":"dependency-updated"}'
