@@ -65,8 +65,8 @@ rustPlatform.buildRustPackage {
 
   installPhase = ''
     install -Dm755 target/release/daemon $out/bin/moxnotifyd
-    install -Dm755 target/release/ctl $out/bin/moxnotify
-    ln -s moxnotify $out/bin/moxnotifyctl
+    install -Dm755 target/release/ctl $out/bin/moxnotifyctl
+    ln -s $out/bin/moxnotifyd $out/bin/moxnotify
   '';
 
   postFixup = ''
@@ -95,6 +95,6 @@ rustPlatform.buildRustPackage {
     license = lib.licenses.mit;
     maintainers = builtins.attrValues { inherit (lib.maintainers) unixpariah; };
     platforms = lib.platforms.linux;
-    mainProgram = "moxnotify";
+    mainProgram = "moxnotifyd";
   };
 }
