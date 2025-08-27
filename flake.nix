@@ -84,7 +84,7 @@
               rustc = rust-bin;
             };
         };
-        default = self.packages.${pkgs.stdenv.hostPlatform}.moxnotify;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });
 
       homeManagerModules = {
