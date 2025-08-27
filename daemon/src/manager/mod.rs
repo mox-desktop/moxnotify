@@ -1,7 +1,7 @@
 mod view;
 
 use crate::{
-    EmitEvent, History, Moxnotify, NotificationData,
+    EmitEvent, Moxnotify, NotificationData,
     components::{
         Component, Data,
         button::ButtonType,
@@ -9,6 +9,7 @@ use crate::{
         text::Text,
     },
     config::{Config, Queue, keymaps},
+    history,
     rendering::texture_renderer::TextureArea,
     utils::buffers,
 };
@@ -16,7 +17,6 @@ use atomic_float::AtomicF32;
 use calloop::LoopHandle;
 use glyphon::{FontSystem, TextArea};
 use rayon::prelude::*;
-use rusqlite::params;
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -51,7 +51,7 @@ impl Default for UiState {
 
 pub struct NotificationManager {
     notifications: VecDeque<NotificationState>,
-    waiting: u32,
+    pub waiting: Vec<NotificationData>,
     config: Arc<Config>,
     loop_handle: LoopHandle<'static, Moxnotify>,
     pub font_system: Rc<RefCell<FontSystem>>,
@@ -59,7 +59,7 @@ pub struct NotificationManager {
     pub sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     pub ui_state: UiState,
-    pub history: History,
+    pub history: history::History,
 }
 
 impl NotificationManager {
@@ -72,9 +72,10 @@ impl NotificationManager {
         let ui_state = UiState::default();
 
         Self {
+            history: history::History::try_new(&config.general.history.path).unwrap(),
             sender,
             inhibited: false,
-            waiting: 0,
+            waiting: Vec::new(),
             notification_view: NotificationView::new(
                 Arc::clone(&config),
                 ui_state.clone(),
@@ -85,7 +86,6 @@ impl NotificationManager {
             notifications: VecDeque::new(),
             config,
             ui_state,
-            history: History::Hidden,
         }
     }
 
@@ -97,7 +97,8 @@ impl NotificationManager {
     /// Stop inhibiting notifications and bring any inhibited
     /// notifications to the view
     pub fn uninhibit(&mut self) {
-        self.waiting = 0;
+        let drained: Vec<_> = self.waiting.drain(..).collect();
+        self.add_many(drained);
         self.inhibited = false;
     }
 
@@ -418,8 +419,8 @@ impl NotificationManager {
         self.ui_state.selected.store(false, Ordering::Relaxed);
 
         let old_id = self.ui_state.selected_id.load(Ordering::Relaxed);
-        if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id) {
-            if let Some(notification) = self.notifications.get_mut(index) {
+        if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id)
+            && let Some(notification) = self.notifications.get_mut(index) {
                 notification.unhover();
                 match self.config.general.queue {
                     Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
@@ -427,11 +428,10 @@ impl NotificationManager {
                     Queue::FIFO => {}
                 }
             }
-        }
     }
 
-    pub fn waiting(&self) -> u32 {
-        self.waiting
+    pub fn waiting(&self) -> usize {
+        self.waiting.len()
     }
 
     pub fn add_many(&mut self, data: Vec<NotificationData>) {
@@ -452,8 +452,8 @@ impl NotificationManager {
     }
 
     pub fn add(&mut self, data: NotificationData) {
-        if self.inhibited {
-            self.waiting += 1;
+        if self.inhibited() {
+            self.waiting.push(data);
             return;
         }
 
@@ -480,19 +480,19 @@ impl NotificationManager {
                 self.ui_state.clone(),
             );
 
-            match self.config.general.queue {
+            match &self.config.general.queue {
                 Queue::FIFO if self.notifications.is_empty() => {
                     notification.start_timer(&self.loop_handle);
                 }
                 Queue::Unordered => notification.start_timer(&self.loop_handle),
-                Queue::FIFO => {}
+                _ => {}
             }
 
-            match self.history {
-                History::Hidden => self
+            match self.history.state() {
+                history::HistoryState::Hidden => self
                     .notifications
                     .push_back(NotificationState::Empty(notification)),
-                History::Shown => self
+                history::HistoryState::Shown => self
                     .notifications
                     .push_front(NotificationState::Empty(notification)),
             }
@@ -520,11 +520,10 @@ impl NotificationManager {
             self.promote_notifications();
         }
 
-        if let Queue::FIFO = self.config.general.queue {
-            if let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
+        if let Queue::FIFO = self.config.general.queue
+            && let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
                 notification.start_timer(&self.loop_handle);
             }
-        }
 
         // Deselect if there are no notifications left
         if self.notifications.is_empty() {
@@ -537,9 +536,9 @@ impl NotificationManager {
             .visible
             .clone()
             .for_each(|notification_idx| {
-                if let Some(notification_state) = self.notifications.get_mut(notification_idx) {
-                    if matches!(notification_state, NotificationState::Empty(_)) {
-                        if let NotificationState::Empty(notification) = std::mem::replace(
+                if let Some(notification_state) = self.notifications.get_mut(notification_idx)
+                    && matches!(notification_state, NotificationState::Empty(_))
+                        && let NotificationState::Empty(notification) = std::mem::replace(
                             notification_state,
                             NotificationState::Empty(Notification::<Empty>::new_empty(
                                 Arc::clone(&self.config),
@@ -552,8 +551,6 @@ impl NotificationManager {
                                 Some(self.sender.clone()),
                             ));
                         }
-                    }
-                }
             });
     }
 
@@ -645,14 +642,12 @@ impl Moxnotify {
     }
 
     pub fn dismiss_by_id(&mut self, id: u32, reason: Option<Reason>) {
-        match self.notifications.history {
-            History::Shown => {
-                _ = self
-                    .db
-                    .execute("DELETE FROM notifications WHERE rowid = ?1", params![id]);
+        match self.notifications.history.state() {
+            history::HistoryState::Shown => {
+                _ = self.notifications.history.delete(id);
                 self.notifications.dismiss(id);
             }
-            History::Hidden => {
+            history::HistoryState::Hidden => {
                 if self.notifications.selected_id() == Some(id) {
                     self.notifications
                         .ui_state
@@ -670,15 +665,14 @@ impl Moxnotify {
         }
 
         self.update_surface_size();
-        if let Some(surface) = self.surface.as_mut() {
-            if let Err(e) = surface.render(
+        if let Some(surface) = self.surface.as_mut()
+            && let Err(e) = surface.render(
                 &self.wgpu_state.device,
                 &self.wgpu_state.queue,
                 &self.notifications,
             ) {
                 log::error!("Render error: {e}");
             }
-        }
 
         if self.notifications.notifications().is_empty() {
             self.seat.keyboard.repeat.key = None;

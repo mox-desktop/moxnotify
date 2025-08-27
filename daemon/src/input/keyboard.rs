@@ -1,6 +1,7 @@
 use crate::{
-    History, Moxnotify,
+    Moxnotify,
     config::keymaps::{self, Key, KeyAction, KeyWithModifiers, Keys, Modifiers},
+    history,
     manager::Reason,
 };
 use calloop::{
@@ -136,8 +137,8 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                 match value {
                     wl_keyboard::KeyState::Released => {
                         state.seat.keyboard.repeat.key = None;
-                        if let Some(xkb_state) = state.seat.keyboard.xkb.state.as_ref() {
-                            if let Some(key) = Key::from_keycode(xkb_state, keycode.into()) {
+                        if let Some(xkb_state) = state.seat.keyboard.xkb.state.as_ref()
+                            && let Some(key) = Key::from_keycode(xkb_state, keycode.into()) {
                                 let key_with_modifiers = KeyWithModifiers {
                                     key,
                                     modifiers: state.seat.keyboard.modifiers,
@@ -149,7 +150,6 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                     return;
                                 }
                             }
-                        }
 
                         if let Some(token) = state.seat.keyboard.repeat.registration_token.take() {
                             state.loop_handle.remove(token);
@@ -282,13 +282,15 @@ impl Moxnotify {
                     self.seat.keyboard.key_combination.clear();
                     self.seat.keyboard.repeat.key = None;
                 }
-                KeyAction::ToggleHistory => match self.notifications.history {
-                    History::Shown => {
+                KeyAction::ToggleHistory => match self.notifications.history.state() {
+                    history::HistoryState::Shown => {
                         self.handle_app_event(crate::Event::HideHistory)?;
                         self.seat.keyboard.key_combination.clear();
                         self.seat.keyboard.repeat.key = None;
                     }
-                    History::Hidden => self.handle_app_event(crate::Event::ShowHistory)?,
+                    history::HistoryState::Hidden => {
+                        self.handle_app_event(crate::Event::ShowHistory)?
+                    }
                 },
                 KeyAction::Uninhibit => self.notifications.uninhibit(),
                 KeyAction::Ihibit => self.notifications.inhibit(),
