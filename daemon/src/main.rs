@@ -2,6 +2,7 @@ mod audio;
 pub mod components;
 mod config;
 mod dbus;
+pub mod history;
 mod input;
 mod manager;
 mod rendering;
@@ -24,7 +25,6 @@ use rendering::{
     surface::{FocusReason, Surface},
     wgpu_state,
 };
-use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use std::{
     cell::RefCell,
@@ -41,7 +41,6 @@ use wayland_client::{
 };
 use wayland_protocols::xdg::activation::v1::client::{xdg_activation_token_v1, xdg_activation_v1};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
-use zbus::zvariant::Type;
 
 #[derive(Debug)]
 pub struct Output {
@@ -62,13 +61,6 @@ impl Output {
     }
 }
 
-#[derive(Default, PartialEq, Clone, Copy, Type, Serialize)]
-pub enum History {
-    #[default]
-    Hidden,
-    Shown,
-}
-
 pub struct Moxnotify {
     layer_shell: zwlr_layer_shell_v1::ZwlrLayerShellV1,
     seat: Seat,
@@ -83,7 +75,6 @@ pub struct Moxnotify {
     emit_sender: broadcast::Sender<EmitEvent>,
     compositor: wl_compositor::WlCompositor,
     audio: Audio,
-    db: rusqlite::Connection,
     font_system: Rc<RefCell<FontSystem>>,
 }
 
@@ -108,26 +99,9 @@ impl Moxnotify {
 
         let wgpu_state = wgpu_state::WgpuState::new(conn).await?;
 
-        let db = rusqlite::Connection::open(&config.general.history.path)?;
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS notifications (
-            rowid INTEGER PRIMARY KEY AUTOINCREMENT,
-            id INTEGER,
-            app_name TEXT,
-            app_icon TEXT,
-            summary TEXT,
-            body TEXT,
-            timeout INTEGER,
-            actions TEXT,
-            hints JSON
-        );",
-            (),
-        )?;
-
         let font_system = Rc::new(RefCell::new(FontSystem::new()));
 
         Ok(Self {
-            db,
             audio: Audio::try_new().unwrap(),
             globals,
             qh,
@@ -251,9 +225,11 @@ impl Moxnotify {
 
                 let suppress_sound = data.hints.suppress_sound;
 
-                let id = match self.notifications.history {
-                    History::Shown => self.db.last_insert_rowid() as u32,
-                    History::Hidden => data.id,
+                let id = match self.notifications.history.state() {
+                    history::HistoryState::Shown => {
+                        self.notifications.history.last_insert_rowid()
+                    }
+                    history::HistoryState::Hidden => data.id,
                 };
 
                 self.notifications.add(NotificationData { id, ..*data });
@@ -265,30 +241,18 @@ impl Moxnotify {
                     self.audio.play(path)?;
                 }
 
-                if let Some(notification) = self.notifications.notifications().back() {
-                    self.db.execute(
-                        "INSERT INTO notifications (id, app_name, app_icon, timeout, summary, body, actions, hints)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                        params![
-                            notification.data().id,
-                            notification.data().app_name,
-                            notification.data().app_icon,
-                            notification.data().timeout,
-                            notification.data().summary,
-                            notification.data().body,
-                            serde_json::to_string(&notification.data().actions)?,
-                            serde_json::to_string(&notification.data().hints)?
-                        ],
-                )?;
-                }
+                if let Some(notification) = self.notifications.notifications().back()
+                    && let Err(e) = self.notifications.history.insert(notification.data()) {
+                        log::warn!("{e}");
+                    }
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
                 self.dismiss_by_id(id, Some(Reason::CloseNotificationCall));
             }
             Event::FocusSurface => {
-                if let Some(surface) = self.surface.as_mut() {
-                    if surface.focus_reason.is_none() {
+                if let Some(surface) = self.surface.as_mut()
+                    && surface.focus_reason.is_none() {
                         log::info!("Focusing notification surface");
                         surface.focus(FocusReason::Ctl);
 
@@ -313,7 +277,6 @@ impl Moxnotify {
                             self.notifications.next();
                         }
                     }
-                }
             }
             Event::List => {
                 log::info!("Listing all active notifications");
@@ -352,42 +315,24 @@ impl Moxnotify {
                 return Ok(());
             }
             Event::ShowHistory => {
-                if self.notifications.history == History::Hidden {
-                    self.db.execute(
-                        "DELETE FROM notifications WHERE rowid IN (
-                            SELECT rowid FROM notifications 
-                            ORDER BY rowid ASC 
-                            LIMIT MAX(0, (SELECT COUNT(*) FROM notifications) - ?)
-                        )",
-                        params![self.config.general.history.size],
-                    )?;
+                if self.notifications.history.is_hidden() {
+                    if let Err(e) = self
+                        .notifications
+                        .history
+                        .trim(self.config.general.history.size)
+                    {
+                        log::warn!("{e}");
+                    }
 
                     log::info!("Showing notification history");
-                    self.notifications.history = History::Shown;
-                    _ = self
-                        .emit_sender
-                        .send(EmitEvent::HistoryStateChanged(self.notifications.history));
+                    self.notifications.history.show();
+                    _ = self.emit_sender.send(EmitEvent::HistoryStateChanged(
+                        self.notifications.history.state(),
+                    ));
                     self.dismiss_range(.., Some(Reason::Expired));
-                    let mut stmt = self.db.prepare("SELECT rowid, app_name, app_icon, summary, body, actions, hints FROM notifications ORDER BY rowid DESC")?;
-                    let rows = stmt.query_map([], |row| {
-                        Ok(NotificationData {
-                            id: row.get(0)?,
-                            app_name: row.get(1)?,
-                            app_icon: row.get::<_, Option<Box<str>>>(2)?,
-                            summary: row.get::<_, Box<str>>(3)?,
-                            body: row.get::<_, Box<str>>(4)?,
-                            timeout: 0,
-                            actions: {
-                                let json: Box<str> = row.get(5)?;
-                                serde_json::from_str(&json).unwrap()
-                            },
-                            hints: {
-                                let json: Box<str> = row.get(6)?;
-                                serde_json::from_str(&json).unwrap()
-                            },
-                        })
-                    })?;
-                    let notifications = rows.collect::<Result<Vec<_>, _>>()?;
+
+                    let notifications = self.notifications.history.load_all()?;
+
                     log::info!("Loaded {} historical notifications", notifications.len());
                     self.notifications.add_many(notifications);
                     log::debug!("History view completed");
@@ -396,23 +341,14 @@ impl Moxnotify {
                 }
             }
             Event::HideHistory => {
-                if self.notifications.history == History::Shown {
-                    self.db.execute(
-                        "DELETE FROM notifications WHERE rowid IN (
-                        SELECT rowid FROM notifications ORDER BY rowid ASC LIMIT (
-                            SELECT MAX(COUNT(*) + 1 - ?, 0) FROM notifications
-                        )
-                    )",
-                        params![self.config.general.history.size],
-                    )?;
-
+                if self.notifications.history.is_shown() {
                     log::info!("Hiding notification history");
-                    self.notifications.history = History::Hidden;
-                    _ = self
-                        .emit_sender
-                        .send(EmitEvent::HistoryStateChanged(self.notifications.history));
+                    self.notifications.history.hide();
+                    _ = self.emit_sender.send(EmitEvent::HistoryStateChanged(
+                        self.notifications.history.state(),
+                    ));
                     self.dismiss_range(.., None);
-                    log::debug!("History view dismissed");
+                    log::debug!("History hidden");
                 } else {
                     log::debug!("History already hidden");
                 }
@@ -435,35 +371,10 @@ impl Moxnotify {
                     let count = self.notifications.waiting();
                     log::debug!("Processing {count} waiting notifications");
 
-                    let mut stmt = self.db.prepare("SELECT id, app_name, app_icon, summary, body, timeout, actions, hints FROM notifications ORDER BY rowid DESC LIMIT ?1")?;
-                    let rows = stmt.query_map([count], |row| {
-                        Ok(NotificationData {
-                            id: row.get(0)?,
-                            app_name: row.get(1)?,
-                            app_icon: row.get::<_, Option<Box<str>>>(2)?,
-                            summary: row.get::<_, Box<str>>(3)?,
-                            body: row.get::<_, Box<str>>(4)?,
-                            timeout: row.get(5)?,
-                            actions: {
-                                let json: Box<str> = row.get(6)?;
-                                serde_json::from_str(&json).unwrap()
-                            },
-                            hints: {
-                                let json: Box<str> = row.get(7)?;
-                                serde_json::from_str(&json).unwrap()
-                            },
-                        })
-                    })?;
-
-                    self.notifications.uninhibit();
                     _ = self.emit_sender.send(EmitEvent::InhibitStateChanged(
                         self.notifications.inhibited(),
                     ));
-
-                    rows.into_iter()
-                        .filter_map(std::result::Result::ok)
-                        .for_each(|notification| self.notifications.add(notification));
-                    drop(stmt);
+                    self.notifications.uninhibit();
                 } else {
                     log::debug!("Notifications already uninhibited");
                 }
@@ -486,7 +397,7 @@ impl Moxnotify {
                 log::debug!("Getting history state");
                 _ = self
                     .emit_sender
-                    .send(EmitEvent::HistoryState(self.notifications.history));
+                    .send(EmitEvent::HistoryState(self.notifications.history.state()));
 
                 return Ok(());
             }
@@ -547,7 +458,7 @@ pub enum Hint {
 
 #[derive(Clone)]
 pub enum EmitEvent {
-    Waiting(u32),
+    Waiting(usize),
     ActionInvoked {
         id: NotificationId,
         key: Arc<str>,
@@ -563,10 +474,10 @@ pub enum EmitEvent {
     },
     List(Vec<String>),
     MuteStateChanged(bool),
-    HistoryStateChanged(History),
+    HistoryStateChanged(history::HistoryState),
     InhibitStateChanged(bool),
     Muted(bool),
-    HistoryState(History),
+    HistoryState(history::HistoryState),
     Inhibited(bool),
 }
 
@@ -655,11 +566,10 @@ impl Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ()> for Moxnotify {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_activation_token_v1::Event::Done { token } = event {
-            if let Some(surface) = state.surface.as_mut() {
+        if let xdg_activation_token_v1::Event::Done { token } = event
+            && let Some(surface) = state.surface.as_mut() {
                 surface.token = Some(token.into());
             }
-        }
     }
 }
 
@@ -778,11 +688,10 @@ async fn main() -> anyhow::Result<()> {
     event_loop
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
-            if let calloop::channel::Event::Msg(event) = event {
-                if let Err(e) = moxnotify.handle_app_event(event) {
+            if let calloop::channel::Event::Msg(event) = event
+                && let Err(e) = moxnotify.handle_app_event(event) {
                     log::error!("Failed to handle event: {e}");
                 }
-            }
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
 

@@ -103,27 +103,25 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
 
                 let pointer = &state.seat.pointer;
                 if state.notifications.hover(pointer.x, pointer.y) {
-                    if state.seat.pointer.state != PointerState::Hover {
-                        if let Some(surface) = state.surface.as_mut() {
+                    if state.seat.pointer.state != PointerState::Hover
+                        && let Some(surface) = state.surface.as_mut() {
                             _ = surface.render(
                                 &state.wgpu_state.device,
                                 &state.wgpu_state.queue,
                                 &state.notifications,
                             );
                         }
-                    }
 
                     state.seat.pointer.change_state(PointerState::Hover);
                 } else {
-                    if state.seat.pointer.state != PointerState::Default {
-                        if let Some(surface) = state.surface.as_mut() {
+                    if state.seat.pointer.state != PointerState::Default
+                        && let Some(surface) = state.surface.as_mut() {
                             _ = surface.render(
                                 &state.wgpu_state.device,
                                 &state.wgpu_state.queue,
                                 &state.notifications,
                             );
                         }
-                    }
 
                     state.seat.pointer.change_state(PointerState::Default);
                 }
@@ -154,11 +152,10 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                         }
                     }
                     (None, Some(_)) => {
-                        if let Some(surface) = state.surface.as_ref() {
-                            if surface.focus_reason == Some(FocusReason::MouseEnter) {
+                        if let Some(surface) = state.surface.as_ref()
+                            && surface.focus_reason == Some(FocusReason::MouseEnter) {
                                 state.notifications.deselect();
                             }
-                        }
                         state.update_surface_size();
                         state
                             .notifications
@@ -200,8 +197,8 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                 }
             }
             wl_pointer::Event::Leave { .. } => {
-                if let Some(surface) = state.surface.as_mut() {
-                    if surface.focus_reason == Some(FocusReason::MouseEnter) {
+                if let Some(surface) = state.surface.as_mut()
+                    && surface.focus_reason == Some(FocusReason::MouseEnter) {
                         state.seat.pointer.change_state(PointerState::Default);
                         state.notifications.deselect();
                         surface.unfocus();
@@ -211,7 +208,6 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                             &state.notifications,
                         );
                     }
-                }
             }
             wl_pointer::Event::Enter {
                 serial,

@@ -2,7 +2,7 @@ name: "Push to Cachix"
 
 on:
   workflow_run:
-    workflows: ["Rust Tests"]
+    workflows: ["Rust Tests", "Weekly Updates"]
     types:
       - completed
     branches:

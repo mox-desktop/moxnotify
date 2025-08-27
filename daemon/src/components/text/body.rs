@@ -97,20 +97,19 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
     if value.starts_with("rgb(") && value.ends_with(')') {
         let rgb = &value[4..value.len() - 1];
         let parts: Vec<&str> = rgb.split(',').map(str::trim).collect();
-        if parts.len() == 3 {
-            if let (Some(r), Some(g), Some(b)) = (
+        if parts.len() == 3
+            && let (Some(r), Some(g), Some(b)) = (
                 parts[0].parse::<u8>().ok(),
                 parts[1].parse::<u8>().ok(),
                 parts[2].parse::<u8>().ok(),
             ) {
                 return Some(glyphon::Color::rgba(r, g, b, 255));
             }
-        }
     } else if value.starts_with("rgba(") && value.ends_with(')') {
         let rgba = &value[5..value.len() - 1];
         let parts: Vec<&str> = rgba.split(',').map(str::trim).collect();
-        if parts.len() == 4 {
-            if let (Some(r), Some(g), Some(b), Some(a)) = (
+        if parts.len() == 4
+            && let (Some(r), Some(g), Some(b), Some(a)) = (
                 parts[0].parse::<u8>().ok(),
                 parts[1].parse::<u8>().ok(),
                 parts[2].parse::<u8>().ok(),
@@ -118,7 +117,6 @@ fn parse_color(value: &str) -> Option<glyphon::Color> {
             ) {
                 return Some(glyphon::Color::rgba(r, g, b, a));
             }
-        }
     }
 
     None

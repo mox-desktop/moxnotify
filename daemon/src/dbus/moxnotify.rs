@@ -1,4 +1,4 @@
-use crate::{EmitEvent, Event, History};
+use crate::{EmitEvent, Event, history};
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use tokio::sync::broadcast;
@@ -25,7 +25,7 @@ impl MoxnotifyInterface {
         }
     }
 
-    async fn waiting(&mut self) -> u32 {
+    async fn waiting(&mut self) -> usize {
         if let Err(e) = self.event_sender.send(Event::Waiting) {
             log::error!("{e}");
         }
@@ -95,22 +95,22 @@ impl MoxnotifyInterface {
         }
     }
 
-    async fn history(&mut self) -> History {
+    async fn history(&mut self) -> history::HistoryState {
         if let Err(e) = self.event_sender.send(Event::GetHistory) {
             log::error!("{e}");
-            return History::Hidden;
+            return history::HistoryState::Hidden;
         }
 
         match self.emit_receiver.recv().await {
             Ok(EmitEvent::HistoryState(history)) => history,
-            _ => History::Hidden,
+            _ => history::HistoryState::Hidden,
         }
     }
 
     #[zbus(signal)]
     async fn history_state_changed(
         signal_emitter: &SignalEmitter<'_>,
-        history: History,
+        history: history::HistoryState,
     ) -> zbus::Result<()>;
 
     async fn inhibit(&self) {
