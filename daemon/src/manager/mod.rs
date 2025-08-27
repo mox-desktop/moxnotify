@@ -4,11 +4,9 @@ use crate::{
     EmitEvent, Moxnotify, NotificationData,
     components::{
         Component, Data,
-        button::ButtonType,
         notification::{self, Empty, Notification, NotificationId, NotificationState},
-        text::Text,
     },
-    config::{Config, Queue, keymaps},
+    config::{Config, keymaps},
     history,
     rendering::texture_renderer::TextureArea,
     utils::buffers,
@@ -51,13 +49,13 @@ impl Default for UiState {
 
 pub struct NotificationManager {
     notifications: VecDeque<NotificationState>,
-    pub waiting: Vec<NotificationData>,
+    waiting: Vec<NotificationData>,
     config: Arc<Config>,
     loop_handle: LoopHandle<'static, Moxnotify>,
-    pub font_system: Rc<RefCell<FontSystem>>,
-    pub notification_view: NotificationView,
-    pub sender: calloop::channel::Sender<crate::Event>,
+    sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
+    font_system: Rc<RefCell<FontSystem>>,
+    pub notification_view: NotificationView,
     pub ui_state: UiState,
     pub history: history::History,
 }
@@ -110,10 +108,6 @@ impl NotificationManager {
         &self.notifications
     }
 
-    pub fn notifications_mut(&mut self) -> &mut VecDeque<NotificationState> {
-        &mut self.notifications
-    }
-
     pub fn data(
         &self,
     ) -> (
@@ -125,10 +119,7 @@ impl NotificationManager {
         let mut text_areas = Vec::new();
         let mut textures = Vec::new();
 
-        self.notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
+        self.iter_viewed()
             .filter_map(|notification| match notification {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),
@@ -141,10 +132,7 @@ impl NotificationManager {
             });
 
         let total_width = self
-            .notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
+            .iter_viewed()
             .filter_map(|notification| match notification {
                 NotificationState::Empty(_) => None,
                 NotificationState::Ready(notification) => Some(notification),
@@ -169,51 +157,29 @@ impl NotificationManager {
     }
 
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
-        self.notification_view
-            .visible
-            .clone()
-            .filter_map(|index| {
-                if let Some(notification) = self.notifications.get(index) {
-                    let extents = notification.get_render_bounds();
-                    let x_within_bounds =
-                        x >= extents.x as f64 && x <= (extents.x + extents.width) as f64;
-                    let y_within_bounds =
-                        y >= extents.y as f64 && y <= (extents.y + extents.height) as f64;
-
-                    if x_within_bounds && y_within_bounds {
-                        return Some(notification);
-                    }
-                }
-
-                None
-            })
-            .next()
+        self.iter_viewed().find(|notification| {
+            let bounds = notification.get_render_bounds();
+            x >= bounds.x as f64
+                && x <= (bounds.x + bounds.width) as f64
+                && y >= bounds.y as f64
+                && y <= (bounds.y + bounds.height) as f64
+        })
     }
 
     pub fn click(&mut self, x: f64, y: f64) -> bool {
-        self.notification_view.visible.clone().any(|index| {
-            self.notifications
-                .get_mut(index)
-                .and_then(|notification| {
-                    notification
-                        .buttons_mut()
-                        .as_mut()
-                        .map(|buttons| buttons.click(x, y))
-                })
-                .unwrap_or_default()
+        self.iter_viewed_mut().any(|notification| {
+            notification
+                .buttons_mut()
+                .as_mut()
+                .is_some_and(|buttons| buttons.click(x, y))
         })
     }
 
     pub fn hover(&mut self, x: f64, y: f64) -> bool {
-        self.notification_view.visible.clone().any(|index| {
-            self.notifications
-                .get_mut(index)
-                .and_then(|notification| {
-                    notification
-                        .buttons_mut()
-                        .map(|buttons| buttons.hover(x, y))
-                })
-                .unwrap_or_default()
+        self.iter_viewed_mut().any(|notification| {
+            notification
+                .buttons_mut()
+                .is_some_and(|buttons| buttons.hover(x, y))
         })
     }
 
@@ -223,36 +189,25 @@ impl NotificationManager {
             .prev
             .as_ref()
             .map_or(0., |n| n.get_bounds().height);
-        self.notification_view
-            .visible
-            .clone()
-            .fold(height, |acc, i| {
-                if let Some(notification) = self.notifications.get(i) {
-                    let extents = notification.get_bounds();
-                    return acc + extents.height;
-                }
 
-                acc
-            })
-            + self
-                .notification_view
-                .next
-                .as_ref()
-                .map_or(0., |n| n.get_bounds().height)
+        self.iter_viewed().fold(height, |acc, notification| {
+            acc + notification.get_bounds().height
+        }) + self
+            .notification_view
+            .next
+            .as_ref()
+            .map_or(0., |n| n.get_bounds().height)
     }
 
     pub fn width(&self) -> f32 {
-        let (min_x, max_x) = self
-            .notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
-            .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
-                let extents = notification.get_bounds();
-                let left = extents.x + notification.data().hints.x as f32;
-                let right = extents.x + extents.width + notification.data().hints.x as f32;
-                (min_x.min(left), max_x.max(right))
-            });
+        let (min_x, max_x) =
+            self.iter_viewed()
+                .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
+                    let extents = notification.get_bounds();
+                    let left = extents.x + notification.data().hints.x as f32;
+                    let right = extents.x + extents.width + notification.data().hints.x as f32;
+                    (min_x.min(left), max_x.max(right))
+                });
 
         if min_x == f32::MAX || max_x == f32::MIN {
             0.0
@@ -291,8 +246,6 @@ impl NotificationManager {
             .selected_id()
             .and_then(|current_id| self.notifications.iter().position(|n| n.id() == current_id));
 
-        self.deselect();
-
         let current_view_start = self.notification_view.visible.start;
         let current_view_end = self.notification_view.visible.end;
         let max_visible = self.config.general.max_visible;
@@ -301,12 +254,14 @@ impl NotificationManager {
             match current_selected {
                 // Moving up
                 Some(old_index) if new_index > old_index => {
+                    self.deselect();
                     let new_start = new_index.saturating_sub(max_visible.saturating_sub(1));
                     self.notification_view.visible =
                         new_start..new_start.saturating_add(max_visible);
                 }
                 // Moving down
                 Some(old_index) if new_index < old_index => {
+                    self.deselect();
                     self.notification_view.visible =
                         new_index..new_index.saturating_add(max_visible);
                 }
@@ -332,44 +287,28 @@ impl NotificationManager {
         self.ui_state.selected_id.store(id, Ordering::Relaxed);
         self.ui_state.selected.store(true, Ordering::Relaxed);
 
-        notification.stop_timer(&self.loop_handle);
-
-        let dismiss_button = notification
-            .buttons
-            .as_ref()
-            .and_then(|buttons| {
-                buttons
-                    .buttons()
-                    .iter()
-                    .find(|button| button.button_type() == ButtonType::Dismiss)
-                    .map(|button| button.get_render_bounds().width)
-            })
-            .unwrap_or_default();
-
-        let style_width = notification.get_style().width;
-        let icons_width = notification
-            .icons
-            .as_ref()
-            .map(|icons| icons.get_bounds().width)
-            .unwrap_or_default();
-
-        if let Some(body) = notification.body.as_mut() {
-            body.set_size(
-                &mut self.font_system.borrow_mut(),
-                Some(style_width - icons_width - dismiss_button),
-                None,
-            );
-        }
-
-        if let Some(summary) = notification.summary.as_mut() {
-            summary.set_size(
-                &mut self.font_system.borrow_mut(),
-                Some(style_width - icons_width - dismiss_button),
-                None,
-            );
-        }
-
+        let loop_handle = self.loop_handle.clone();
+        self.iter_viewed_mut()
+            .for_each(|notification| notification.stop_timer(&loop_handle));
         self.update_size();
+    }
+
+    /// Deselect notification and start expiration timers
+    pub fn deselect(&mut self) {
+        if !self.ui_state.selected.load(Ordering::Relaxed) {
+            return;
+        }
+
+        self.ui_state.selected.store(false, Ordering::Relaxed);
+
+        if let Some(notification) = self.selected_notification_mut() {
+            notification.unhover();
+        }
+
+        let loop_handle = self.loop_handle.clone();
+        self.iter_viewed_mut().for_each(|notification| {
+            notification.start_timer(&loop_handle);
+        });
     }
 
     /// Select next notification
@@ -414,27 +353,6 @@ impl NotificationManager {
         }
     }
 
-    /// Deselect notification and start expiration timer
-    pub fn deselect(&mut self) {
-        if !self.ui_state.selected.load(Ordering::Relaxed) {
-            return;
-        }
-
-        self.ui_state.selected.store(false, Ordering::Relaxed);
-
-        let old_id = self.ui_state.selected_id.load(Ordering::Relaxed);
-        if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id)
-            && let Some(notification) = self.notifications.get_mut(index)
-        {
-            notification.unhover();
-            match self.config.general.queue {
-                Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
-                Queue::Unordered => notification.start_timer(&self.loop_handle),
-                Queue::FIFO => {}
-            }
-        }
-    }
-
     pub fn waiting(&self) -> usize {
         self.waiting.len()
     }
@@ -473,10 +391,9 @@ impl NotificationManager {
                 data,
                 Some(self.sender.clone()),
             );
-            match self.config.general.queue {
-                Queue::FIFO if i == 0 => notification.start_timer(&self.loop_handle),
-                Queue::Unordered => notification.start_timer(&self.loop_handle),
-                Queue::FIFO => {}
+
+            if self.notification_view.visible.contains(&i) {
+                notification.start_timer(&self.loop_handle);
             }
         } else {
             let mut notification = Notification::<Empty>::new_empty(
@@ -485,18 +402,19 @@ impl NotificationManager {
                 self.ui_state.clone(),
             );
 
-            match &self.config.general.queue {
-                Queue::FIFO if self.notifications.is_empty() => {
-                    notification.start_timer(&self.loop_handle);
-                }
-                Queue::Unordered => notification.start_timer(&self.loop_handle),
-                _ => {}
-            }
-
             match self.history.state() {
-                history::HistoryState::Hidden => self
-                    .notifications
-                    .push_back(NotificationState::Empty(notification)),
+                history::HistoryState::Hidden => {
+                    if self
+                        .notification_view
+                        .visible
+                        .contains(&self.notifications.len())
+                    {
+                        notification.start_timer(&self.loop_handle);
+                    }
+
+                    self.notifications
+                        .push_back(NotificationState::Empty(notification));
+                }
                 history::HistoryState::Shown => self
                     .notifications
                     .push_front(NotificationState::Empty(notification)),
@@ -508,15 +426,17 @@ impl NotificationManager {
     }
 
     pub fn dismiss(&mut self, id: NotificationId) {
-        if let Some(i) = self.notifications.iter().position(|n| n.id() == id)
-            && let Some(notification) = self.notifications.get(i)
-        {
-            notification.stop_timer(&self.loop_handle);
-
-            if let Some(next_notification) = self.notifications.get(i + 1) {
-                if self.selected_id() == Some(notification.id()) {
-                    self.select(next_notification.id());
-                }
+        if let Some(i) = self.notifications.iter().position(|n| n.id() == id) {
+            if let Some(next_notification) = self.notifications.get(i + 1)
+                && self.notification_view.visible.contains(&(i + 1))
+            {
+                self.select(next_notification.id());
+            } else if let Some(next_notification) = self.notifications.get(i + 1) {
+                self.select(next_notification.id());
+                self.notification_view.visible =
+                    self.notification_view.visible.start.saturating_sub(1)
+                        ..self.notification_view.visible.end.saturating_sub(1);
+                self.update_size();
             } else {
                 self.prev();
             }
@@ -525,18 +445,35 @@ impl NotificationManager {
             self.promote_notifications();
         }
 
-        if let Queue::FIFO = self.config.general.queue
-            && let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered())
-        {
-            notification.start_timer(&self.loop_handle);
-        }
-
         // Deselect if there are no notifications left
         if self.notifications.is_empty() {
             self.deselect();
         }
     }
 
+    /// Returns an iterator over notifications in view
+    pub fn iter_viewed(&self) -> impl Iterator<Item = &NotificationState> {
+        self.notification_view
+            .visible
+            .clone()
+            .filter_map(|idx| self.notifications.get(idx))
+    }
+
+    /// Returns an iterator over notifications in view that returns mutable references
+    pub fn iter_viewed_mut(&mut self) -> impl Iterator<Item = &mut NotificationState> {
+        self.notifications
+            .iter_mut()
+            .enumerate()
+            .filter_map(|(i, notification)| {
+                if self.notification_view.visible.contains(&i) {
+                    Some(notification)
+                } else {
+                    None
+                }
+            })
+    }
+
+    /// Promotes notifications from Empty to Ready
     pub fn promote_notifications(&mut self) {
         self.notification_view
             .visible
@@ -563,11 +500,8 @@ impl NotificationManager {
 
     pub fn update_size(&mut self) {
         let x_offset = self
-            .notification_view
-            .visible
-            .clone()
-            .filter_map(|i| self.notifications.get(i))
-            .map(|n| n.data().hints.x)
+            .iter_viewed()
+            .map(|notification| notification.data().hints.x)
             .min()
             .unwrap_or_default()
             .abs() as f32;
@@ -583,11 +517,9 @@ impl NotificationManager {
             .map(|n| n.get_bounds().y + n.get_bounds().height)
             .unwrap_or_default();
 
-        self.notification_view.visible.clone().for_each(|i| {
-            if let Some(notification) = self.notifications.get_mut(i) {
-                notification.set_position(x_offset, start);
-                start += notification.get_bounds().height;
-            }
+        self.iter_viewed_mut().for_each(|notification| {
+            notification.set_position(x_offset, start);
+            start += notification.get_bounds().height;
         });
 
         if let Some(next) = self.notification_view.next.as_mut() {
