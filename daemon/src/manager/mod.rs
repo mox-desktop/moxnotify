@@ -110,6 +110,10 @@ impl NotificationManager {
         &self.notifications
     }
 
+    pub fn notifications_mut(&mut self) -> &mut VecDeque<NotificationState> {
+        &mut self.notifications
+    }
+
     pub fn data(
         &self,
     ) -> (
@@ -420,14 +424,15 @@ impl NotificationManager {
 
         let old_id = self.ui_state.selected_id.load(Ordering::Relaxed);
         if let Some(index) = self.notifications.iter().position(|n| n.id() == old_id)
-            && let Some(notification) = self.notifications.get_mut(index) {
-                notification.unhover();
-                match self.config.general.queue {
-                    Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
-                    Queue::Unordered => notification.start_timer(&self.loop_handle),
-                    Queue::FIFO => {}
-                }
+            && let Some(notification) = self.notifications.get_mut(index)
+        {
+            notification.unhover();
+            match self.config.general.queue {
+                Queue::FIFO if index == 0 => notification.start_timer(&self.loop_handle),
+                Queue::Unordered => notification.start_timer(&self.loop_handle),
+                Queue::FIFO => {}
             }
+        }
     }
 
     pub fn waiting(&self) -> usize {
@@ -521,9 +526,10 @@ impl NotificationManager {
         }
 
         if let Queue::FIFO = self.config.general.queue
-            && let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered()) {
-                notification.start_timer(&self.loop_handle);
-            }
+            && let Some(notification) = self.notifications.front_mut().filter(|n| !n.hovered())
+        {
+            notification.start_timer(&self.loop_handle);
+        }
 
         // Deselect if there are no notifications left
         if self.notifications.is_empty() {
@@ -538,19 +544,20 @@ impl NotificationManager {
             .for_each(|notification_idx| {
                 if let Some(notification_state) = self.notifications.get_mut(notification_idx)
                     && matches!(notification_state, NotificationState::Empty(_))
-                        && let NotificationState::Empty(notification) = std::mem::replace(
-                            notification_state,
-                            NotificationState::Empty(Notification::<Empty>::new_empty(
-                                Arc::clone(&self.config),
-                                NotificationData::default(),
-                                UiState::default(),
-                            )),
-                        ) {
-                            *notification_state = NotificationState::Ready(notification.promote(
-                                &mut self.font_system.borrow_mut(),
-                                Some(self.sender.clone()),
-                            ));
-                        }
+                    && let NotificationState::Empty(notification) = std::mem::replace(
+                        notification_state,
+                        NotificationState::Empty(Notification::<Empty>::new_empty(
+                            Arc::clone(&self.config),
+                            NotificationData::default(),
+                            UiState::default(),
+                        )),
+                    )
+                {
+                    *notification_state = NotificationState::Ready(notification.promote(
+                        &mut self.font_system.borrow_mut(),
+                        Some(self.sender.clone()),
+                    ));
+                }
             });
     }
 
@@ -670,9 +677,10 @@ impl Moxnotify {
                 &self.wgpu_state.device,
                 &self.wgpu_state.queue,
                 &self.notifications,
-            ) {
-                log::error!("Render error: {e}");
-            }
+            )
+        {
+            log::error!("Render error: {e}");
+        }
 
         if self.notifications.notifications().is_empty() {
             self.seat.keyboard.repeat.key = None;

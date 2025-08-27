@@ -7,6 +7,7 @@ mod input;
 mod manager;
 mod rendering;
 pub mod utils;
+mod wayland;
 
 use crate::config::keymaps;
 use audio::Audio;
@@ -36,10 +37,12 @@ use tokio::sync::broadcast;
 use utils::image_data::ImageData;
 use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
-    globals::{GlobalList, GlobalListContents, registry_queue_init},
-    protocol::{wl_compositor, wl_output, wl_registry},
+    globals::{GlobalList, registry_queue_init},
+    protocol::{wl_compositor, wl_output},
 };
-use wayland_protocols::xdg::activation::v1::client::{xdg_activation_token_v1, xdg_activation_v1};
+use wayland_protocols::ext::idle_notify::v1::client::{
+    ext_idle_notification_v1, ext_idle_notifier_v1,
+};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
 
 #[derive(Debug)]
@@ -62,6 +65,7 @@ impl Output {
 }
 
 pub struct Moxnotify {
+    idle_notification: Option<ext_idle_notification_v1::ExtIdleNotificationV1>,
     layer_shell: zwlr_layer_shell_v1::ZwlrLayerShellV1,
     seat: Seat,
     surface: Option<Surface>,
@@ -101,7 +105,14 @@ impl Moxnotify {
 
         let font_system = Rc::new(RefCell::new(FontSystem::new()));
 
+        let idle_notifier: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> =
+            globals.bind(&qh, 1..=1, ()).ok();
+        let idle_notification = idle_notifier.as_ref().map(|idle_notifier| {
+            idle_notifier.get_idle_notification(5 * 60 * 1000, &seat.wl_seat, &qh, ())
+        });
+
         Ok(Self {
+            idle_notification,
             audio: Audio::try_new().unwrap(),
             globals,
             qh,
@@ -226,9 +237,7 @@ impl Moxnotify {
                 let suppress_sound = data.hints.suppress_sound;
 
                 let id = match self.notifications.history.state() {
-                    history::HistoryState::Shown => {
-                        self.notifications.history.last_insert_rowid()
-                    }
+                    history::HistoryState::Shown => self.notifications.history.last_insert_rowid(),
                     history::HistoryState::Hidden => data.id,
                 };
 
@@ -242,9 +251,10 @@ impl Moxnotify {
                 }
 
                 if let Some(notification) = self.notifications.notifications().back()
-                    && let Err(e) = self.notifications.history.insert(notification.data()) {
-                        log::warn!("{e}");
-                    }
+                    && let Err(e) = self.notifications.history.insert(notification.data())
+                {
+                    log::warn!("{e}");
+                }
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
@@ -252,31 +262,31 @@ impl Moxnotify {
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
-                    && surface.focus_reason.is_none() {
-                        log::info!("Focusing notification surface");
-                        surface.focus(FocusReason::Ctl);
+                    && surface.focus_reason.is_none()
+                {
+                    log::info!("Focusing notification surface");
+                    surface.focus(FocusReason::Ctl);
 
-                        let should_select_last =
-                            self.notifications.notifications().iter().any(|n| {
-                                n.id()
-                                    == self
-                                        .notifications
-                                        .ui_state
-                                        .selected_id
-                                        .load(Ordering::Relaxed)
-                            });
-
-                        if should_select_last {
-                            let last_id = self
+                    let should_select_last = self.notifications.notifications().iter().any(|n| {
+                        n.id()
+                            == self
                                 .notifications
                                 .ui_state
                                 .selected_id
-                                .load(Ordering::Relaxed);
-                            self.notifications.select(last_id);
-                        } else {
-                            self.notifications.next();
-                        }
+                                .load(Ordering::Relaxed)
+                    });
+
+                    if should_select_last {
+                        let last_id = self
+                            .notifications
+                            .ui_state
+                            .selected_id
+                            .load(Ordering::Relaxed);
+                        self.notifications.select(last_id);
+                    } else {
+                        self.notifications.next();
                     }
+                }
             }
             Event::List => {
                 log::info!("Listing all active notifications");
@@ -502,36 +512,6 @@ pub enum Event {
     GetInhibited,
 }
 
-impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for Moxnotify {
-    fn event(
-        state: &mut Self,
-        registry: &wl_registry::WlRegistry,
-        event: <wl_registry::WlRegistry as wayland_client::Proxy>::Event,
-        _data: &GlobalListContents,
-        _conn: &Connection,
-        qh: &QueueHandle<Self>,
-    ) {
-        match event {
-            wl_registry::Event::Global {
-                name,
-                interface,
-                version,
-            } => {
-                if interface.as_str() == "wl_output" {
-                    let output = registry.bind::<wl_output::WlOutput, _, _>(name, version, qh, ());
-
-                    let output = Output::new(output, name);
-                    state.outputs.push(output);
-                }
-            }
-            wl_registry::Event::GlobalRemove { name } => {
-                state.outputs.retain(|output| output.id != name);
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
 impl Dispatch<wl_output::WlOutput, ()> for Moxnotify {
     fn event(
         state: &mut Self,
@@ -557,23 +537,6 @@ impl Dispatch<wl_output::WlOutput, ()> for Moxnotify {
     }
 }
 
-impl Dispatch<xdg_activation_token_v1::XdgActivationTokenV1, ()> for Moxnotify {
-    fn event(
-        state: &mut Self,
-        _: &xdg_activation_token_v1::XdgActivationTokenV1,
-        event: <xdg_activation_token_v1::XdgActivationTokenV1 as Proxy>::Event,
-        _: &(),
-        _: &Connection,
-        _: &QueueHandle<Self>,
-    ) {
-        if let xdg_activation_token_v1::Event::Done { token } = event
-            && let Some(surface) = state.surface.as_mut() {
-                surface.token = Some(token.into());
-            }
-    }
-}
-
-delegate_noop!(Moxnotify: xdg_activation_v1::XdgActivationV1);
 delegate_noop!(Moxnotify: wl_compositor::WlCompositor);
 delegate_noop!(Moxnotify: zwlr_layer_shell_v1::ZwlrLayerShellV1);
 
@@ -675,7 +638,7 @@ async fn main() -> anyhow::Result<()> {
 
     let emit_receiver = emit_sender.subscribe();
     scheduler.schedule(async move {
-        if let Err(e) = dbus::portal::serve(emit_receiver).await {
+        if let Err(e) = dbus::portal::open_uri::serve(emit_receiver).await {
             log::error!("{e}");
         }
     })?;
@@ -689,9 +652,10 @@ async fn main() -> anyhow::Result<()> {
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
             if let calloop::channel::Event::Msg(event) = event
-                && let Err(e) = moxnotify.handle_app_event(event) {
-                    log::error!("Failed to handle event: {e}");
-                }
+                && let Err(e) = moxnotify.handle_app_event(event)
+            {
+                log::error!("Failed to handle event: {e}");
+            }
         })
         .map_err(|e| anyhow::anyhow!("Failed to insert source: {e}"))?;
 
