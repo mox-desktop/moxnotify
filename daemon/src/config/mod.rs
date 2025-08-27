@@ -137,7 +137,6 @@ pub struct General {
     pub margin: Insets,
     pub anchor: Anchor,
     pub layer: Layer,
-    pub queue: Queue,
     pub output: Option<Box<str>>,
     pub default_timeout: Timeout,
     pub ignore_timeout: bool,
@@ -158,7 +157,6 @@ impl Default for General {
             app_icon_size: 24,
             anchor: Anchor::default(),
             layer: Layer::default(),
-            queue: Queue::default(),
             output: None,
             default_timeout: Timeout::default(),
             ignore_timeout: false,
@@ -393,15 +391,6 @@ impl Default for Font {
             color: Color::rgba([255, 255, 255, 255]),
         }
     }
-}
-
-#[derive(Deserialize, PartialEq, Default)]
-#[serde(rename_all = "snake_case")]
-#[allow(clippy::upper_case_acronyms)]
-pub enum Queue {
-    #[default]
-    Unordered,
-    FIFO,
 }
 
 #[derive(Clone)]
