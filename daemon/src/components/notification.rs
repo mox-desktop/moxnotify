@@ -48,14 +48,14 @@ impl NotificationState {
 
     pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
         match self {
-            Self::Empty(n) => n.start_timer(loop_handle),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.start_timer(loop_handle),
         }
     }
 
-    pub fn stop_timer(&self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+    pub fn stop_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
         match self {
-            Self::Empty(n) => n.stop_timer(loop_handle),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.stop_timer(loop_handle),
         }
     }
@@ -78,27 +78,21 @@ impl NotificationState {
     #[must_use]
     pub fn get_bounds(&self) -> Bounds {
         match self {
-            Self::Empty(_) => {
-                unreachable!()
-            }
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.get_bounds(),
         }
     }
 
     pub fn get_render_bounds(&self) -> Bounds {
         match self {
-            Self::Empty(_) => {
-                unreachable!()
-            }
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.get_render_bounds(),
         }
     }
 
     pub fn unhover(&mut self) {
         match self {
-            Self::Empty(_) => {
-                unreachable!()
-            }
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.unhover(),
         }
     }
@@ -110,7 +104,7 @@ impl NotificationState {
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match self {
-            Self::Empty(n) => n.replace(font_system, data, sender),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.replace(font_system, data, sender),
         }
     }
@@ -118,14 +112,14 @@ impl NotificationState {
     #[must_use]
     pub fn buttons(&self) -> Option<&ButtonManager<Finished>> {
         match self {
-            Self::Empty(n) => n.buttons.as_ref(),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.buttons.as_ref(),
         }
     }
 
     pub fn buttons_mut(&mut self) -> Option<&mut ButtonManager<Finished>> {
         match self {
-            Self::Empty(n) => n.buttons.as_mut(),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.buttons.as_mut(),
         }
     }
@@ -675,9 +669,9 @@ impl<State> Notification<State> {
     }
 
     pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        self.stop_timer(loop_handle);
-
-        if let Some(timeout) = self.timeout() {
+        if let Some(timeout) = self.timeout()
+            && self.registration_token.is_none()
+        {
             log::debug!(
                 "Expiration timer started for notification, id: {}, timeout: {}",
                 self.id(),
@@ -688,15 +682,22 @@ impl<State> Notification<State> {
             let id = self.id();
             self.registration_token = loop_handle
                 .insert_source(timer, move |_, (), moxnotify| {
-                    moxnotify.dismiss_by_id(id, Some(Reason::Expired));
+                    moxnotify.dismiss_with_reason(id, Some(Reason::Expired));
+
+                    let loop_handle = moxnotify.loop_handle.clone();
+                    moxnotify
+                        .notifications
+                        .iter_viewed_mut()
+                        .for_each(|notification| notification.start_timer(&loop_handle));
+
                     TimeoutAction::Drop
                 })
                 .ok();
         }
     }
 
-    pub fn stop_timer(&self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        if let Some(token) = self.registration_token {
+    pub fn stop_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+        if let Some(token) = self.registration_token.take() {
             log::debug!(
                 "Expiration timer paused for notification, id: {}",
                 self.id()

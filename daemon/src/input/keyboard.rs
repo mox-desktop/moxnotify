@@ -138,18 +138,18 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                     wl_keyboard::KeyState::Released => {
                         state.seat.keyboard.repeat.key = None;
                         if let Some(xkb_state) = state.seat.keyboard.xkb.state.as_ref()
-                            && let Some(key) = Key::from_keycode(xkb_state, keycode.into()) {
-                                let key_with_modifiers = KeyWithModifiers {
-                                    key,
-                                    modifiers: state.seat.keyboard.modifiers,
-                                };
+                            && let Some(key) = Key::from_keycode(xkb_state, keycode.into())
+                        {
+                            let key_with_modifiers = KeyWithModifiers {
+                                key,
+                                modifiers: state.seat.keyboard.modifiers,
+                            };
 
-                                if Keys(vec![key_with_modifiers])
-                                    != state.seat.keyboard.key_combination
-                                {
-                                    return;
-                                }
+                            if Keys(vec![key_with_modifiers]) != state.seat.keyboard.key_combination
+                            {
+                                return;
                             }
+                        }
 
                         if let Some(token) = state.seat.keyboard.repeat.registration_token.take() {
                             state.loop_handle.remove(token);

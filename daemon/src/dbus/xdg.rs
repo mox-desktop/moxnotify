@@ -139,7 +139,7 @@ struct NotificationsImpl {
 impl NotificationsImpl {
     async fn get_capabilities(&self) -> &[&'static str] {
         &[
-            // "action-icons",
+            "action-icons",
             "actions",
             "body",
             "body-hyperlinks",
