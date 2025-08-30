@@ -58,7 +58,7 @@ impl NotificationView {
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
             } else {
-                self.prev = Some(Notification::<Ready>::new(
+                self.prev = Some(Notification::<Ready>::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -66,7 +66,6 @@ impl NotificationView {
                         ..Default::default()
                     },
                     self.ui_state.clone(),
-                    None,
                 ));
             }
         } else {
@@ -88,7 +87,7 @@ impl NotificationView {
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
             } else {
-                self.next = Some(Notification::<Ready>::new(
+                self.next = Some(Notification::<Ready>::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NotificationData {
@@ -96,7 +95,6 @@ impl NotificationView {
                         ..Default::default()
                     },
                     self.ui_state.clone(),
-                    None,
                 ));
             }
         } else {

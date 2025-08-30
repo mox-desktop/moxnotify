@@ -361,7 +361,7 @@ impl NotificationManager {
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
             .map(|data| {
-                NotificationState::Empty(Notification::<Empty>::new_empty(
+                NotificationState::Empty(Notification::<Empty>::empty(
                     Arc::clone(&self.config),
                     data,
                     self.ui_state.clone(),
@@ -396,11 +396,8 @@ impl NotificationManager {
                 notification.start_timer(&self.loop_handle);
             }
         } else {
-            let mut notification = Notification::<Empty>::new_empty(
-                Arc::clone(&self.config),
-                data,
-                self.ui_state.clone(),
-            );
+            let mut notification =
+                Notification::<Empty>::empty(Arc::clone(&self.config), data, self.ui_state.clone());
 
             match self.history.state() {
                 history::HistoryState::Hidden => {
@@ -490,7 +487,7 @@ impl NotificationManager {
                     && matches!(notification_state, NotificationState::Empty(_))
                     && let NotificationState::Empty(notification) = std::mem::replace(
                         notification_state,
-                        NotificationState::Empty(Notification::<Empty>::new_empty(
+                        NotificationState::Empty(Notification::<Empty>::empty(
                             Arc::clone(&self.config),
                             NotificationData::default(),
                             UiState::default(),

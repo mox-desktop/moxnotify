@@ -19,7 +19,22 @@
         "x86_64-linux"
         "aarch64-linux"
       ];
-      overlays = [ (import rust-overlay) ];
+      overlays = [
+        (import rust-overlay)
+        (self: super: {
+          rustToolchain = super.rust-bin.selectLatestNightlyWith (
+            toolchain:
+            toolchain.default.override {
+              extensions = [
+                "rustc-codegen-cranelift-preview"
+                "rust-src"
+                "rustfmt"
+              ];
+            }
+          );
+        })
+      ];
+
       forAllSystems =
         function:
         nixpkgs.lib.genAttrs systems (
@@ -32,19 +47,11 @@
     in
     {
       devShells = forAllSystems (pkgs: {
-        default =
-          let
-            inherit (pkgs) lib;
-            buildInputs = [
-              (pkgs.rust-bin.stable.latest.default.override {
-                extensions = [
-                  "rust-src"
-                  "rustfmt"
-                ];
-              })
-            ]
-            ++ builtins.attrValues {
+        default = pkgs.mkShell (
+          pkgs.lib.fix (finalAttrs: {
+            buildInputs = builtins.attrValues {
               inherit (pkgs)
+                rustToolchain
                 rust-analyzer-unwrapped
                 nixd
                 pkg-config
@@ -62,23 +69,41 @@
                 egl-wayland
                 ;
             };
-          in
-          pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } {
-            inherit buildInputs;
-            LD_LIBRARY_PATH = lib.makeLibraryPath buildInputs;
-          };
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;
+            RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+          })
+        );
+
       });
+
+      formatter = forAllSystems (
+        pkgs:
+        pkgs.writeShellApplication {
+          name = "nix3-fmt-wrapper";
+
+          runtimeInputs = builtins.attrValues {
+            inherit (pkgs)
+              rustToolchain
+              nixfmt-rfc-style
+              taplo
+              fd
+              ;
+          };
+
+          text = ''
+            fd "$@" -t f -e nix -x nixfmt -q '{}'
+            fd "$@" -t f -e toml -x taplo format '{}'
+            cargo fmt
+          '';
+        }
+      );
 
       packages = forAllSystems (pkgs: {
         moxnotify = pkgs.callPackage ./nix/package.nix {
-          rustPlatform =
-            let
-              rust-bin = pkgs.rust-bin.stable.latest.default;
-            in
-            pkgs.makeRustPlatform {
-              cargo = rust-bin;
-              rustc = rust-bin;
-            };
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = pkgs.rustToolchain;
+            rustc = pkgs.rustToolchain;
+          };
         };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });

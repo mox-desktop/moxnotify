@@ -477,7 +477,7 @@ pub struct Ready;
 
 impl<State> Notification<State> {
     #[must_use]
-    pub fn new_empty(
+    pub fn empty(
         config: Arc<Config>,
         data: NotificationData,
         ui_state: UiState,
@@ -506,6 +506,36 @@ impl<State> Notification<State> {
     }
 
     #[must_use]
+    pub fn counter(
+        config: Arc<Config>,
+        font_system: &mut FontSystem,
+        data: NotificationData,
+        ui_state: UiState,
+    ) -> Notification<Ready> {
+        let context = components::Context {
+            id: data.id,
+            app_name: Arc::clone(&data.app_name),
+            config,
+            ui_state,
+        };
+
+        Notification {
+            y: 0.,
+            x: 0.,
+            hovered: false,
+            icons: None,
+            progress: None,
+            registration_token: None,
+            buttons: None,
+            data,
+            summary: Some(Summary::new(context.clone(), font_system)),
+            body: None,
+            context,
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    #[must_use]
     pub fn new(
         config: Arc<Config>,
         font_system: &mut FontSystem,
@@ -519,25 +549,6 @@ impl<State> Notification<State> {
             config,
             ui_state,
         };
-
-        if data.app_name == "next_notification_count".into()
-            || data.app_name == "prev_notification_count".into()
-        {
-            return Notification {
-                context,
-                y: 0.,
-                x: 0.,
-                hovered: false,
-                icons: None,
-                progress: None,
-                registration_token: None,
-                buttons: None,
-                summary: None,
-                body: None,
-                data,
-                _state: std::marker::PhantomData,
-            };
-        }
 
         let icons = match (data.hints.image.as_ref(), data.app_icon.as_deref()) {
             (None, None) => None,
