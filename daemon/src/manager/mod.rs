@@ -425,27 +425,34 @@ impl NotificationManager {
         self.update_size();
     }
 
-    pub fn dismiss(&mut self, id: NotificationId) {
-        if let Some(i) = self.notifications.iter().position(|n| n.id() == id) {
-            if let Some(next_notification) = self.notifications.get(i + 1)
-                && self.notification_view.visible.contains(&(i + 1))
-            {
-                self.select(next_notification.id());
-            } else if let Some(next_notification) = self.notifications.get(i + 1) {
-                self.select(next_notification.id());
-                self.notification_view.visible =
-                    self.notification_view.visible.start.saturating_sub(1)
-                        ..self.notification_view.visible.end.saturating_sub(1);
-                self.update_size();
-            } else {
-                self.prev();
-            }
+    pub fn dismiss_by_id(&mut self, id: NotificationId) {
+        let Some(index) = self.notifications.iter().position(|n| n.id() == id) else {
+            return;
+        };
 
-            self.notifications.remove(i);
-            self.promote_notifications();
+        if self.selected_id().is_some() {
+            let next_notification = self.notifications.get(index + 1);
+
+            match next_notification {
+                Some(notification) if self.notification_view.visible.contains(&(index + 1)) => {
+                    self.select(notification.id());
+                }
+                Some(notification) => {
+                    self.select(notification.id());
+                    self.notification_view.visible =
+                        self.notification_view.visible.start.saturating_sub(1)
+                            ..self.notification_view.visible.end.saturating_sub(1);
+                    self.update_size();
+                }
+                None => {
+                    self.prev();
+                }
+            }
         }
 
-        // Deselect if there are no notifications left
+        self.notifications.remove(index);
+        self.promote_notifications();
+
         if self.notifications.is_empty() {
             self.deselect();
         }
@@ -577,14 +584,15 @@ impl Moxnotify {
             return;
         }
 
-        ids.iter().for_each(|id| self.notifications.dismiss(*id));
+        ids.iter()
+            .for_each(|id| self.notifications.dismiss_by_id(*id));
     }
 
-    pub fn dismiss_by_id(&mut self, id: u32, reason: Option<Reason>) {
+    pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<Reason>) {
         match self.notifications.history.state() {
             history::HistoryState::Shown => {
                 _ = self.notifications.history.delete(id);
-                self.notifications.dismiss(id);
+                self.notifications.dismiss_by_id(id);
             }
             history::HistoryState::Hidden => {
                 if self.notifications.selected_id() == Some(id) {
@@ -594,7 +602,7 @@ impl Moxnotify {
                         .store(keymaps::Mode::Normal, Ordering::Relaxed);
                 }
 
-                self.notifications.dismiss(id);
+                self.notifications.dismiss_by_id(id);
                 if let Some(reason) = reason {
                     _ = self
                         .emit_sender
@@ -717,7 +725,7 @@ mod tests {
 
         assert_eq!(manager.notifications().len(), 1);
 
-        manager.dismiss(123);
+        manager.dismiss_by_id(123);
         assert_eq!(manager.notifications().len(), 0);
     }
 

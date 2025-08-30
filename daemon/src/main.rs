@@ -144,13 +144,13 @@ impl Moxnotify {
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
-                        self.dismiss_by_id(notification.id(), Some(Reason::DismissedByUser));
+                        self.dismiss_with_reason(notification.id(), Some(Reason::DismissedByUser));
                     } else {
                         log::debug!("No notifications to dismiss");
                     }
                 } else {
                     log::info!("Dismissing notification with id={id}");
-                    self.dismiss_by_id(id, Some(Reason::DismissedByUser));
+                    self.dismiss_with_reason(id, Some(Reason::DismissedByUser));
                 }
             }
             Event::InvokeAction { id, key } => {
@@ -170,7 +170,7 @@ impl Moxnotify {
                     .find(|notification| notification.id() == id)
                     .is_some_and(|n| n.data().hints.resident)
                 {
-                    self.dismiss_by_id(id, None);
+                    self.dismiss_with_reason(id, None);
                 }
             }
             Event::InvokeAnchor(uri) => {
@@ -258,7 +258,7 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_by_id(id, Some(Reason::CloseNotificationCall));
+                self.dismiss_with_reason(id, Some(Reason::CloseNotificationCall));
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
