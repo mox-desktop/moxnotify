@@ -36,16 +36,12 @@
           let
             inherit (pkgs) lib;
             buildInputs = [
-              (pkgs.rust-bin.selectLatestNightlyWith (
-                toolchain:
-                toolchain.default.override {
-                  extensions = [
-                    "rustc-codegen-cranelift-preview"
-                    "rust-src"
-                    "rustfmt"
-                  ];
-                }
-              ))
+              (pkgs.rust-bin.stable.latest.default.override {
+                extensions = [
+                  "rust-src"
+                  "rustfmt"
+                ];
+              })
             ]
             ++ builtins.attrValues {
               inherit (pkgs)
@@ -77,7 +73,7 @@
         moxnotify = pkgs.callPackage ./nix/package.nix {
           rustPlatform =
             let
-              rust-bin = (pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.minimal));
+              rust-bin = pkgs.rust-bin.stable.latest.default;
             in
             pkgs.makeRustPlatform {
               cargo = rust-bin;
