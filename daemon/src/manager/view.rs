@@ -7,7 +7,7 @@ use crate::{
         text::Text,
     },
     config::Config,
-    utils::buffers,
+    utils::{buffers, taffy::NodeContext},
 };
 use glyphon::{FontSystem, TextArea};
 use std::{
@@ -44,7 +44,7 @@ impl NotificationView {
 
     pub fn update_notification_count(
         &mut self,
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         notification_count: usize,
     ) {
         if self.visible.start > 0 {
@@ -110,7 +110,7 @@ impl NotificationView {
 
     pub fn prev_data(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         total_width: f32,
     ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(prev) = self.prev.as_ref() {
@@ -145,7 +145,7 @@ impl NotificationView {
 
     pub fn next_data(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         total_width: f32,
     ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(next) = self.next.as_ref() {

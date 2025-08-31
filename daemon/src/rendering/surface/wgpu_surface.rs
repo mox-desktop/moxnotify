@@ -13,7 +13,7 @@ use wayland_client::{Proxy, protocol::wl_surface};
 pub struct WgpuSurface {
     pub texture_renderer: texture_renderer::TextureRenderer,
     pub shape_renderer: shape_renderer::ShapeRenderer,
-    pub text_ctx: text_renderer::TextContext,
+    pub text_ctx: text_renderer::TextRenderer,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
     pub depth_buffer: buffers::DepthBuffer,
@@ -71,7 +71,7 @@ impl WgpuSurface {
         let shape_renderer =
             shape_renderer::ShapeRenderer::new(&wgpu_state.device, *surface_format);
 
-        let text_ctx = text_renderer::TextContext::new(
+        let text_ctx = text_renderer::TextRenderer::new(
             &wgpu_state.device,
             &wgpu_state.queue,
             surface_config.format,

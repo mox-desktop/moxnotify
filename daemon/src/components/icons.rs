@@ -4,7 +4,11 @@ use crate::{
     components::{self, Component},
     config,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
-    utils::{buffers, image_data::ImageData, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        image_data::ImageContext,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use resvg::usvg;
 use std::{
@@ -15,13 +19,13 @@ use std::{
 use taffy::style_helpers::{auto, length, line, span};
 
 static ICON_CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
-type IconMap = BTreeMap<Box<Path>, ImageData>;
+type IconMap = BTreeMap<Box<Path>, ImageContext>;
 
 #[derive(Default)]
 pub struct Cache(Mutex<IconMap>);
 
 impl Cache {
-    pub fn insert<P>(&self, icon_path: &P, data: ImageData)
+    pub fn insert<P>(&self, icon_path: &P, data: ImageContext)
     where
         P: AsRef<Path>,
     {
@@ -31,7 +35,7 @@ impl Cache {
         icon_map.insert(entry.into(), data);
     }
 
-    pub fn get<P>(&self, icon_path: P) -> Option<ImageData>
+    pub fn get<P>(&self, icon_path: P) -> Option<ImageContext>
     where
         P: AsRef<Path>,
     {
@@ -43,8 +47,8 @@ impl Cache {
 
 pub struct Icons {
     node: taffy::NodeId,
-    icon: Option<ImageData>,
-    app_icon: Option<ImageData>,
+    icon: Option<ImageContext>,
+    app_icon: Option<ImageContext>,
     x: f32,
     y: f32,
     context: components::Context,
@@ -53,7 +57,7 @@ pub struct Icons {
 impl Icons {
     #[must_use]
     pub fn new(
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         context: components::Context,
         image: Option<&Image>,
         app_icon: Option<&str>,
@@ -111,19 +115,23 @@ impl Component for Icons {
         &self.get_notification_style().icon
     }
 
-    fn get_instances(&self, _: &taffy::TaffyTree<()>, _: crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        _: crate::Urgency,
+    ) -> Vec<buffers::Instance> {
         Vec::new()
     }
 
     fn get_text_areas(
         &self,
-        _: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<NodeContext>,
         _: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
 
         let (width, height) = self
@@ -178,13 +186,16 @@ impl Component for Icons {
             .unwrap();
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
         let style = self.get_config().find_style(
@@ -243,7 +254,7 @@ impl Component for Icons {
         texture_areas
     }
 
-    fn get_data(&self, tree: &taffy::TaffyTree<()>, _: crate::Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, _: crate::Urgency) -> Vec<Data<'_>> {
         self.get_textures(tree)
             .into_iter()
             .map(Data::Texture)
@@ -255,7 +266,7 @@ impl Component for Icons {
     }
 }
 
-fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<ImageData>
+fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<ImageContext>
 where
     T: AsRef<str>,
 {
@@ -269,7 +280,7 @@ where
     get_icon(&icon_path, icon_size)
 }
 
-pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<ImageData>
+pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<ImageContext>
 where
     T: AsRef<Path>,
 {
@@ -308,7 +319,7 @@ where
         image::open(icon_path.as_ref())
     };
 
-    let image_data = ImageData::try_from(image.ok()?);
+    let image_data = ImageContext::try_from(image.ok()?);
     let image_data = image_data
         .ok()
         .map(|i| i.to_rgba().resize(icon_size as u32))?;
@@ -330,7 +341,7 @@ mod tests {
         let path = PathBuf::from("test_icon.png");
 
         let img = RgbaImage::new(32, 32);
-        let data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
+        let data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         cache.insert(&path, data.clone());
         assert_eq!(cache.get(&path).unwrap(), data);
@@ -339,7 +350,7 @@ mod tests {
     #[test]
     fn new_with_image_data() {
         let img = RgbaImage::new(64, 64);
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
+        let image_data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
         let image = Image::Data(image_data.clone());
         let context = components::Context {

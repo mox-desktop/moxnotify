@@ -4,7 +4,10 @@ use crate::{
     components::{self, Component},
     config::button::ButtonState,
     rendering::{text_renderer, texture_renderer},
-    utils::{buffers, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use std::sync::atomic::Ordering;
 use taffy::style_helpers::{auto, length, line};
@@ -15,7 +18,7 @@ pub struct DismissButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: text_renderer::Text,
+    pub text: text_renderer::TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
 }
@@ -37,7 +40,7 @@ impl Component for DismissButton {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
@@ -60,7 +63,7 @@ impl Component for DismissButton {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let extents = self.get_render_bounds(tree);
@@ -109,7 +112,7 @@ impl Component for DismissButton {
         }]
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         self.node = tree
             .new_leaf(taffy::Style {
@@ -168,7 +171,7 @@ impl Component for DismissButton {
         self.hint.update_layout(tree);
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
@@ -176,7 +179,10 @@ impl Component for DismissButton {
         self.hint.apply_computed_layout(tree);
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -234,7 +240,7 @@ mod tests {
         },
         config::Config,
         manager::UiState,
-        rendering::text_renderer::Text,
+        rendering::text_renderer::TextRenderer,
     };
     use glyphon::FontSystem;
 

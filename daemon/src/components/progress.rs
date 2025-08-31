@@ -3,7 +3,10 @@ use crate::{
     components::{self, Component},
     config::{self, Insets, Size, border::BorderRadius},
     rendering::texture_renderer,
-    utils::{buffers, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use std::sync::atomic::Ordering;
 use taffy::style_helpers::{auto, length, line, span};
@@ -28,7 +31,7 @@ impl Component for Progress {
         &self.get_notification_style().progress
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         self.node = tree
             .new_leaf(taffy::Style {
@@ -79,19 +82,23 @@ impl Component for Progress {
             .unwrap();
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
     }
 
-    fn get_text_areas(&self, _: &taffy::TaffyTree<()>, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        _: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let bounds = self.get_render_bounds(tree);
@@ -174,7 +181,10 @@ impl Component for Progress {
         instances
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -185,7 +195,11 @@ impl Component for Progress {
 
 impl Progress {
     #[must_use]
-    pub fn new(tree: &mut taffy::TaffyTree, context: components::Context, value: i32) -> Self {
+    pub fn new(
+        tree: &mut taffy::TaffyTree<NodeContext>,
+        context: components::Context,
+        value: i32,
+    ) -> Self {
         let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
 
         Self {

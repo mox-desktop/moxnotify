@@ -8,6 +8,7 @@ use super::{Bounds, UiState};
 use crate::components;
 use crate::manager::Reason;
 use crate::rendering::texture_renderer;
+use crate::utils::taffy::NodeContext;
 use crate::{
     Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
@@ -61,14 +62,14 @@ impl NotificationState {
         }
     }
 
-    pub fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    pub fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         match self {
             Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.update_layout(tree),
         }
     }
 
-    pub fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    pub fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         match self {
             Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.apply_computed_layout(tree),
@@ -91,7 +92,7 @@ impl NotificationState {
     }
 
     #[must_use]
-    pub fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    pub fn get_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         match self {
             Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.get_bounds(tree),
@@ -99,7 +100,7 @@ impl NotificationState {
     }
 
     #[must_use]
-    pub fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    pub fn get_render_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         match self {
             Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.get_render_bounds(tree),
@@ -115,13 +116,13 @@ impl NotificationState {
 
     pub fn replace(
         &mut self,
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         font_system: &mut FontSystem,
         data: NotificationData,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match self {
-            Self::Empty(n) => unreachable!(),
+            Self::Empty(_) => unreachable!(),
             Self::Ready(n) => n.replace(tree, font_system, data, sender),
         }
     }
@@ -179,7 +180,7 @@ impl Component for Notification<Ready> {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let extents = self.get_render_bounds(tree);
@@ -200,15 +201,22 @@ impl Component for Notification<Ready> {
         }]
     }
 
-    fn get_text_areas(&self, _: &taffy::TaffyTree<()>, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+        _: Urgency,
+    ) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
-    fn get_textures(&self, _: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         self.node = tree
             .new_leaf(taffy::Style {
@@ -330,7 +338,7 @@ impl Component for Notification<Ready> {
         }
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         if let Some(icons) = self.icons.as_mut() {
             icons.apply_computed_layout(tree);
         }
@@ -358,7 +366,7 @@ impl Component for Notification<Ready> {
         self.y = layout.location.y;
     }
 
-    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, urgency: Urgency) -> Vec<Data<'_>> {
         let mut data = self
             .get_instances(tree, urgency)
             .into_iter()
@@ -432,7 +440,7 @@ impl<State> Notification<State> {
 
     #[must_use]
     pub fn counter(
-        tree: &mut taffy::TaffyTree,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         config: Arc<Config>,
         font_system: &mut FontSystem,
         data: NotificationData,
@@ -464,7 +472,7 @@ impl<State> Notification<State> {
 
     #[must_use]
     pub fn new(
-        tree: &mut taffy::TaffyTree,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         config: Arc<Config>,
         font_system: &mut FontSystem,
         data: NotificationData,
@@ -561,7 +569,7 @@ impl<State> Notification<State> {
 
     pub fn replace(
         &mut self,
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         font_system: &mut FontSystem,
         data: NotificationData,
         sender: Option<calloop::channel::Sender<crate::Event>>,
@@ -716,7 +724,7 @@ impl Notification<Empty> {
     #[must_use]
     pub fn promote(
         self,
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         font_system: &mut FontSystem,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification<Ready> {

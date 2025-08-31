@@ -11,7 +11,10 @@ use crate::{
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer,
-    utils::{buffers, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 
 #[derive(Clone, Default)]
@@ -69,19 +72,22 @@ pub trait Component {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance>;
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<glyphon::TextArea<'_>>;
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>>;
+    fn get_textures(
+        &self,
+        tree: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>>;
 
-    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         let style = tree.style(self.get_node_id()).unwrap();
 
@@ -97,7 +103,7 @@ pub trait Component {
         }
     }
 
-    fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         Bounds {
@@ -108,11 +114,11 @@ pub trait Component {
         }
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>);
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>);
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>);
 
-    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)

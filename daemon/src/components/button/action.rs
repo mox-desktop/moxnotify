@@ -4,7 +4,10 @@ use crate::{
     components::{self, Component},
     config::button::ButtonState,
     rendering::{text_renderer, texture_renderer},
-    utils::{buffers, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use std::sync::{Arc, atomic::Ordering};
 use taffy::style_helpers::{auto, length, line};
@@ -16,7 +19,7 @@ pub struct ActionButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: text_renderer::Text,
+    pub text: text_renderer::TextContext,
     pub action: Arc<str>,
     pub state: State,
     pub width: f32,
@@ -32,7 +35,7 @@ impl Component for ActionButton {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
@@ -55,49 +58,23 @@ impl Component for ActionButton {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let extents = self.get_render_bounds(tree);
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
-        let remaining_padding = extents.width - text_extents.width;
-        let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
-            _ => (
-                style.padding.left.resolve(0.),
-                style.padding.right.resolve(0.),
-            ),
-        };
-
-        let remaining_padding = extents.height - text_extents.height;
-        let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
-            _ => (
-                style.padding.top.resolve(0.),
-                style.padding.bottom.resolve(0.),
-            ),
-        };
-
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
-            top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
+            left: extents.x,
+            top: extents.y,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
-                top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
-                right: (extents.x
-                    + style.border.size.left
-                    + style.padding.left.resolve(pl)
-                    + text_extents.width) as i32,
-                bottom: (extents.y
-                    + style.border.size.top
-                    + style.padding.top.resolve(pt)
-                    + text_extents.height) as i32,
+                left: (extents.x) as i32,
+                top: (extents.y) as i32,
+                right: (extents.x + text_extents.width) as i32,
+                bottom: (extents.y + text_extents.height) as i32,
             },
             custom_glyphs: &[],
             default_color: style.font.color.into_glyphon(urgency),
@@ -113,16 +90,19 @@ impl Component for ActionButton {
         }
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
+        let text_bounds = self.text.get_bounds();
+
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_column: line(self.index as i16 + 1),
                 flex_grow: 1.0,
                 flex_basis: auto(),
+                text_align: taffy::TextAlign::LegacyCenter,
                 min_size: taffy::Size {
-                    width: length(self.text.get_bounds().width),
-                    height: length(self.text.get_bounds().height),
+                    width: length(text_bounds.width),
+                    height: length(text_bounds.height),
                 },
                 size: taffy::Size {
                     width: if style.width.is_auto() {
@@ -177,7 +157,7 @@ impl Component for ActionButton {
         self.hint.update_layout(tree);
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
@@ -186,7 +166,10 @@ impl Component for ActionButton {
         self.hint.apply_computed_layout(tree);
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
@@ -244,7 +227,7 @@ mod tests {
         },
         config::Config,
         manager::UiState,
-        rendering::text_renderer::Text,
+        rendering::text_renderer::TextRenderer,
     };
     use glyphon::FontSystem;
     use std::sync::Arc;
@@ -268,7 +251,7 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(
+            text: TextRenderer::new(
                 &context.config.styles.default.font,
                 &mut FontSystem::new(),
                 "",
@@ -307,7 +290,7 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(
+            text: TextRenderer::new(
                 &context.config.styles.default.font,
                 &mut FontSystem::new(),
                 "",
@@ -334,7 +317,7 @@ mod tests {
             x: 0.,
             y: 0.,
             hint,
-            text: Text::new(
+            text: TextRenderer::new(
                 &context.config.styles.default.font,
                 &mut FontSystem::new(),
                 "",

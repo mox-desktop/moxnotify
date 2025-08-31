@@ -9,7 +9,7 @@ use crate::{
     config::{Config, keymaps},
     history,
     rendering::texture_renderer::TextureArea,
-    utils::buffers,
+    utils::{self, buffers, taffy::NodeContext},
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -59,7 +59,7 @@ pub struct NotificationManager {
     pub notification_view: NotificationView,
     pub ui_state: UiState,
     pub history: history::History,
-    pub tree: taffy::TaffyTree<()>,
+    pub tree: taffy::TaffyTree<NodeContext>,
     pub node_id: taffy::NodeId,
 }
 
@@ -531,6 +531,9 @@ impl NotificationManager {
             })
             .unwrap();
 
+        self.notification_view
+            .update_notification_count(&mut self.tree, self.notifications.len());
+
         if let Some(prev) = self.notification_view.prev.as_mut() {
             prev.update_layout(&mut self.tree);
             self.tree
@@ -554,24 +557,32 @@ impl NotificationManager {
                 .unwrap();
         }
 
-        self.notification_view
-            .update_notification_count(&mut self.tree, self.notifications.len());
-
         self.tree
-            .compute_layout(
+            .compute_layout_with_measure(
                 self.node_id,
-                taffy::Size {
-                    width: taffy::AvailableSpace::MaxContent,
-                    height: taffy::AvailableSpace::MaxContent,
+                taffy::Size::max_content(),
+                |known_dimensions, available_space, _node_id, node_context, _style| {
+                    utils::taffy::measure_function(
+                        known_dimensions,
+                        available_space,
+                        node_context,
+                        &mut self.font_system.borrow_mut(),
+                    )
                 },
             )
             .unwrap();
 
+        if let Some(prev) = self.notification_view.prev.as_mut() {
+            prev.apply_computed_layout(&mut self.tree);
+        }
         self.notification_view.visible.clone().for_each(|i| {
             if let Some(notification) = self.notifications.get_mut(i) {
                 notification.apply_computed_layout(&mut self.tree);
             }
         });
+        if let Some(next) = self.notification_view.next.as_mut() {
+            next.apply_computed_layout(&mut self.tree);
+        }
     }
 }
 

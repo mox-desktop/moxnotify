@@ -6,7 +6,10 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
-    utils::{buffers, taffy::GlobalLayout},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use std::sync::{Arc, atomic::Ordering};
@@ -352,7 +355,7 @@ impl Component for Body {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
@@ -372,7 +375,7 @@ impl Component for Body {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
@@ -411,12 +414,12 @@ impl Component for Body {
 
     fn get_textures(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<NodeContext>,
     ) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 
-    fn get_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_bounds(&self, _: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let style = self.get_style();
         let (width, total_lines) = self
             .buffer
@@ -445,7 +448,7 @@ impl Component for Body {
         }
     }
 
-    fn get_render_bounds(&self, tree: &taffy::TaffyTree<()>) -> Bounds {
+    fn get_render_bounds(&self, tree: &taffy::TaffyTree<NodeContext>) -> Bounds {
         let style = self.get_style();
         let bounds = self.get_bounds(tree);
         Bounds {
@@ -456,7 +459,7 @@ impl Component for Body {
         }
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         let bounds = self.get_render_bounds(tree);
 
@@ -511,13 +514,13 @@ impl Component for Body {
             .unwrap();
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
     }
 
-    fn get_data(&self, tree: &taffy::TaffyTree<()>, urgency: Urgency) -> Vec<Data<'_>> {
+    fn get_data(&self, tree: &taffy::TaffyTree<NodeContext>, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(tree, urgency)
             .into_iter()
             .map(Data::Instance)
@@ -536,7 +539,7 @@ impl Component for Body {
 
 impl Body {
     pub fn new(
-        tree: &mut taffy::TaffyTree<()>,
+        tree: &mut taffy::TaffyTree<NodeContext>,
         context: components::Context,
         font_system: &mut FontSystem,
     ) -> Self {
@@ -549,9 +552,11 @@ impl Body {
         buffer.shape_until_scroll(font_system, true);
 
         let node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
+        //let node_context = NodeContext::text(&context.config.find_style(context.app_name, false).font, font_system, "")
 
         Self {
             context,
+            //node_context,
             buffer,
             x: 0.,
             y: 0.,

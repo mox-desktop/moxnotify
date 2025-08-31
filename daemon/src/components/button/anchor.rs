@@ -2,8 +2,11 @@ use super::{Button, Component, Hint, State};
 use crate::{
     components::{self, text::body::Anchor},
     config::button::ButtonState,
-    rendering::{text_renderer::Text, texture_renderer},
-    utils::{buffers, taffy::GlobalLayout},
+    rendering::{text_renderer::TextContext, texture_renderer},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use std::sync::Arc;
 
@@ -13,7 +16,7 @@ pub struct AnchorButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: Text,
+    pub text: TextContext,
     pub state: State,
     pub tx: Option<calloop::channel::Sender<crate::Event>>,
     pub anchor: Arc<Anchor>,
@@ -32,7 +35,7 @@ impl Component for AnchorButton {
 
     fn get_instances(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        tree: &taffy::TaffyTree<NodeContext>,
         urgency: crate::Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
@@ -51,7 +54,7 @@ impl Component for AnchorButton {
 
     fn get_text_areas(
         &self,
-        tree: &taffy::TaffyTree<()>,
+        _: &taffy::TaffyTree<NodeContext>,
         urgency: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
@@ -71,18 +74,21 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         self.hint.update_layout(tree);
         self.node = tree.new_leaf(taffy::Style::DEFAULT).unwrap();
     }
 
-    fn apply_computed_layout(&mut self, tree: &mut taffy::TaffyTree<()>) {
+    fn apply_computed_layout(&mut self, tree: &taffy::TaffyTree<NodeContext>) {
         let layout = tree.global_layout(self.get_node_id()).unwrap();
         self.x = layout.location.x;
         self.y = layout.location.y;
     }
 
-    fn get_textures(&self, tree: &taffy::TaffyTree<()>) -> Vec<texture_renderer::TextureArea<'_>> {
+    fn get_textures(
+        &self,
+        _: &taffy::TaffyTree<NodeContext>,
+    ) -> Vec<texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

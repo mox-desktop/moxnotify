@@ -52,7 +52,6 @@
             buildInputs = builtins.attrValues {
               inherit (pkgs)
                 rustToolchain
-                rust-analyzer-unwrapped
                 nixd
                 pkg-config
                 lua5_4
