@@ -44,14 +44,10 @@ impl Component for DismissButton {
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds(tree);
-
+        let layout = tree.global_layout(self.node).unwrap();
         vec![buffers::Instance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [
-                bounds.width - style.border.size.left - style.border.size.right,
-                bounds.height - style.border.size.top - style.border.size.bottom,
-            ],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -66,11 +62,11 @@ impl Component for DismissButton {
         tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
-        let extents = self.get_render_bounds(tree);
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
+        let layout = tree.global_layout(self.node).unwrap();
 
-        let remaining_padding = extents.width - text_extents.width;
+        let remaining_padding = layout.content_box_width() - text_extents.width;
         let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
             (true, true) => (remaining_padding / 2., remaining_padding / 2.),
             (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
@@ -80,7 +76,7 @@ impl Component for DismissButton {
             ),
         };
 
-        let remaining_padding = extents.height - text_extents.height;
+        let remaining_padding = layout.content_box_height() - text_extents.height;
         let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
             (true, true) => (remaining_padding / 2., remaining_padding / 2.),
             (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
@@ -92,17 +88,19 @@ impl Component for DismissButton {
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
-            top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
+            left: layout.location.x + style.border.size.left + style.padding.left.resolve(pl),
+            top: layout.location.y + style.border.size.top + style.padding.top.resolve(pt),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
-                top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
-                right: (extents.x
+                left: (layout.location.x + style.border.size.left + style.padding.left.resolve(pl))
+                    as i32,
+                top: (layout.location.y + style.border.size.top + style.padding.top.resolve(pt))
+                    as i32,
+                right: (layout.location.x
                     + style.border.size.left
                     + style.padding.left.resolve(pl)
                     + text_extents.width) as i32,
-                bottom: (extents.y
+                bottom: (layout.location.y
                     + style.border.size.top
                     + style.padding.top.resolve(pt)
                     + text_extents.height) as i32,

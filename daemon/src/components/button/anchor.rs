@@ -39,10 +39,10 @@ impl Component for AnchorButton {
         urgency: crate::Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
         vec![buffers::Instance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),

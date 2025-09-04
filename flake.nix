@@ -51,6 +51,7 @@
           pkgs.lib.fix (finalAttrs: {
             buildInputs = builtins.attrValues {
               inherit (pkgs)
+                rust-analyzer-unwrapped
                 rustToolchain
                 nixd
                 pkg-config

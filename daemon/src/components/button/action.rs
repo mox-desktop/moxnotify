@@ -39,14 +39,11 @@ impl Component for ActionButton {
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         vec![buffers::Instance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [
-                bounds.width - style.border.size.left - style.border.size.right,
-                bounds.height - style.border.size.top - style.border.size.bottom,
-            ],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_width()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -61,20 +58,20 @@ impl Component for ActionButton {
         tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
-        let extents = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x,
-            top: extents.y,
+            left: layout.location.x,
+            top: layout.location.y,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x) as i32,
-                top: (extents.y) as i32,
-                right: (extents.x + text_extents.width) as i32,
-                bottom: (extents.y + text_extents.height) as i32,
+                left: (layout.location.x) as i32,
+                top: (layout.location.y) as i32,
+                right: (layout.location.x + text_extents.width) as i32,
+                bottom: (layout.location.y + text_extents.height) as i32,
             },
             custom_glyphs: &[],
             default_color: style.font.color.into_glyphon(urgency),

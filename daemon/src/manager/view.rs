@@ -7,7 +7,10 @@ use crate::{
         text::Text,
     },
     config::Config,
-    utils::{buffers, taffy::NodeContext},
+    utils::{
+        buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use glyphon::{FontSystem, TextArea};
 use std::{
@@ -114,13 +117,13 @@ impl NotificationView {
         total_width: f32,
     ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(prev) = self.prev.as_ref() {
-            let extents = prev.get_render_bounds(tree);
+            let layout = tree.global_layout(prev.get_node_id()).unwrap();
             let style = &self.config.styles.prev;
             let instance = buffers::Instance {
-                rect_pos: [extents.x, extents.y],
+                rect_pos: [layout.location.x, layout.location.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,
-                    extents.height - style.border.size.top - style.border.size.bottom,
+                    layout.content_box_height() - style.border.size.top - style.border.size.bottom,
                 ],
                 rect_color: style.background.color(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),
@@ -149,13 +152,13 @@ impl NotificationView {
         total_width: f32,
     ) -> Option<(buffers::Instance, TextArea<'_>)> {
         if let Some(next) = self.next.as_ref() {
-            let extents = next.get_render_bounds(tree);
+            let layout = tree.global_layout(next.get_node_id()).unwrap();
             let style = &self.config.styles.prev;
             let instance = buffers::Instance {
-                rect_pos: [extents.x, extents.y],
+                rect_pos: [layout.location.x, layout.location.y],
                 rect_size: [
                     total_width - style.border.size.left - style.border.size.right,
-                    extents.height - style.border.size.top - style.border.size.bottom,
+                    layout.content_box_height() - style.border.size.top - style.border.size.bottom,
                 ],
                 rect_color: style.background.color(crate::Urgency::Low),
                 border_radius: style.border.radius.into(),

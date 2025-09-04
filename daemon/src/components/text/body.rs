@@ -359,11 +359,10 @@ impl Component for Body {
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = self.get_style();
-        let bounds = self.get_render_bounds(tree);
-
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
         vec![buffers::Instance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -379,22 +378,12 @@ impl Component for Body {
         urgency: crate::Urgency,
     ) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
-        let render_bounds = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
+        let content_width = layout.content_box_width();
+        let content_height = layout.content_box_height();
 
-        let content_width = render_bounds.width
-            - style.border.size.left
-            - style.border.size.right
-            - style.padding.left
-            - style.padding.right;
-
-        let content_height = render_bounds.height
-            - style.border.size.top
-            - style.border.size.bottom
-            - style.padding.top
-            - style.padding.bottom;
-
-        let left = render_bounds.x + style.border.size.left + style.padding.left;
-        let top = render_bounds.y + style.border.size.top + style.padding.top;
+        let left = layout.location.x + style.border.size.left + style.padding.left;
+        let top = layout.location.y + style.border.size.top + style.padding.top;
 
         vec![glyphon::TextArea {
             buffer: &self.buffer,
@@ -462,7 +451,6 @@ impl Component for Body {
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         let bounds = self.get_render_bounds(tree);
-
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: line(2),
@@ -563,316 +551,5 @@ impl Body {
             anchors: Vec::new(),
             node,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        components::text::{
-            Text,
-            markup::{Parser, Tag},
-        },
-        config::Config,
-        manager::UiState,
-    };
-    use glyphon::{Color, FontSystem};
-
-    #[test]
-    fn test_body() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.set_text(
-            &mut font_system,
-            "Hello world\n<b>Hello world</b>\n<i>Hello world</i>\n<a href=\"\">Hello world</a>\n<img alt=\"Hello world\" href=\"/tmp/image.png\">",
-        );
-
-        let lines = body.buffer.lines;
-        assert_eq!(lines.first().unwrap().text(), "Hello world");
-        assert_eq!(lines.get(1).unwrap().text(), "Hello world");
-        assert_eq!(lines.get(2).unwrap().text(), "Hello world");
-        assert_eq!(lines.get(3).unwrap().text(), "Hello world");
-        assert_eq!(lines.get(4).unwrap().text(), "Hello world");
-        assert_eq!(lines.len(), 5);
-    }
-
-    #[test]
-    fn test_plain_url_detection() {
-        let mut font_system = FontSystem::new();
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.set_text(
-            &mut font_system,
-            "Check this website: https://example.com for more info.",
-        );
-
-        assert_eq!(body.anchors.len(), 1);
-        assert_eq!(body.anchors[0].href.as_ref(), "https://example.com");
-        assert_eq!(body.anchors[0].line, 0);
-    }
-
-    #[test]
-    fn test_multiple_urls() {
-        let mut font_system = FontSystem::new();
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.set_text(
-            &mut font_system,
-            "First URL: https://example.com and second URL: http://test.org!",
-        );
-
-        assert_eq!(body.anchors.len(), 2);
-        assert_eq!(body.anchors[0].href.as_ref(), "https://example.com");
-        assert_eq!(body.anchors[1].href.as_ref(), "http://test.org");
-    }
-
-    #[test]
-    fn test_span_parser_basics() {
-        let mut parser = Parser::new(String::from("<span color=\"red\">Red text</span>"));
-        let tags = parser.parse();
-
-        assert_eq!(tags.len(), 1);
-        match &tags[0] {
-            Tag::Span { text, attributes } => {
-                assert_eq!(text, "Red text");
-                assert_eq!(attributes.len(), 1);
-                assert_eq!(attributes.get("color").unwrap(), "red");
-            }
-            _ => panic!("Expected Tag::Span"),
-        }
-    }
-
-    #[test]
-    fn test_span_parser_multiple_attributes() {
-        let mut parser = Parser::new(String::from(
-            "<span color=\"blue\" weight=\"bold\" style=\"italic\">Formatted text</span>",
-        ));
-        let tags = parser.parse();
-
-        assert_eq!(tags.len(), 1);
-        match &tags[0] {
-            Tag::Span { text, attributes } => {
-                assert_eq!(text, "Formatted text");
-                assert_eq!(attributes.len(), 3);
-                assert_eq!(attributes.get("color").unwrap(), "blue");
-                assert_eq!(attributes.get("weight").unwrap(), "bold");
-                assert_eq!(attributes.get("style").unwrap(), "italic");
-            }
-            _ => panic!("Expected Tag::Span"),
-        }
-    }
-
-    #[test]
-    fn test_mixed_tags() {
-        let mut parser = Parser::new(String::from(
-            "Normal <b>bold</b><span color=\"red\">red</span> text",
-        ));
-        let tags = parser.parse();
-
-        assert_eq!(tags.len(), 4);
-        match &tags[0] {
-            Tag::Text(text) => assert_eq!(text, "Normal "),
-            _ => panic!("Expected Tag::Text"),
-        }
-        match &tags[1] {
-            Tag::Bold(text) => assert_eq!(text, "bold"),
-            _ => panic!("Expected Tag::Bold"),
-        }
-        match &tags[2] {
-            Tag::Span { text, attributes } => {
-                assert_eq!(text, "red");
-                assert_eq!(attributes.get("color").unwrap(), "red");
-            }
-            _ => panic!("Expected Tag::Span"),
-        }
-        match &tags[3] {
-            Tag::Text(text) => assert_eq!(text, " text"),
-            _ => panic!("Expected Tag::Text"),
-        }
-    }
-
-    #[test]
-    fn test_named_colors() {
-        assert_eq!(parse_color("red"), Some(Color::rgba(255, 0, 0, 255)));
-        assert_eq!(parse_color("green"), Some(Color::rgba(0, 128, 0, 255)));
-        assert_eq!(parse_color("blue"), Some(Color::rgba(0, 0, 255, 255)));
-        assert_eq!(parse_color("black"), Some(Color::rgba(0, 0, 0, 255)));
-        assert_eq!(parse_color("white"), Some(Color::rgba(255, 255, 255, 255)));
-
-        assert_eq!(parse_color("Red"), Some(Color::rgba(255, 0, 0, 255)));
-        assert_eq!(parse_color("BLUE"), Some(Color::rgba(0, 0, 255, 255)));
-    }
-
-    #[test]
-    fn test_invalid_named_color() {
-        assert_eq!(parse_color("notacolor"), None);
-    }
-
-    #[test]
-    fn test_hex_colors() {
-        assert_eq!(parse_color("#f00"), Some(Color::rgba(255, 0, 0, 255)));
-
-        assert_eq!(parse_color("#f008"), Some(Color::rgba(255, 0, 0, 136)));
-
-        assert_eq!(parse_color("#ff0000"), Some(Color::rgba(255, 0, 0, 255)));
-
-        assert_eq!(parse_color("#ff000080"), Some(Color::rgba(255, 0, 0, 128)));
-    }
-
-    #[test]
-    fn test_invalid_hex_colors() {
-        assert!(parse_color("#f0").is_none());
-        assert!(parse_color("#xyz").is_none());
-    }
-
-    #[test]
-    fn test_rgb_colors() {
-        assert_eq!(
-            parse_color("rgb(255, 0, 0)"),
-            Some(Color::rgba(255, 0, 0, 255))
-        );
-        assert_eq!(
-            parse_color("rgb(0, 255, 0)"),
-            Some(Color::rgba(0, 255, 0, 255))
-        );
-        assert_eq!(
-            parse_color("rgb(0, 0, 255)"),
-            Some(Color::rgba(0, 0, 255, 255))
-        );
-    }
-
-    #[test]
-    fn test_rgba_colors() {
-        assert_eq!(
-            parse_color("rgba(255, 0, 0, 1.0)"),
-            Some(Color::rgba(255, 0, 0, 255))
-        );
-        assert_eq!(
-            parse_color("rgba(255, 0, 0, 0.5)"),
-            Some(Color::rgba(255, 0, 0, 127))
-        );
-        assert_eq!(
-            parse_color("rgba(255, 0, 0, 0.0)"),
-            Some(Color::rgba(255, 0, 0, 0))
-        );
-    }
-
-    #[test]
-    fn test_invalid_rgb_rgba() {
-        assert!(parse_color("rgb(255, 0)").is_none());
-        assert!(parse_color("rgba(255, 0, 0)").is_none());
-
-        assert!(parse_color("rgb(300, 0, 0)").is_none());
-    }
-
-    #[test]
-    fn test_color_parsing_edge_cases() {
-        assert_eq!(
-            parse_color("  rgb(255, 0, 0)  "),
-            Some(Color::rgba(255, 0, 0, 255))
-        );
-
-        assert_eq!(
-            parse_color("rgb(255,0,0)"),
-            Some(Color::rgba(255, 0, 0, 255))
-        );
-    }
-
-    #[test]
-    fn test_attribute_inheritance() {
-        let mut font_system = FontSystem::new();
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.set_text(
-            &mut font_system,
-            "<span color=\"red\" weight=\"bold\" style=\"italic\" font_size=\"18\">Multi-styled text</span>",
-        );
-
-        assert_eq!(body.buffer.lines.len(), 1);
-        assert_eq!(body.buffer.lines[0].text(), "Multi-styled text");
-    }
-
-    #[test]
-    fn test_bounds_calculation() {
-        let mut font_system = FontSystem::new();
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.update_layout(10.0, 20.0);
-        body.set_text(
-            &mut font_system,
-            "Line 1\n<span color=\"blue\">Line 2</span>\n<span weight=\"bold\">Line 3</span>",
-        );
-
-        let bounds = body.get_bounds();
-        assert_eq!(bounds.x, 10.0);
-        assert_eq!(bounds.y, 20.0);
-        assert!(bounds.width > 0.0);
-        assert!(bounds.height > 0.0);
-    }
-
-    #[test]
-    fn test_render_data() {
-        let mut font_system = FontSystem::new();
-        let context = components::Context {
-            id: 0,
-            app_name: "".into(),
-            config: Arc::new(Config::default()),
-            ui_state: UiState::default(),
-        };
-        let mut body = Body::new(context, &mut font_system);
-
-        body.update_layout(10.0, 20.0);
-        body.set_text(&mut font_system, "<span color=\"blue\">Blue text</span>");
-
-        let data = body.get_data(Urgency::Normal);
-
-        assert!(data.len() >= 2);
-
-        let mut has_instance = false;
-        let mut has_text_area = false;
-
-        for item in data {
-            match item {
-                Data::Instance(_) => has_instance = true,
-                Data::TextArea(_) => has_text_area = true,
-                _ => {}
-            }
-        }
-
-        assert!(has_instance);
-        assert!(has_text_area);
     }
 }

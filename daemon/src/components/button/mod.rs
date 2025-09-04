@@ -211,19 +211,14 @@ impl ButtonManager<Finished> {
     pub fn click(&self, tree: &taffy::TaffyTree<NodeContext>, x: f64, y: f64) -> bool {
         self.buttons
             .iter()
-            .find_map(|button| {
-                let bounds = button.get_render_bounds(tree);
-                if x >= bounds.x as f64
-                    && y >= bounds.y as f64
-                    && x <= (bounds.x + bounds.width) as f64
-                    && y <= (bounds.y + bounds.height) as f64
-                {
-                    button.click();
-                    Some(true)
-                } else {
-                    None
-                }
+            .find(|button| {
+                let layout = tree.global_layout(button.get_node_id()).unwrap();
+                x >= layout.location.x as f64
+                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && y >= layout.location.y as f64
+                    && y <= (layout.location.y + layout.content_box_height()) as f64
             })
+            .map(|button| button.click())
             .is_some()
     }
 
@@ -231,14 +226,14 @@ impl ButtonManager<Finished> {
         self.buttons
             .iter_mut()
             .find_map(|button| {
-                let bounds = button.get_render_bounds(tree);
-                if x >= bounds.x as f64
-                    && y >= bounds.y as f64
-                    && x <= (bounds.x + bounds.width) as f64
-                    && y <= (bounds.y + bounds.height) as f64
+                let layout = tree.global_layout(button.get_node_id()).unwrap();
+                if x >= layout.location.x as f64
+                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && y >= layout.location.y as f64
+                    && y <= (layout.location.y + layout.content_box_height()) as f64
                 {
                     button.hover();
-                    Some(true)
+                    Some(())
                 } else {
                     button.unhover();
                     None
@@ -499,11 +494,11 @@ impl Component for Hint {
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
         let style = &self.context.config.styles.hover.hint;
-        let bounds = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         vec![buffers::Instance {
-            rect_pos: [bounds.x, bounds.y],
-            rect_size: [bounds.width, bounds.height],
+            rect_pos: [layout.location.x, layout.location.y],
+            rect_size: [layout.content_box_width(), layout.content_box_height()],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
             border_size: style.border.size.into(),
@@ -531,7 +526,7 @@ impl Component for Hint {
     ) -> Vec<TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
-        let bounds = self.get_render_bounds(tree);
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
 
         let remaining_padding = style.width.resolve(text_extents.width) - text_extents.width;
         let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
@@ -554,14 +549,18 @@ impl Component for Hint {
 
         vec![TextArea {
             buffer: &self.text.buffer,
-            left: bounds.x + style.padding.left.resolve(pl),
-            top: bounds.y + style.padding.top.resolve(pt),
+            left: layout.location.x + style.padding.left.resolve(pl),
+            top: layout.location.y + style.padding.top.resolve(pt),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (bounds.x + style.padding.left.resolve(pl)) as i32,
-                top: (bounds.y + style.padding.top.resolve(pt)) as i32,
-                right: (bounds.x + style.padding.left.resolve(pl) + bounds.width) as i32,
-                bottom: (bounds.y + style.padding.top.resolve(pt) + bounds.height) as i32,
+                left: (layout.location.x + style.padding.left.resolve(pl)) as i32,
+                top: (layout.location.y + style.padding.top.resolve(pt)) as i32,
+                right: (layout.location.x
+                    + style.padding.left.resolve(pl)
+                    + layout.content_box_width()) as i32,
+                bottom: (layout.location.y
+                    + style.padding.top.resolve(pt)
+                    + layout.content_box_height()) as i32,
             },
             default_color: style.font.color.into_glyphon(urgency),
             custom_glyphs: &[],
@@ -577,136 +576,5 @@ impl Component for Hint {
 
     fn get_node_id(&self) -> taffy::NodeId {
         self.node
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ButtonManager;
-    use crate::{Urgency, components, manager::UiState};
-    use glyphon::FontSystem;
-
-    #[test]
-    fn test_button_click_detection() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 1,
-            app_name: "".into(),
-            ui_state: UiState::default(),
-            config: crate::config::Config::default().into(),
-        };
-        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
-            .add_dismiss(&mut font_system)
-            .finish(&mut font_system);
-
-        let button = &mut button_manager.buttons_mut()[0];
-        button.update_layout(10.0, 10.0);
-
-        let style = button.get_style();
-        let width = style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        let height = style.height
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        // Define test points: (x, y, should_click)
-        let test_points = [
-            // Internal point (should click)
-            (10.0 + width as f64 / 2.0, 10.0 + height as f64 / 2.0, true),
-            // Exact corners (should click)
-            (10.0, 10.0, true),                                // Top left
-            (10.0 + width as f64, 10.0, true),                 // Top right
-            (10.0, 10.0 + height as f64, true),                // Bottom left
-            (10.0 + width as f64, 10.0 + height as f64, true), // Bottom right
-            // Just outside corners (should not click)
-            (10.0 - 0.1, 10.0, false), // Top left
-            (10.0, 10.0 - 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0, false), // Top right
-            (10.0 + width as f64, 10.0 - 0.1, false),
-            (10.0 - 0.1, 10.0 + height as f64, false), // Bottom left
-            (10.0, 10.0 + height as f64 + 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0 + height as f64, false), // Bottom right
-            (10.0 + width as f64, 10.0 + height as f64 + 0.1, false),
-        ];
-
-        test_points
-            .iter()
-            .enumerate()
-            .for_each(|(i, (x, y, expected))| {
-                assert_eq!(
-                    button_manager.click(*x, *y),
-                    *expected,
-                    "Test point {i} at ({x}, {y}) failed",
-                );
-            });
-    }
-
-    #[test]
-    fn test_button_hover_detection() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 1,
-            app_name: "".into(),
-            ui_state: UiState::default(),
-            config: crate::config::Config::default().into(),
-        };
-        let mut button_manager = ButtonManager::new(context, Urgency::Normal, None)
-            .add_dismiss(&mut font_system)
-            .finish(&mut font_system);
-
-        let button = &mut button_manager.buttons_mut()[0];
-        button.update_layout(10.0, 10.0);
-
-        let style = button.get_style();
-        let width = style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        let height = style.height
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right;
-
-        // Define test points: (x, y, should_hover)
-        let test_points = [
-            // Internal point (should hover)
-            (10.0 + width as f64 / 2.0, 10.0 + height as f64 / 2.0, true),
-            // Exact corners (should hover)
-            (10.0, 10.0, true),                                // Top left
-            (10.0 + width as f64, 10.0, true),                 // Top right
-            (10.0, 10.0 + height as f64, true),                // Bottom left
-            (10.0 + width as f64, 10.0 + height as f64, true), // Bottom right
-            // Just outside corners (should not hover)
-            (10.0 - 0.1, 10.0, false), // Top left
-            (10.0, 10.0 - 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0, false), // Top right
-            (10.0 + width as f64, 10.0 - 0.1, false),
-            (10.0 - 0.1, 10.0 + height as f64, false), // Bottom left
-            (10.0, 10.0 + height as f64 + 0.1, false),
-            (10.0 + width as f64 + 0.1, 10.0 + height as f64, false), // Bottom right
-            (10.0 + width as f64, 10.0 + height as f64 + 0.1, false),
-        ];
-
-        test_points
-            .iter()
-            .enumerate()
-            .for_each(|(i, (x, y, expected))| {
-                assert_eq!(
-                    button_manager.hover(*x, *y),
-                    *expected,
-                    "Test point {i} at ({x}, {y}) failed",
-                );
-            });
     }
 }

@@ -9,7 +9,10 @@ use crate::{
     config::{Config, keymaps},
     history,
     rendering::texture_renderer::TextureArea,
-    utils::{self, buffers, taffy::NodeContext},
+    utils::{
+        self, buffers,
+        taffy::{GlobalLayout, NodeContext},
+    },
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -176,30 +179,24 @@ impl NotificationManager {
     }
 
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
-        self.notification_view.visible.clone().find_map(|index| {
-            if let Some(notification) = self.notifications.get(index) {
-                let extents = notification.get_render_bounds(&self.tree);
-                let x_within_bounds =
-                    x >= extents.x as f64 && x <= (extents.x + extents.width) as f64;
-                let y_within_bounds =
-                    y >= extents.y as f64 && y <= (extents.y + extents.height) as f64;
-
-                if x_within_bounds && y_within_bounds {
-                    return Some(notification);
-                }
-            }
-
-            None
+        self.iter_viewed().find(|notification| {
+            let layout = self.tree.global_layout(notification.get_node_id()).unwrap();
+            x >= layout.location.x as f64
+                && x <= (layout.location.x + layout.content_box_width()) as f64
+                && y >= layout.location.y as f64
+                && y <= (layout.location.y + layout.content_box_height()) as f64
         })
     }
 
     pub fn click(&self, x: f64, y: f64) -> bool {
-        self.iter_viewed().any(|notification| {
-            notification
-                .buttons()
-                .as_ref()
-                .is_some_and(|buttons| buttons.click(&self.tree, x, y))
-        })
+        self.get_by_coordinates(x, y)
+            .map(|notification| {
+                notification
+                    .buttons()
+                    .as_ref()
+                    .is_some_and(|buttons| buttons.click(&self.tree, x, y))
+            })
+            .unwrap_or_default()
     }
 
     pub fn hover(&mut self, x: f64, y: f64) -> bool {

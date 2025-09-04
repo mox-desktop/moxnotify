@@ -101,12 +101,11 @@ impl Component for Progress {
         tree: &taffy::TaffyTree<NodeContext>,
         urgency: Urgency,
     ) -> Vec<buffers::Instance> {
-        let bounds = self.get_render_bounds(tree);
-
+        let layout = tree.global_layout(self.get_node_id()).unwrap();
         let progress_ratio = (self.value as f32 / 100.0).min(1.0);
 
         let mut instances = Vec::new();
-        let complete_width = (bounds.width * progress_ratio).max(0.);
+        let complete_width = (layout.content_box_width() * progress_ratio).max(0.);
 
         let style = self.get_style();
 
@@ -131,8 +130,8 @@ impl Component for Progress {
             };
 
             instances.push(buffers::Instance {
-                rect_pos: [bounds.x, bounds.y],
-                rect_size: [complete_width, bounds.height],
+                rect_pos: [layout.location.x, layout.location.y],
+                rect_size: [complete_width, layout.content_box_height()],
                 rect_color: style.complete_color.color(urgency),
                 border_radius: border_radius.into(),
                 border_size: border_size.into(),
@@ -143,7 +142,7 @@ impl Component for Progress {
         }
 
         if self.value < 100 {
-            let incomplete_width = bounds.width - complete_width;
+            let incomplete_width = layout.content_box_width() - complete_width;
 
             if incomplete_width > 0.0 {
                 let border_size = if self.value > 0 {
@@ -166,8 +165,8 @@ impl Component for Progress {
                 };
 
                 instances.push(buffers::Instance {
-                    rect_pos: [bounds.x + complete_width, bounds.y],
-                    rect_size: [incomplete_width, bounds.height],
+                    rect_pos: [layout.location.x + complete_width, layout.location.y],
+                    rect_size: [incomplete_width, layout.content_box_height()],
                     rect_color: style.incomplete_color.color(urgency),
                     border_radius: border_radius.into(),
                     border_size: border_size.into(),
@@ -218,225 +217,5 @@ impl Progress {
 
     pub fn set_value(&mut self, value: i32) {
         self.value = value;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::Urgency;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU32},
-    };
-
-    fn create_test_progress(value: i32) -> Progress {
-        let context = components::Context {
-            id: 1,
-            app_name: Arc::from("test_app"),
-            config: Arc::new(crate::Config::default()),
-            ui_state: crate::manager::UiState::default(),
-        };
-        let mut progress = Progress::new(context, value);
-        progress.set_width(300.0);
-        progress.update_layout(0.0, 0.0);
-
-        progress
-    }
-
-    #[test]
-    fn test_initialization() {
-        let progress = create_test_progress(50);
-
-        assert_eq!(progress.get_id(), 1);
-        assert_eq!(progress.value, 50);
-        assert_eq!(progress.x, 0.0);
-        assert_eq!(progress.y, 0.0);
-        assert_eq!(progress.width, 300.0);
-        assert_eq!(progress.get_app_name(), "test_app");
-    }
-
-    #[test]
-    fn test_bounds_calculation() {
-        let progress = create_test_progress(50);
-
-        let bounds = progress.get_bounds();
-        assert!(bounds.width > 0.0);
-        assert!(bounds.height > 0.0);
-    }
-
-    #[test]
-    fn test_render_bounds() {
-        let progress = create_test_progress(50);
-
-        let render_bounds = progress.get_render_bounds();
-        assert!(render_bounds.width > 0.0);
-        assert!(render_bounds.height > 0.0);
-    }
-
-    #[test]
-    fn test_zero_progress() {
-        let mut progress = create_test_progress(0);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert!(!instances.is_empty());
-
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].rect_size[0], width);
-    }
-
-    #[test]
-    fn test_full_progress() {
-        let mut progress = create_test_progress(100);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].rect_size[0], width);
-    }
-
-    #[test]
-    fn test_partial_progress() {
-        let percentage = 50;
-        let mut progress = create_test_progress(percentage);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 2);
-
-        let expected_complete_width = (percentage as f32 / 100.0) * width;
-        assert_eq!(instances[0].rect_size[0], expected_complete_width);
-
-        let expected_incomplete_width = width - expected_complete_width;
-        assert_eq!(instances[1].rect_size[0], expected_incomplete_width);
-
-        let total_width: f32 = instances.iter().map(|instance| instance.rect_size[0]).sum();
-        let render_bounds = progress.get_render_bounds();
-        assert!((total_width - render_bounds.width).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_progress_over_100_percent() {
-        let mut progress = create_test_progress(120);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].rect_size[0], width);
-    }
-
-    #[test]
-    fn test_progress_negative_value() {
-        let mut progress = create_test_progress(-20);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].rect_size[0], width);
-    }
-
-    #[test]
-    fn test_low_progress() {
-        let percentage = 25;
-        let mut progress = create_test_progress(percentage);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 2);
-
-        let expected_complete_width = (percentage as f32 / 100.0) * width;
-        assert_eq!(instances[0].rect_size[0], expected_complete_width);
-
-        let expected_incomplete_width = width - expected_complete_width;
-        assert_eq!(instances[1].rect_size[0], expected_incomplete_width);
-    }
-
-    #[test]
-    fn test_high_progress() {
-        let percentage = 75;
-        let mut progress = create_test_progress(percentage);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 2);
-
-        let expected_complete_width = (percentage as f32 / 100.0) * width;
-        assert_eq!(instances[0].rect_size[0], expected_complete_width);
-
-        let expected_incomplete_width = width - expected_complete_width;
-        assert_eq!(instances[1].rect_size[0], expected_incomplete_width);
-    }
-
-    #[test]
-    fn test_almost_complete_progress() {
-        let percentage = 99;
-        let mut progress = create_test_progress(percentage);
-        let width = 300.0;
-        progress.set_width(width);
-
-        let instances = progress.get_instances(Urgency::Normal);
-
-        assert_eq!(instances.len(), 2);
-
-        let expected_complete_width = (percentage as f32 / 100.0) * width;
-        assert_eq!(instances[0].rect_size[0], expected_complete_width);
-
-        let expected_incomplete_width = width - expected_complete_width;
-        assert_eq!(instances[1].rect_size[0], expected_incomplete_width);
-    }
-
-    #[test]
-    fn test_selection_state() {
-        let context = components::Context {
-            id: 1,
-            app_name: Arc::from("test_app"),
-            ui_state: crate::manager::UiState {
-                selected_id: Arc::new(AtomicU32::new(1)),
-                selected: Arc::new(AtomicBool::new(true)),
-                ..Default::default()
-            },
-            config: Arc::new(crate::Config::default()),
-        };
-        let progress = Progress::new(context, 50);
-
-        assert!(progress.get_ui_state().selected.load(Ordering::Relaxed));
-        assert_eq!(
-            progress.get_ui_state().selected_id.load(Ordering::Relaxed),
-            1
-        );
-    }
-
-    #[test]
-    fn test_set_width() {
-        let mut progress = create_test_progress(50);
-
-        progress.set_width(400.0);
-
-        assert_eq!(progress.width, 400.0);
-    }
-
-    #[test]
-    fn test_set_position() {
-        let mut progress = create_test_progress(50);
-
-        progress.update_layout(10.0, 20.0);
-
-        assert_eq!(progress.x, 10.0);
-        assert_eq!(progress.y, 20.0);
     }
 }

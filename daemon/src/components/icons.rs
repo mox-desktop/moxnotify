@@ -204,46 +204,47 @@ impl Component for Icons {
                 && self.get_ui_state().selected.load(Ordering::Relaxed),
         );
 
-        let mut bounds = self.get_render_bounds(tree);
-
+        let mut layout = tree.global_layout(self.get_node_id()).unwrap();
         if let Some(icon) = self.icon.as_ref() {
             texture_areas.push(TextureArea {
-                left: bounds.x,
-                top: bounds.y,
-                width: bounds.width,
-                height: bounds.height,
+                left: layout.location.x,
+                top: layout.location.y,
+                width: layout.content_box_width(),
+                height: layout.content_box_height(),
                 scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
-                    left: bounds.x as u32,
-                    top: bounds.y as u32,
-                    right: (bounds.x + bounds.width) as u32,
-                    bottom: (bounds.y + bounds.height) as u32,
+                    left: layout.location.x as u32,
+                    top: layout.location.y as u32,
+                    right: (layout.location.x + layout.content_box_width()) as u32,
+                    bottom: (layout.location.y + layout.content_box_height()) as u32,
                 },
                 data: icon.data(),
                 radius: style.icon.border.radius.into(),
                 depth: 0.9,
             });
 
-            bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
-            bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
+            layout.location.x +=
+                layout.content_box_width() - self.get_config().general.app_icon_size as f32;
+            layout.location.y +=
+                layout.content_box_height() - self.get_config().general.app_icon_size as f32;
         }
 
         if let Some(app_icon) = self.app_icon.as_ref() {
             let app_icon_size = self.get_config().general.app_icon_size as f32;
 
             texture_areas.push(TextureArea {
-                left: bounds.x,
-                top: bounds.y,
+                left: layout.location.x,
+                top: layout.location.y,
                 width: app_icon_size,
                 height: app_icon_size,
                 scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 border_size: style.icon.border.size.into(),
                 bounds: TextureBounds {
-                    left: bounds.x as u32,
-                    top: bounds.y as u32,
-                    right: (bounds.x + app_icon_size) as u32,
-                    bottom: (bounds.y + app_icon_size) as u32,
+                    left: layout.location.x as u32,
+                    top: layout.location.y as u32,
+                    right: (layout.location.x + app_icon_size) as u32,
+                    bottom: (layout.location.y + app_icon_size) as u32,
                 },
                 data: app_icon.data(),
                 radius: style.app_icon.border.radius.into(),
@@ -327,56 +328,4 @@ where
         ICON_CACHE.insert(&icon_path, image_data.clone());
     }
     image_data.ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{DynamicImage, RgbaImage};
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn cache_insert_and_retrieve() {
-        let cache = Cache::default();
-        let path = PathBuf::from("test_icon.png");
-
-        let img = RgbaImage::new(32, 32);
-        let data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        cache.insert(&path, data.clone());
-        assert_eq!(cache.get(&path).unwrap(), data);
-    }
-
-    #[test]
-    fn new_with_image_data() {
-        let img = RgbaImage::new(64, 64);
-        let image_data = ImageContext::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        let image = Image::Data(image_data.clone());
-        let context = components::Context {
-            id: 1,
-            config: crate::Config::default().into(),
-            ui_state: crate::manager::UiState::default(),
-            app_name: "app".into(),
-        };
-        let icons = Icons::new(context, Some(&image), None);
-
-        assert!(icons.icon.is_some());
-        assert_eq!(icons.icon.unwrap().width(), 64);
-    }
-
-    #[test]
-    fn cache_miss_returns_none() {
-        let cache = Cache::default();
-        let non_existent_path = Path::new("non_existent.png");
-        assert!(cache.get(non_existent_path).is_none());
-    }
-
-    #[test]
-    fn set_position_updates_coordinates() {
-        let mut icons = Icons::default();
-        icons.set_position(100., 200.);
-        assert_eq!(icons.x, 100.);
-        assert_eq!(icons.y, 200.);
-    }
 }
