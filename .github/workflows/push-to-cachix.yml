@@ -10,7 +10,7 @@ on:
 
 jobs:
   push-cachix:
-    uses: mox-desktop/ci-templates/.github/workflows/push-to-cachix.yml@master
+    uses: mox-desktop/tooling/.github/workflows/push-to-cachix.yml@master
     with:
       cachix_name: "moxnotify"
     secrets:

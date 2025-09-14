@@ -1,8 +1,5 @@
 [workspace]
-members = [
-    "daemon",
-    "ctl"
-]
+members = ["daemon", "ctl"]
 resolver = "2"
 
 [profile.release]
@@ -13,7 +10,13 @@ panic = "abort"
 
 [workspace.package]
 keywords = ["notification", "daemon", "wayland", "keyboard", "desktop"]
-categories = ["gui", "command-line-utilities", "os", "visualization", "multimedia"]
+categories = [
+  "gui",
+  "command-line-utilities",
+  "os",
+  "visualization",
+  "multimedia",
+]
 edition = "2024"
 homepage = "https://pipewire.org"
 license = "MIT"

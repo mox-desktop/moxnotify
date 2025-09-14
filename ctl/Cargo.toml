@@ -15,4 +15,3 @@ anyhow = { version = "1.0.95", default-features = false }
 clap = "4.5.27"
 tokio = "1.43.0"
 serde = { version = "1.0.219", default-features = false }
-

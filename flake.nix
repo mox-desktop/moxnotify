@@ -1,50 +1,11 @@
 {
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-  };
+  inputs.tooling.url = "github:mox-desktop/tooling";
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      rust-overlay,
-      ...
-    }:
-    let
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      overlays = [
-        (import rust-overlay)
-        (self: super: {
-          rustToolchain = super.rust-bin.nightly."2025-09-13".default.override {
-            extensions = [
-              "rustc-codegen-cranelift-preview"
-              "rust-src"
-              "rustfmt"
-            ];
-          };
-        })
-      ];
-
-      forAllSystems =
-        function:
-        nixpkgs.lib.genAttrs systems (
-          system:
-          let
-            pkgs = import nixpkgs { inherit system overlays; };
-          in
-          function pkgs
-        );
-    in
-    {
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShell (
+    { self, tooling, ... }:
+    tooling.lib.mkMoxFlake {
+      devShells = tooling.lib.forAllSystems (pkgs: {
+        default = pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } (
           pkgs.lib.fix (finalAttrs: {
             buildInputs = builtins.attrValues {
               inherit (pkgs)
@@ -70,32 +31,9 @@
             RUST_SRC_PATH = "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
           })
         );
-
       });
 
-      formatter = forAllSystems (
-        pkgs:
-        pkgs.writeShellApplication {
-          name = "nix3-fmt-wrapper";
-
-          runtimeInputs = builtins.attrValues {
-            inherit (pkgs)
-              rustToolchain
-              nixfmt-rfc-style
-              taplo
-              fd
-              ;
-          };
-
-          text = ''
-            fd "$@" -t f -e nix -x nixfmt -q '{}'
-            fd "$@" -t f -e toml -x taplo format '{}'
-            cargo fmt
-          '';
-        }
-      );
-
-      packages = forAllSystems (pkgs: {
+      packages = tooling.lib.forAllSystems (pkgs: {
         moxnotify = pkgs.callPackage ./nix/package.nix {
           rustPlatform = pkgs.makeRustPlatform {
             cargo = pkgs.rustToolchain;

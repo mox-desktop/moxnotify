@@ -27,12 +27,23 @@ wayland-backend = { version = "0.3.7", features = ["client_system"] }
 raw-window-handle = "0.6.2"
 anyhow = { version = "1.0.95", default-features = false }
 xkbcommon = "0.8.0"
-image = { version = "0.25.6", default-features = false, features = ["jpeg", "ico", "webp", "rayon"] }
+image = { version = "0.25.6", default-features = false, features = [
+  "jpeg",
+  "ico",
+  "webp",
+  "rayon",
+] }
 fast_image_resize = "5.1.1"
 glyphon = "0.9.0"
 url = { version = "2.5.4", default-features = false }
 freedesktop-icons = "0.4.0"
-symphonia = { version = "0.5.4", features = ["wav", "pcm", "mp3", "vorbis", "ogg"], default-features = false }
+symphonia = { version = "0.5.4", features = [
+  "wav",
+  "pcm",
+  "mp3",
+  "vorbis",
+  "ogg",
+], default-features = false }
 freedesktop-sound = "0.1.0"
 serde_json = "1.0.140"
 rusqlite = { version = "0.35.0", features = ["bundled"] }
@@ -46,4 +57,9 @@ atomic_float = { version = "1.1.0", default-features = false }
 rayon = "1.10.0"
 libspa-sys = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", rev = "fd3d8f7861a29c2eeaa4c393402e013578bb36d9" }
 pipewire = { git = "https://gitlab.freedesktop.org/pipewire/pipewire-rs.git", rev = "fd3d8f7861a29c2eeaa4c393402e013578bb36d9" }
-wgpu = { version = "25.0.2", features = ["wgsl", "vulkan", "gles", "strict_asserts"], default-features = false }
+wgpu = { version = "25.0.2", features = [
+  "wgsl",
+  "vulkan",
+  "gles",
+  "strict_asserts",
+], default-features = false }

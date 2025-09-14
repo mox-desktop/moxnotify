@@ -6,6 +6,6 @@ on:
 
 jobs:
   weekly-updates:
-    uses: mox-desktop/ci-templates/.github/workflows/weekly-updates.yml@master
+    uses: mox-desktop/tooling/.github/workflows/weekly-updates.yml@master
     secrets:
       REPO_TOKEN: ${{ secrets.GITBOT_TOKEN }}
