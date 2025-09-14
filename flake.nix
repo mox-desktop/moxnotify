@@ -22,16 +22,13 @@
       overlays = [
         (import rust-overlay)
         (self: super: {
-          rustToolchain = super.rust-bin.selectLatestNightlyWith (
-            toolchain:
-            toolchain.default.override {
-              extensions = [
-                "rustc-codegen-cranelift-preview"
-                "rust-src"
-                "rustfmt"
-              ];
-            }
-          );
+          rustToolchain = super.rust-bin.nightly."2025-09-13".default.override {
+            extensions = [
+              "rustc-codegen-cranelift-preview"
+              "rust-src"
+              "rustfmt"
+            ];
+          };
         })
       ];
 
