@@ -5,7 +5,7 @@
     { self, tooling, ... }:
     tooling.lib.mkMoxFlake {
       devShells = tooling.lib.forAllSystems (pkgs: {
-        default = pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; } (
+        default = pkgs.mkShell.override { stdenv = pkgs.clangStdenv; } (
           pkgs.lib.fix (finalAttrs: {
             buildInputs = builtins.attrValues {
               inherit (pkgs)
