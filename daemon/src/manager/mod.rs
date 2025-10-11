@@ -9,11 +9,11 @@ use crate::{
     config::{Config, keymaps},
     history,
     rendering::texture_renderer::TextureArea,
-    utils::buffers,
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
 use glyphon::{FontSystem, TextArea};
+use moxui::shape_renderer;
 use rayon::prelude::*;
 use std::{
     cell::RefCell,
@@ -111,7 +111,7 @@ impl NotificationManager {
     pub fn data(
         &self,
     ) -> (
-        Vec<buffers::Instance>,
+        Vec<shape_renderer::ShapeInstance>,
         Vec<TextArea<'_>>,
         Vec<TextureArea<'_>>,
     ) {

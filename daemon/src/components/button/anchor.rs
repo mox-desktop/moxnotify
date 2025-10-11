@@ -3,8 +3,8 @@ use crate::{
     components::{self, Bounds, text::body::Anchor},
     config::button::ButtonState,
     rendering::{text_renderer::Text, texture_renderer},
-    utils::buffers,
 };
+use moxui::shape_renderer;
 use std::sync::Arc;
 
 pub struct AnchorButton {
@@ -29,10 +29,10 @@ impl Component for AnchorButton {
         &self.context.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),

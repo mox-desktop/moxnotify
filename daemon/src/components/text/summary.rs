@@ -4,9 +4,9 @@ use crate::{
     components::{self, Bounds, Component, Data},
     config,
     rendering::texture_renderer,
-    utils::buffers,
 };
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
+use moxui::shape_renderer;
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {
@@ -53,11 +53,11 @@ impl Component for Summary {
         &self.get_notification_style().summary
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),

@@ -4,8 +4,8 @@ use crate::{
     components::{self, Bounds, Component},
     config::button::ButtonState,
     rendering::{text_renderer, texture_renderer},
-    utils::buffers,
 };
+use moxui::shape_renderer;
 use std::sync::atomic::Ordering;
 
 pub struct DismissButton {
@@ -33,11 +33,11 @@ impl Component for DismissButton {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [
                 bounds.width - style.border.size.left - style.border.size.right,

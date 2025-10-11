@@ -12,13 +12,13 @@ use crate::{
     Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
     config::{Size, StyleState},
-    utils::buffers,
 };
 use calloop::{
     LoopHandle, RegistrationToken,
     timer::{TimeoutAction, Timer},
 };
 use glyphon::FontSystem;
+use moxui::shape_renderer;
 use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
@@ -194,11 +194,11 @@ impl Component for Notification<Ready> {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
             rect_size: [
                 extents.width - style.border.size.left - style.border.size.right,

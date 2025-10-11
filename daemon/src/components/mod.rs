@@ -4,15 +4,14 @@ pub mod notification;
 pub mod progress;
 pub mod text;
 
-use std::sync::{Arc, atomic::Ordering};
-
 use crate::{
     Urgency,
     config::{Config, StyleState},
     manager::UiState,
     rendering::texture_renderer,
-    utils::buffers,
 };
+use moxui::shape_renderer;
+use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Default)]
 pub struct Context {
@@ -23,7 +22,7 @@ pub struct Context {
 }
 
 pub enum Data<'a> {
-    Instance(buffers::Instance),
+    Instance(shape_renderer::ShapeInstance),
     TextArea(glyphon::TextArea<'a>),
     Texture(texture_renderer::TextureArea<'a>),
 }
@@ -67,7 +66,7 @@ pub trait Component {
 
     fn get_style(&self) -> &Self::Style;
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance>;
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance>;
 
     fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>>;
 

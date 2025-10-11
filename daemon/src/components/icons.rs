@@ -3,8 +3,9 @@ use crate::{
     components::{self, Bounds, Component},
     config::StyleState,
     rendering::texture_renderer::{self, TextureArea, TextureBounds},
-    utils::{buffers, image_data::ImageData},
+    utils::image_data::ImageData,
 };
+use moxui::shape_renderer;
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
@@ -157,7 +158,7 @@ impl Component for Icons {
         }
     }
 
-    fn get_instances(&self, _: crate::Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, _: crate::Urgency) -> Vec<shape_renderer::ShapeInstance> {
         Vec::new()
     }
 

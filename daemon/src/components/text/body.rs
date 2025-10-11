@@ -6,9 +6,9 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
-    utils::buffers,
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
+use moxui::shape_renderer;
 use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Debug)]
@@ -348,11 +348,11 @@ impl Component for Body {
         &self.get_notification_style().body
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),

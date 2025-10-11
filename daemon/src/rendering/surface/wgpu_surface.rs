@@ -1,10 +1,11 @@
 use crate::{
     config::Config,
-    rendering::{shape_renderer, text_renderer, texture_renderer},
+    rendering::{text_renderer, texture_renderer},
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,
 };
 use anyhow::Context;
+use moxui::shape_renderer;
 use raw_window_handle::{RawWindowHandle, WaylandWindowHandle};
 
 use std::ptr::NonNull;

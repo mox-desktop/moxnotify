@@ -1,9 +1,10 @@
+use moxui::shape_renderer;
+
 use crate::{
     Urgency,
     components::{self, Bounds, Component},
     config::{self, Insets, Size, border::BorderRadius},
     rendering::texture_renderer,
-    utils::buffers,
 };
 use std::sync::atomic::Ordering;
 
@@ -111,7 +112,7 @@ impl Component for Progress {
         vec![]
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
 
         let progress_ratio = (self.value as f32 / 100.0).min(1.0);
@@ -141,7 +142,7 @@ impl Component for Progress {
                 style.border.radius
             };
 
-            instances.push(buffers::Instance {
+            instances.push(shape_renderer::ShapeInstance {
                 rect_pos: [extents.x, extents.y],
                 rect_size: [complete_width, extents.height],
                 rect_color: style.complete_color.color(urgency),
@@ -176,7 +177,7 @@ impl Component for Progress {
                     style.border.radius
                 };
 
-                instances.push(buffers::Instance {
+                instances.push(shape_renderer::ShapeInstance {
                     rect_pos: [extents.x + complete_width, extents.y],
                     rect_size: [incomplete_width, extents.height],
                     rect_color: style.incomplete_color.color(urgency),

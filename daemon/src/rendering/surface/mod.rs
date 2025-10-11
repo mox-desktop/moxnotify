@@ -8,6 +8,7 @@ use crate::{
     wgpu_state,
 };
 use glyphon::FontSystem;
+use moxui::viewport;
 use std::{
     cell::RefCell,
     fmt,
@@ -47,6 +48,7 @@ pub struct Surface {
     pub token: Option<Arc<str>>,
     pub focus_reason: Option<FocusReason>,
     font_system: Rc<RefCell<FontSystem>>,
+    viewport: viewport::Viewport,
 }
 
 impl Surface {
@@ -116,7 +118,10 @@ impl Surface {
 
         log::debug!("New surface created");
 
+        let viewport = viewport::Viewport::new(&wgpu_state.device);
+
         Ok(Self {
+            viewport,
             focus_reason: None,
             token: None,
             configured: false,
@@ -159,6 +164,7 @@ impl Surface {
                     load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
+                depth_slice: None,
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: self.wgpu_surface.depth_buffer.view(),
@@ -187,7 +193,9 @@ impl Surface {
             &mut self.font_system.borrow_mut(),
         )?;
 
-        self.wgpu_surface.shape_renderer.render(&mut render_pass);
+        self.wgpu_surface
+            .shape_renderer
+            .render(&mut render_pass, &self.viewport);
         self.wgpu_surface.texture_renderer.render(&mut render_pass);
         self.wgpu_surface.text_ctx.render(&mut render_pass)?;
 
@@ -217,9 +225,10 @@ impl Surface {
             .text_ctx
             .viewport
             .update(queue, glyphon::Resolution { width, height });
-        self.wgpu_surface
-            .shape_renderer
-            .resize(queue, width as f32, height as f32);
+
+        self.viewport
+            .update(queue, viewport::Resolution { width, height });
+
         self.wgpu_surface
             .texture_renderer
             .resize(queue, width as f32, height as f32);

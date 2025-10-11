@@ -12,12 +12,12 @@ use crate::{
         keymaps::{self},
     },
     rendering::{text_renderer, texture_renderer},
-    utils::buffers,
 };
 use action::ActionButton;
 use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
+use moxui::shape_renderer;
 use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Copy, Debug)]
@@ -232,7 +232,7 @@ impl ButtonManager<Finished> {
         }
     }
 
-    pub fn instances(&self) -> Vec<buffers::Instance> {
+    pub fn instances(&self) -> Vec<shape_renderer::ShapeInstance> {
         let mut buttons = self
             .buttons
             .iter()
@@ -477,11 +477,11 @@ impl Component for Hint {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<buffers::Instance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = &self.context.config.styles.hover.hint;
         let bounds = self.get_render_bounds();
 
-        vec![buffers::Instance {
+        vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),
