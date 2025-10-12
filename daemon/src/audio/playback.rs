@@ -23,8 +23,8 @@ pub struct Data {
 }
 
 pub struct Playback<State = Ready> {
-    thread_loop: pw::thread_loop::ThreadLoop,
-    stream: pw::stream::Stream,
+    thread_loop: pw::thread_loop::ThreadLoopRc,
+    stream: pw::stream::StreamRc,
     duration: Duration,
     _state: State,
     data: Data,
@@ -34,8 +34,8 @@ pub struct Playback<State = Ready> {
 
 impl Playback {
     pub fn new<T>(
-        threadloop: pw::thread_loop::ThreadLoop,
-        core: &pw::core::Core,
+        threadloop: pw::thread_loop::ThreadLoopRc,
+        core: pw::core::CoreRc,
         path: T,
     ) -> anyhow::Result<Playback<Ready>>
     where
@@ -114,7 +114,7 @@ impl Playback {
         }
 
         let lock = threadloop.lock();
-        let stream = pw::stream::Stream::new(
+        let stream = pw::stream::StreamRc::new(
             core,
             "audio-playback",
             properties! {

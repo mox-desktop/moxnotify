@@ -21,10 +21,8 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ../Cargo.lock;
     outputHashes = {
-      "pipewire-0.8.0" = "sha256-Ox3LaoFtl4KN+zfJgUEwNdwRCo3eyOSLQr+C18+H/sM=";
-      "libspa-0.8.0" = "sha256-Ox3LaoFtl4KN+zfJgUEwNdwRCo3eyOSLQr+C18+H/sM=";
-      "moxui-0.1.0" = "sha256-3B0eifgh+JVEAeUky3+nMScVOGnuE6XQTuo2x19ia9k=";
-      "glyphon-0.9.0" = "1jzjyf3l6lnbnnhn480mylqnr2a321vyda89h0fvr95nz94rv43p";
+      "moxui-0.1.0" = "sha256-utLhoYg+0vwabSna99vvVRQ2NF3RquZAQzjiWTMC9tw=";
+      "glyphon-0.9.0" = "sha256-d5CdSfq2pLwdgAmp5ncQQ4lsMfUVIGKhtctSQ4fz8ss=";
     };
   };
 

@@ -6,19 +6,20 @@ use std::path::Path;
 pub struct Audio {
     muted: bool,
     playback: Option<playback::Playback<playback::Played>>,
-    thread_loop: pw::thread_loop::ThreadLoop,
-    _context: pw::context::Context,
-    core: pw::core::Core,
+    thread_loop: pw::thread_loop::ThreadLoopRc,
+    _context: pw::context::ContextRc,
+    core: pw::core::CoreRc,
 }
 
 impl Audio {
     pub fn try_new() -> anyhow::Result<Self> {
         pw::init();
-        let thread_loop = unsafe { pw::thread_loop::ThreadLoop::new(Some("audio-manager"), None)? };
+        let thread_loop =
+            unsafe { pw::thread_loop::ThreadLoopRc::new(Some("audio-manager"), None)? };
         let lock = thread_loop.lock();
         thread_loop.start();
-        let context = pw::context::Context::new(&thread_loop)?;
-        let core = context.connect(None)?;
+        let context = pw::context::ContextRc::new(&thread_loop, None)?;
+        let core = context.connect_rc(None)?;
 
         let thread_clone = thread_loop.clone();
         let pending = core.sync(0).expect("sync failed");
@@ -64,7 +65,7 @@ impl Audio {
             }
         }
 
-        let playback = playback::Playback::new(self.thread_loop.clone(), &self.core, &path)?;
+        let playback = playback::Playback::new(self.thread_loop.clone(), self.core.clone(), &path)?;
         self.playback = Some(playback.start());
         Ok(())
     }
