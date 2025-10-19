@@ -3,9 +3,9 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component},
     config::button::ButtonState,
-    rendering::{text_renderer, texture_renderer},
+    rendering::text_renderer,
 };
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
 pub struct DismissButton {

@@ -1706,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "moxui"
 version = "0.1.0"
-source = "git+https://github.com/mox-desktop/moxui.git?rev=74cf5c612bd35d6f0395edf780dbccc90a391fd6#74cf5c612bd35d6f0395edf780dbccc90a391fd6"
+source = "git+https://github.com/mox-desktop/moxui.git?rev=1a9b535d7e0b30d9e59198bbb3aa7ad598bdf3f5#1a9b535d7e0b30d9e59198bbb3aa7ad598bdf3f5"
 dependencies = [
  "bytemuck",
  "wgpu",

@@ -1,11 +1,11 @@
 use crate::{
     config::Config,
-    rendering::{text_renderer, texture_renderer},
+    rendering::text_renderer,
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,
 };
 use anyhow::Context;
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use raw_window_handle::{RawWindowHandle, WaylandWindowHandle};
 
 use std::ptr::NonNull;
@@ -49,8 +49,17 @@ impl WgpuSurface {
         let alpha_mode = surface_caps
             .alpha_modes
             .iter()
-            .find(|a| **a == wgpu::CompositeAlphaMode::PreMultiplied)
-            .unwrap_or(&surface_caps.alpha_modes[0]);
+            .find(|a| matches!(**a, wgpu::CompositeAlphaMode::PreMultiplied))
+            .unwrap_or_else(|| {
+                log::warn!("Compositor doesn't support PreMultiplied alpha mode. Available: {:?}. Falling back to first option.", surface_caps.alpha_modes);
+                &surface_caps.alpha_modes[0]
+            });
+
+        log::info!(
+            "Surface configured with alpha mode: {:?}, format: {:?}",
+            alpha_mode,
+            surface_format
+        );
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -67,6 +76,8 @@ impl WgpuSurface {
             &wgpu_state.device,
             *surface_format,
             config.general.icon_size,
+            1,
+            1,
         );
 
         let shape_renderer =

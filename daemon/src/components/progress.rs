@@ -1,11 +1,9 @@
-use moxui::shape_renderer;
-
 use crate::{
     Urgency,
     components::{self, Bounds, Component},
     config::{self, Insets, Size, border::BorderRadius},
-    rendering::texture_renderer,
 };
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
 pub struct Progress {

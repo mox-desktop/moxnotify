@@ -180,6 +180,13 @@ impl Surface {
 
         let (instances, text_data, textures) = notifications.data();
 
+        log::debug!(
+            "Rendering frame: {} instances, {} text areas, {} textures",
+            instances.len(),
+            text_data.len(),
+            textures.len()
+        );
+
         self.wgpu_surface
             .shape_renderer
             .prepare(device, queue, &instances);
@@ -196,10 +203,13 @@ impl Surface {
         self.wgpu_surface
             .shape_renderer
             .render(&mut render_pass, &self.viewport);
-        self.wgpu_surface.texture_renderer.render(&mut render_pass);
         self.wgpu_surface.text_ctx.render(&mut render_pass)?;
 
         drop(render_pass); // Drop renderpass and release mutable borrow on encoder
+
+        self.wgpu_surface
+            .texture_renderer
+            .render(&texture_view, &mut encoder, &self.viewport);
 
         queue.submit(Some(encoder.finish()));
         surface_texture.present();
@@ -229,9 +239,12 @@ impl Surface {
         self.viewport
             .update(queue, viewport::Resolution { width, height });
 
-        self.wgpu_surface
-            .texture_renderer
-            .resize(queue, width as f32, height as f32);
+        self.wgpu_surface.texture_renderer.resize(
+            device,
+            self.wgpu_surface.config.format,
+            width as f32,
+            height as f32,
+        );
     }
 
     pub fn focus(&mut self, focus_reason: FocusReason) {

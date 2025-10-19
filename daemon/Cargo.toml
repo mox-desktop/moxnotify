@@ -61,7 +61,7 @@ wgpu = { version = "27.0.1", features = [
   "strict_asserts",
 ], default-features = false }
 #moxui = { path = "../../moxui" }
-moxui = { git = "https://github.com/mox-desktop/moxui.git", rev = "74cf5c612bd35d6f0395edf780dbccc90a391fd6" }
+moxui = { git = "https://github.com/mox-desktop/moxui.git", rev = "1a9b535d7e0b30d9e59198bbb3aa7ad598bdf3f5" }
 glyphon = { git = "https://github.com/grovesNL/glyphon.git", rev = "de4b5b8d4e52310be8df56d82a759593920acc04" }
 libspa-sys = "0.9.2"
 pipewire = "0.9.2"

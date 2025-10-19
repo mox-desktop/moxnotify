@@ -399,7 +399,7 @@ impl Component for Body {
         }]
     }
 
-    fn get_textures(&self) -> Vec<crate::rendering::texture_renderer::TextureArea<'_>> {
+    fn get_textures(&self) -> Vec<moxui::texture_renderer::TextureArea<'_>> {
         Vec::new()
     }
 

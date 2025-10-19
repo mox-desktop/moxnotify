@@ -2,10 +2,12 @@ use crate::{
     Image,
     components::{self, Bounds, Component},
     config::StyleState,
-    rendering::texture_renderer::{self, TextureArea, TextureBounds},
     utils::image_data::ImageData,
 };
-use moxui::shape_renderer;
+use moxui::{
+    shape_renderer,
+    texture_renderer::{self, TextureArea, TextureBounds},
+};
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
@@ -183,23 +185,22 @@ impl Component for Icons {
         let mut bounds = self.get_render_bounds();
 
         if let Some(icon) = self.icon.as_ref() {
-            texture_areas.push(TextureArea {
-                left: bounds.x,
-                top: bounds.y,
-                width: bounds.width,
-                height: bounds.height,
-                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
-                border_size: style.icon.border.size.into(),
-                bounds: TextureBounds {
+            texture_areas.push(TextureArea::simple(
+                icon.data(),
+                bounds.x + style.icon.padding.left,
+                bounds.y + style.icon.padding.top,
+                icon.width() as f32,
+                icon.height() as f32,
+                TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
                     right: (bounds.x + bounds.width) as u32,
                     bottom: (bounds.y + bounds.height) as u32,
                 },
-                data: icon.data(),
-                radius: style.icon.border.radius.into(),
-                depth: 0.9,
-            });
+                style.icon.border.radius.into(),
+                style.icon.border.size.into(),
+                0.9,
+            ));
 
             bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
             bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
@@ -207,24 +208,28 @@ impl Component for Icons {
 
         if let Some(app_icon) = self.app_icon.as_ref() {
             let app_icon_size = self.get_config().general.app_icon_size as f32;
-
-            texture_areas.push(TextureArea {
-                left: bounds.x,
-                top: bounds.y,
-                width: app_icon_size,
-                height: app_icon_size,
-                scale: self.get_ui_state().scale.load(Ordering::Relaxed),
-                border_size: style.icon.border.size.into(),
-                bounds: TextureBounds {
+            texture_areas.push(TextureArea::simple(
+                app_icon.data(),
+                bounds.x + style.icon.padding.left,
+                bounds.y + style.icon.padding.top,
+                app_icon.width() as f32,
+                app_icon.height() as f32,
+                TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
-                    right: (bounds.x + app_icon_size) as u32,
-                    bottom: (bounds.y + app_icon_size) as u32,
+                    right: (bounds.x
+                        + app_icon_size
+                        + style.icon.padding.left
+                        + style.icon.padding.right) as u32,
+                    bottom: (bounds.y
+                        + app_icon_size
+                        + style.icon.padding.top
+                        + style.icon.padding.bottom) as u32,
                 },
-                data: app_icon.data(),
-                radius: style.app_icon.border.radius.into(),
-                depth: 0.8,
-            });
+                style.app_icon.border.radius.into(),
+                style.icon.border.size.into(),
+                0.8,
+            ));
         }
 
         texture_areas
@@ -257,7 +262,7 @@ where
         return Some(icon);
     }
 
-    let image = if icon_path
+    let image_data = if icon_path
         .as_ref()
         .extension()
         .is_some_and(|extension| extension == "svg")
@@ -273,6 +278,7 @@ where
         };
 
         let mut pixmap = tiny_skia::Pixmap::new(icon_size as u32, icon_size as u32)?;
+        pixmap.fill(tiny_skia::Color::TRANSPARENT);
 
         let scale_x = icon_size as f32 / tree.size().width();
         let scale_y = icon_size as f32 / tree.size().height();
@@ -283,19 +289,41 @@ where
             &mut pixmap.as_mut(),
         );
 
-        image::load_from_memory(&pixmap.encode_png().ok()?)
+        let mut data = pixmap.take();
+        data.chunks_exact_mut(4).for_each(|pixel| {
+            let alpha = pixel[3] as f32 / 255.0;
+            if alpha > 0.0 && alpha < 1.0 {
+                pixel[0] = ((pixel[0] as f32 / alpha).min(255.0)) as u8;
+                pixel[1] = ((pixel[1] as f32 / alpha).min(255.0)) as u8;
+                pixel[2] = ((pixel[2] as f32 / alpha).min(255.0)) as u8;
+            }
+        });
+
+        ImageData::try_from(image::DynamicImage::ImageRgba8(image::RgbaImage::from_raw(
+            icon_size as u32,
+            icon_size as u32,
+            data,
+        )?))
+        .ok()
     } else {
-        image::open(icon_path.as_ref())
+        let image = image::open(icon_path.as_ref()).ok()?;
+        ImageData::try_from(image).ok()
     };
 
-    let image_data = ImageData::try_from(image.ok()?);
-    let image_data = image_data
-        .ok()
-        .map(|i| i.to_rgba().resize(icon_size as u32))?;
-    if let Ok(image_data) = image_data.as_ref() {
-        ICON_CACHE.insert(&icon_path, image_data.clone());
+    let image_data = if icon_path
+        .as_ref()
+        .extension()
+        .is_some_and(|ext| ext == "svg")
+    {
+        image_data.and_then(|i| Some(i.to_rgba()))
+    } else {
+        image_data.and_then(|i| i.to_rgba().resize(icon_size as u32).ok())
+    };
+
+    if let Some(ref data) = image_data {
+        ICON_CACHE.insert(&icon_path, data.clone());
     }
-    image_data.ok()
+    image_data
 }
 
 #[cfg(test)]

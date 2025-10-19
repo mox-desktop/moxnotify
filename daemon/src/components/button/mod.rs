@@ -11,13 +11,13 @@ use crate::{
         button::ButtonState,
         keymaps::{self},
     },
-    rendering::{text_renderer, texture_renderer},
+    rendering::text_renderer,
 };
 use action::ActionButton;
 use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Copy, Debug)]

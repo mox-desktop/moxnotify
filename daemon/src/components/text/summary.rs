@@ -3,10 +3,9 @@ use crate::{
     Urgency,
     components::{self, Bounds, Component, Data},
     config,
-    rendering::texture_renderer,
 };
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
 
 pub struct Summary {

@@ -18,9 +18,7 @@ pub struct ImageData {
 impl ImageData {
     #[must_use]
     pub fn to_rgba(self) -> Self {
-        if self.has_alpha {
-            self
-        } else {
+        if !self.has_alpha {
             let mut data = self.data;
             let mut new_data = Vec::with_capacity(data.len() / self.channels as usize * 4);
 
@@ -37,6 +35,8 @@ impl ImageData {
                 rowstride: self.width as i32 * 4,
                 ..self
             }
+        } else {
+            self
         }
     }
 
@@ -60,6 +60,7 @@ impl ImageData {
         Ok(Self {
             width: dst.width(),
             height: dst.height(),
+            rowstride: (dst.width() * 4) as i32,
             data: dst.into_vec(),
             ..self
         })
@@ -227,18 +228,19 @@ mod tests {
 
         assert_eq!(resized.as_ref().unwrap().width, 2);
         assert_eq!(resized.as_ref().unwrap().height, 2);
-        assert_eq!(resized.as_ref().unwrap().rowstride, 2 * 2 * 4);
+        assert_eq!(resized.as_ref().unwrap().rowstride, 2 * 2 * 2);
     }
 
     #[test]
-    fn preserves_alpha_channel() {
+    fn preserves_alpha_channel_premultiplied() {
         let mut img = RgbaImage::new(2, 2);
         img.put_pixel(0, 0, image::Rgba([255, 0, 0, 128]));
         let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
 
-        let converted = image_data.to_rgba().resize(2);
+        let converted = image_data.to_rgba().resize(2).unwrap();
 
-        assert_eq!(converted.unwrap().data[3], 128);
+        assert_eq!(converted.data[3], 128); // Alpha preserved
+        assert_eq!(converted.data[0], 255); // Red channel premultiplied
     }
 
     #[test]

@@ -7,7 +7,6 @@ use super::text::summary::Summary;
 use super::{Bounds, UiState};
 use crate::components;
 use crate::manager::Reason;
-use crate::rendering::texture_renderer;
 use crate::{
     Config, Moxnotify, NotificationData, Urgency,
     components::{Component, Data},
@@ -19,6 +18,7 @@ use calloop::{
 };
 use glyphon::FontSystem;
 use moxui::shape_renderer;
+use moxui::texture_renderer;
 use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,

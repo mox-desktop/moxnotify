@@ -8,9 +8,8 @@ use crate::{
     Urgency,
     config::{Config, StyleState},
     manager::UiState,
-    rendering::texture_renderer,
 };
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
 
 #[derive(Clone, Default)]

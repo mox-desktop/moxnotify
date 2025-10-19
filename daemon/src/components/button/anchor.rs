@@ -2,9 +2,9 @@ use super::{Button, Component, Hint, State};
 use crate::{
     components::{self, Bounds, text::body::Anchor},
     config::button::ButtonState,
-    rendering::{text_renderer::Text, texture_renderer},
+    rendering::text_renderer::Text,
 };
-use moxui::shape_renderer;
+use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
 pub struct AnchorButton {
