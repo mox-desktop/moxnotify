@@ -6,7 +6,7 @@ use crate::{
 };
 use moxui::{
     shape_renderer,
-    texture_renderer::{self, TextureArea, TextureBounds},
+    texture_renderer::{self, Buffer, TextureArea, TextureBounds},
 };
 use resvg::usvg;
 use std::{
@@ -185,22 +185,25 @@ impl Component for Icons {
         let mut bounds = self.get_render_bounds();
 
         if let Some(icon) = self.icon.as_ref() {
-            texture_areas.push(TextureArea::simple(
-                icon.data(),
-                bounds.x + style.icon.padding.left,
-                bounds.y + style.icon.padding.top,
-                icon.width() as f32,
-                icon.height() as f32,
-                TextureBounds {
+            let mut buffer = Buffer::new(icon.width() as f32, icon.height() as f32);
+            buffer.set_bytes(icon.data().into());
+
+            texture_areas.push(TextureArea {
+                left: bounds.x + style.icon.padding.left,
+                top: bounds.y + style.icon.padding.top,
+                scale: 1.0,
+                rotation: 0.,
+                bounds: TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
                     right: (bounds.x + bounds.width) as u32,
                     bottom: (bounds.y + bounds.height) as u32,
                 },
-                style.icon.border.radius.into(),
-                style.icon.border.size.into(),
-                0.9,
-            ));
+                skew: [0., 0.],
+                radius: style.icon.border.radius.into(),
+                buffer,
+                depth: 0.9,
+            });
 
             bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
             bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
