@@ -186,7 +186,7 @@ impl Component for Icons {
 
         if let Some(icon) = self.icon.as_ref() {
             let mut buffer = Buffer::new(icon.width() as f32, icon.height() as f32);
-            buffer.set_bytes(icon.data().into());
+            buffer.set_bytes(icon.data());
 
             texture_areas.push(TextureArea {
                 left: bounds.x + style.icon.padding.left,
@@ -318,7 +318,7 @@ where
         .extension()
         .is_some_and(|ext| ext == "svg")
     {
-        image_data.and_then(|i| Some(i.to_rgba()))
+        image_data.map(|i| i.to_rgba())
     } else {
         image_data.and_then(|i| i.to_rgba().resize(icon_size as u32).ok())
     };
