@@ -432,7 +432,10 @@ impl Default for Icon {
                 size: Insets::default(),
                 radius: BorderRadius::default(),
             },
-            margin: Insets::default(),
+            margin: Insets {
+                right: Size::Value(5.),
+                ..Default::default()
+            },
             padding: Insets::default(),
         }
     }
@@ -1242,6 +1245,9 @@ impl NotificationCounter {
         if let Some(padding) = partial.padding.as_ref() {
             self.padding.apply(padding);
         }
+        if let Some(font) = partial.font.as_ref() {
+            self.font.apply(font);
+        }
     }
 }
 
@@ -1251,8 +1257,12 @@ impl Default for NotificationCounter {
             format: "({} more)".into(),
             border: Border::default(),
             background: Color::rgba([26, 27, 38, 255]),
-            margin: Insets::default(),
-            padding: Insets::default(),
+            margin: Insets {
+                left: Size::Value(5.),
+                right: Size::Value(5.),
+                ..Default::default()
+            },
+            padding: Insets::size(Size::Value(5.)),
             font: Font::default(),
         }
     }

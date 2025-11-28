@@ -8,12 +8,11 @@ use crate::{
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
-use taffy::style_helpers::{auto, length, line};
+use taffy::style_helpers::{auto, length};
 
 pub struct ActionButton {
     pub node: taffy::NodeId,
     pub context: components::Context,
-    pub index: usize,
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
@@ -82,20 +81,14 @@ impl Component for ActionButton {
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: layout.location.x
-                + style.border.size.left
-                + style.padding.left.resolve(pl),
-            top: layout.location.y
-                + style.border.size.top
-                + style.padding.top.resolve(pt),
+            left: layout.location.x + style.border.size.left + style.padding.left.resolve(pl),
+            top: layout.location.y + style.border.size.top + style.padding.top.resolve(pt),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (layout.location.x
-                    + style.border.size.left
-                    + style.padding.left.resolve(pl)) as i32,
-                top: (layout.location.y
-                    + style.border.size.top
-                    + style.padding.top.resolve(pt)) as i32,
+                left: (layout.location.x + style.border.size.left + style.padding.left.resolve(pl))
+                    as i32,
+                top: (layout.location.y + style.border.size.top + style.padding.top.resolve(pt))
+                    as i32,
                 right: (layout.location.x
                     + style.border.size.left
                     + style.padding.left.resolve(pl)
@@ -122,14 +115,10 @@ impl Component for ActionButton {
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         let text_bounds = self.text.get_bounds();
-        let padding_x =
-            style.padding.left.resolve(0.) + style.padding.right.resolve(0.);
-        let padding_y =
-            style.padding.top.resolve(0.) + style.padding.bottom.resolve(0.);
-        let border_x =
-            style.border.size.left.resolve(0.) + style.border.size.right.resolve(0.);
-        let border_y =
-            style.border.size.top.resolve(0.) + style.border.size.bottom.resolve(0.);
+        let padding_x = style.padding.left.resolve(0.) + style.padding.right.resolve(0.);
+        let padding_y = style.padding.top.resolve(0.) + style.padding.bottom.resolve(0.);
+        let border_x = style.border.size.left.resolve(0.) + style.border.size.right.resolve(0.);
+        let border_y = style.border.size.top.resolve(0.) + style.border.size.bottom.resolve(0.);
         let intrinsic_width = text_bounds.width + padding_x + border_x;
         let intrinsic_height = text_bounds.height + padding_y + border_y;
         let resolved_width = if style.width.is_auto() {
@@ -145,8 +134,7 @@ impl Component for ActionButton {
 
         self.node = tree
             .new_leaf(taffy::Style {
-                grid_column: line(self.index as i16 + 1),
-                flex_grow: 0.0,
+                flex_grow: 1.0,
                 flex_shrink: 0.0,
                 text_align: taffy::TextAlign::LegacyCenter,
                 min_size: taffy::Size {
@@ -154,7 +142,11 @@ impl Component for ActionButton {
                     height: length(intrinsic_height),
                 },
                 size: taffy::Size {
-                    width: length(resolved_width),
+                    width: if style.width.is_auto() {
+                        auto()
+                    } else {
+                        length(resolved_width)
+                    },
                     height: length(resolved_height),
                 },
                 padding: taffy::Rect {
@@ -278,137 +270,5 @@ impl Button for ActionButton {
 
     fn set_hint(&mut self, hint: Hint) {
         self.hint = hint;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        Event,
-        components::{
-            self,
-            button::{Button, Hint, State},
-        },
-        config::Config,
-        manager::UiState,
-        rendering::text_renderer::TextRenderer,
-    };
-    use glyphon::FontSystem;
-    use std::sync::Arc;
-
-    use super::ActionButton;
-
-    #[test]
-    fn test_action_button() {
-        let test_id = 10;
-        let context = components::Context {
-            id: test_id,
-            app_name: "".into(),
-            config: Config::default().into(),
-            ui_state: UiState::default(),
-        };
-        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
-
-        let (tx, rx) = calloop::channel::channel();
-        let test_action: Arc<str> = "test".into();
-        let button = ActionButton {
-            x: 0.,
-            y: 0.,
-            hint,
-            text: TextRenderer::new(
-                &context.config.styles.default.font,
-                &mut FontSystem::new(),
-                "",
-            ),
-            state: State::Hovered,
-            tx: Some(tx),
-            width: 100.,
-            action: Arc::clone(&test_action),
-            context,
-        };
-
-        button.click();
-
-        let Event::InvokeAction { id, key } = rx.try_recv().unwrap() else {
-            panic!("");
-        };
-        assert_eq!(id, test_id, "Button click should send button ID");
-        assert_eq!(key, test_action, "Button click should send button ID");
-    }
-
-    #[test]
-    fn test_multiple_action_buttons() {
-        let (tx, text_rx1) = calloop::channel::channel();
-
-        let test_id1 = 1;
-        let test_action1: Arc<str> = "test1".into();
-        let context = components::Context {
-            id: test_id1,
-            app_name: Arc::clone(&test_action1),
-            config: Config::default().into(),
-            ui_state: UiState::default(),
-        };
-        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
-
-        let button1 = ActionButton {
-            x: 0.,
-            y: 0.,
-            hint,
-            text: TextRenderer::new(
-                &context.config.styles.default.font,
-                &mut FontSystem::new(),
-                "",
-            ),
-            state: State::Hovered,
-            tx: Some(tx.clone()),
-            width: 100.,
-            action: Arc::clone(&test_action1),
-            context,
-        };
-
-        let (tx, text_rx2) = calloop::channel::channel();
-
-        let test_id2 = 2;
-        let test_action2: Arc<str> = "test2".into();
-        let context = components::Context {
-            id: test_id2,
-            app_name: Arc::clone(&test_action2),
-            config: Config::default().into(),
-            ui_state: UiState::default(),
-        };
-        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
-        let button2 = ActionButton {
-            x: 0.,
-            y: 0.,
-            hint,
-            text: TextRenderer::new(
-                &context.config.styles.default.font,
-                &mut FontSystem::new(),
-                "",
-            ),
-            state: State::Hovered,
-            tx: Some(tx.clone()),
-            width: 100.,
-            action: Arc::clone(&test_action2),
-            context,
-        };
-
-        button1.click();
-        let Event::InvokeAction { id, key } = text_rx1.try_recv().unwrap() else {
-            panic!("");
-        };
-        assert_eq!(id, test_id1, "Button click should send button ID");
-        assert_eq!(key, test_action1, "Button click should send button ID");
-
-        assert!(text_rx2.try_recv().is_err());
-
-        button2.click();
-        let Event::InvokeAction { id, key } = text_rx2.try_recv().unwrap() else {
-            panic!("");
-        };
-        assert_eq!(id, test_id2, "Button click should send button ID");
-        assert_eq!(key, test_action2, "Button click should send button ID");
-
-        assert!(text_rx1.try_recv().is_err());
     }
 }

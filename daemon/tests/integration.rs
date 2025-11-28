@@ -1,3 +1,5 @@
+// notify-send "Test Notification" "This is a test with urgency, icon, timeout, and category." -u critical -i dialog-information -t 5000 -c "im.received"
+
 use std::collections::HashMap;
 
 #[derive(Default)]

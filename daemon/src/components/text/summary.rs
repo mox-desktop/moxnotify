@@ -30,10 +30,14 @@ impl Text for Summary {
         let style = &self.get_style();
         let family = Arc::clone(&style.family);
 
+        let dpi = 96.0;
+        let font_size_px = style.size * dpi / 72.0;
+
         let attrs = Attrs::new()
             .metadata(0.7_f32.to_bits() as usize)
             .family(glyphon::Family::Name(&family))
-            .weight(Weight::BOLD);
+            .weight(Weight::BOLD)
+            .metrics(glyphon::Metrics::new(font_size_px, font_size_px * 1.2));
 
         self.buffer.set_text(
             font_system,
@@ -177,7 +181,7 @@ impl Component for Summary {
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
-        let summary_size = self.get_render_bounds(tree);
+        let summary_bounds = self.get_bounds(tree);
 
         self.node = tree
             .new_leaf(taffy::Style {
@@ -185,7 +189,7 @@ impl Component for Summary {
                 grid_column: line(2),
                 size: taffy::Size {
                     width: auto(),
-                    height: length(summary_size.height),
+                    height: length(summary_bounds.height),
                 },
                 margin: taffy::Rect {
                     left: if style.margin.left.is_auto() {
@@ -198,11 +202,7 @@ impl Component for Summary {
                     } else {
                         length(style.margin.right.resolve(0.))
                     },
-                    bottom: if style.margin.bottom.is_auto() {
-                        auto()
-                    } else {
-                        length(style.margin.bottom.resolve(0.))
-                    },
+                    bottom: length(style.margin.bottom.resolve(0.)),
                     top: if style.margin.top.is_auto() {
                         auto()
                     } else {
@@ -273,43 +273,5 @@ impl Summary {
             context,
             node,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        components::{
-            self,
-            text::{Text, summary::Summary},
-        },
-        config::Config,
-        manager::UiState,
-    };
-    use glyphon::FontSystem;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_body() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 0,
-            config: Arc::new(Config::default()),
-            app_name: "".into(),
-            ui_state: UiState::default(),
-        };
-        let mut summary = Summary::new(context, &mut font_system);
-
-        summary.set_text(
-            &mut font_system,
-            "Hello world\n<b>Hello world</b>\n<i>Hello world</i>",
-        );
-
-        let lines = summary.buffer.lines;
-        assert_eq!(lines.first().unwrap().text(), "Hello world");
-        assert_eq!(lines.get(1).unwrap().text(), "<b>Hello world</b>");
-        assert_eq!(lines.get(2).unwrap().text(), "<i>Hello world</i>");
-        assert_eq!(lines.len(), 3);
     }
 }

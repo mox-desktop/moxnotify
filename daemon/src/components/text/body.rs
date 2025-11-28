@@ -449,6 +449,7 @@ impl Component for Body {
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
         let bounds = self.get_render_bounds(tree);
+
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: line(2),
@@ -476,11 +477,7 @@ impl Component for Body {
                     } else {
                         length(style.margin.bottom.resolve(0.))
                     },
-                    top: if style.margin.top.is_auto() {
-                        auto()
-                    } else {
-                        length(style.margin.top.resolve(0.))
-                    },
+                    top: length(style.margin.top.resolve(0.)),
                 },
                 padding: taffy::Rect {
                     left: length(style.padding.left.resolve(0.)),

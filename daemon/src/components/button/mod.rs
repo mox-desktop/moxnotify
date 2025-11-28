@@ -212,9 +212,9 @@ impl ButtonManager<Finished> {
             .find(|button| {
                 let layout = tree.global_layout(button.get_node_id()).unwrap();
                 x >= layout.location.x as f64
-                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && x <= (layout.location.x + layout.size.width) as f64
                     && y >= layout.location.y as f64
-                    && y <= (layout.location.y + layout.content_box_height()) as f64
+                    && y <= (layout.location.y + layout.size.height) as f64
             })
             .map(|button| button.click())
             .is_some()
@@ -226,9 +226,9 @@ impl ButtonManager<Finished> {
             .find_map(|button| {
                 let layout = tree.global_layout(button.get_node_id()).unwrap();
                 if x >= layout.location.x as f64
-                    && x <= (layout.location.x + layout.content_box_width()) as f64
+                    && x <= (layout.location.x + layout.size.width) as f64
                     && y >= layout.location.y as f64
-                    && y <= (layout.location.y + layout.content_box_height()) as f64
+                    && y <= (layout.location.y + layout.size.height) as f64
                 {
                     button.hover();
                     Some(())
@@ -399,8 +399,7 @@ impl<S> ButtonManager<S> {
         let mut buttons = actions
             .iter()
             .cloned()
-            .enumerate()
-            .map(|(index, action)| {
+            .map(|action| {
                 let font = &self
                     .context
                     .config
@@ -423,7 +422,6 @@ impl<S> ButtonManager<S> {
                     state: State::Unhovered,
                     width: 0.,
                     tx: self.sender.clone(),
-                    index,
                 }) as Box<dyn Button<Style = ButtonState>>
             })
             .collect();

@@ -25,7 +25,7 @@ use std::{
     sync::{Arc, atomic::Ordering},
     time::Duration,
 };
-use taffy::style_helpers::{auto, fr, length, max_content};
+use taffy::style_helpers::{auto, fr, length, line, max_content, span};
 
 pub enum NotificationState {
     Empty(Notification<Empty>),
@@ -219,6 +219,9 @@ impl Component for Notification<Ready> {
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
+        let padding_left = style.padding.left.resolve(0.);
+        let padding_right = style.padding.right.resolve(0.);
+
         self.node = tree
             .new_leaf(taffy::Style {
                 size: taffy::Size {
@@ -304,11 +307,28 @@ impl Component for Notification<Ready> {
                 .new_leaf(taffy::Style {
                     display: taffy::Display::Flex,
                     flex_direction: taffy::FlexDirection::Row,
-                    justify_content: Some(taffy::JustifyContent::SpaceEvenly),
+                    justify_content: Some(taffy::JustifyContent::FlexStart),
                     align_items: Some(taffy::AlignItems::Center),
+                    grid_row: line(3),
+                    grid_column: taffy::Line {
+                        start: line(1),
+                        end: span(3),
+                    },
                     size: taffy::Size {
                         width: auto(),
                         height: auto(),
+                    },
+                    min_size: taffy::Size {
+                        width: length(0.),
+                        height: auto(),
+                    },
+                    align_self: Some(taffy::AlignSelf::Stretch),
+                    justify_self: Some(taffy::JustifySelf::Stretch),
+                    margin: taffy::Rect {
+                        left: length(-padding_left),
+                        right: length(-padding_right),
+                        top: length(5.),
+                        bottom: length(10.),
                     },
                     ..Default::default()
                 })
@@ -455,7 +475,7 @@ impl<State> Notification<State> {
             ui_state,
         };
 
-        Notification {
+        let mut notification = Notification {
             node: tree.new_leaf(taffy::Style::DEFAULT).unwrap(),
             y: 0.,
             x: 0.,
@@ -464,12 +484,33 @@ impl<State> Notification<State> {
             progress: None,
             registration_token: None,
             buttons: None,
-            data,
+            data: data.clone(),
             summary: Some(Summary::new(tree, context.clone(), font_system)),
             body: None,
             context,
             _state: std::marker::PhantomData,
+        };
+
+        let style = notification.get_style();
+        let notification_width = style.width.resolve(0.);
+
+        if let Some(summary) = notification.summary.as_mut() {
+            summary.set_text(font_system, &data.summary);
+
+            let summary_style = summary.get_style();
+            let padding_x =
+                summary_style.padding.left.resolve(0.) + summary_style.padding.right.resolve(0.);
+            let border_x = summary_style.border.size.left.resolve(0.)
+                + summary_style.border.size.right.resolve(0.);
+            let content_width = notification_width - padding_x - border_x;
+
+            summary.set_size(font_system, Some(content_width), None);
+            summary.buffer.shape_until_scroll(font_system, false);
         }
+
+        notification.update_layout(tree);
+
+        notification
     }
 
     #[must_use]

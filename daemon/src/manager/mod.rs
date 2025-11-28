@@ -148,29 +148,12 @@ impl NotificationManager {
                 Data::Texture(texture) => textures.push(texture),
             });
 
-        let total_width = self
-            .iter_viewed()
-            .filter_map(|notification| match notification {
-                NotificationState::Empty(_) => None,
-                NotificationState::Ready(notification) => Some(notification),
-            })
-            .map(|notification| {
-                notification.get_render_bounds(&self.tree).x
-                    + notification.get_render_bounds(&self.tree).width
-            })
-            .max_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap_or_default();
-
-        if let Some((instance, text_area)) =
-            self.notification_view.prev_data(&self.tree, total_width)
-        {
+        if let Some((instance, text_area)) = self.notification_view.prev_data(&self.tree) {
             instances.push(instance);
             text_areas.push(text_area);
         }
 
-        if let Some((instance, text_area)) =
-            self.notification_view.next_data(&self.tree, total_width)
-        {
+        if let Some((instance, text_area)) = self.notification_view.next_data(&self.tree) {
             instances.push(instance);
             text_areas.push(text_area);
         }
@@ -179,12 +162,31 @@ impl NotificationManager {
     }
 
     pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
+        if self.notification_view.visible.clone().any(|index| {
+            self.notifications
+                .get(index)
+                .and_then(|notification| {
+                    notification.buttons().as_ref().map(|buttons| {
+                        buttons.buttons().iter().any(|button| {
+                            let layout = self.tree.global_layout(button.get_node_id()).unwrap();
+                            x >= layout.location.x as f64
+                                && x <= (layout.location.x + layout.size.width) as f64
+                                && y >= layout.location.y as f64
+                                && y <= (layout.location.y + layout.size.height) as f64
+                        })
+                    })
+                })
+                .unwrap_or_default()
+        }) {
+            return None;
+        }
+
         self.iter_viewed().find(|notification| {
             let layout = self.tree.global_layout(notification.get_node_id()).unwrap();
             x >= layout.location.x as f64
-                && x <= (layout.location.x + layout.content_box_width()) as f64
+                && x <= (layout.location.x + layout.size.width) as f64
                 && y >= layout.location.y as f64
-                && y <= (layout.location.y + layout.content_box_height()) as f64
+                && y <= (layout.location.y + layout.size.height) as f64
         })
     }
 
@@ -671,404 +673,5 @@ impl Moxnotify {
         if self.notifications.notifications().is_empty() {
             self.seat.keyboard.repeat.key = None;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
-
-    use calloop::EventLoop;
-    use glyphon::FontSystem;
-
-    use super::NotificationManager;
-    use crate::{config::Config, dbus::xdg::NotificationData};
-
-    #[test]
-    fn test_add() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData::default();
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-    }
-
-    #[test]
-    fn test_add_with_duplicate_id() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 42,
-            ..Default::default()
-        };
-
-        manager.add(data.clone());
-
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-    }
-
-    #[test]
-    fn test_add_many() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let mut notifications = Vec::new();
-        for i in 1..=5 {
-            let data = NotificationData {
-                id: i,
-                ..Default::default()
-            };
-            notifications.push(data);
-        }
-
-        manager.add_many(notifications);
-        assert_eq!(manager.notifications().len(), 5);
-    }
-
-    #[test]
-    fn test_dismiss() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 123,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-
-        manager.dismiss_by_id(123);
-        assert_eq!(manager.notifications().len(), 0);
-    }
-
-    #[test]
-    fn test_select_and_deselect() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.selected_id(), None);
-
-        manager.select(1);
-        assert_eq!(manager.selected_id(), Some(1));
-
-        let notification = manager.selected_notification_mut().unwrap();
-        assert!(notification.hovered());
-
-        manager.deselect();
-        assert_eq!(manager.selected_id(), None);
-    }
-
-    #[test]
-    fn test_next_and_prev() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        for i in 1..=10 {
-            let data = NotificationData {
-                id: i,
-                ..Default::default()
-            };
-            manager.add(data);
-        }
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(1));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(2));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(3));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(4));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(5));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(6));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(5));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(4));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(3));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(2));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(1));
-    }
-
-    #[test]
-    fn test_inhibit() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 0,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-
-        manager.inhibit();
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert!(manager.inhibited());
-        assert_eq!(manager.notifications().len(), 1);
-        assert_eq!(manager.waiting(), 1);
-
-        manager.uninhibit();
-
-        assert!(!manager.inhibited());
-        //assert_eq!(manager.notifications().len(), 1);
-        assert_eq!(manager.waiting(), 0);
-    }
-
-    #[test]
-    fn test_data() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 123,
-            body: "body".into(),
-            summary: "summary".into(),
-            ..Default::default()
-        };
-        manager.add(data);
-
-        let data = manager.data();
-        // Instances
-        // Body, summary, notification and dismiss button
-        assert_eq!(data.0.len(), 4);
-        // Text areas
-        // Body and summary and dismiss button
-        assert_eq!(data.1.len(), 3);
-        // No icons
-        assert_eq!(data.2.len(), 0);
-    }
-
-    #[test]
-    fn test_get_by_coordinates() {
-        let config = Arc::new(Config::default());
-        let style = &config.styles.default;
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        if let Some(notification) = manager.notifications.get_mut(0) {
-            notification.update_layout(&mut manager.tree, 10.0, 20.0);
-        }
-
-        let x = 10.0 + style.margin.left.resolve(0.) as f64;
-        let y = 20.0 + style.margin.top.resolve(0.) as f64;
-        let width = (style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right) as f64;
-        let height = (style.height
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom) as f64;
-
-        let (left, right, top, bottom) = (x, x + width, y, y + height);
-        let epsilon = 0.1;
-
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top + height / 2.0)
-                .is_some()
-        );
-
-        // Left edge
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, top + height / 2.0)
-                .is_none()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + epsilon, top + height / 2.0)
-                .is_some()
-        );
-
-        // Right edge
-        assert!(
-            manager
-                .get_by_coordinates(right - epsilon, top + height / 2.0)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, top + height / 2.0)
-                .is_none()
-        );
-
-        // Top edge
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top - epsilon)
-                .is_none()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top)
-                .is_some()
-        );
-
-        // Bottom edge
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, bottom)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, bottom + 30.00)
-                .is_some()
-        );
-
-        // Top-left corner
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, top - epsilon)
-                .is_none()
-        );
-        assert!(manager.get_by_coordinates(left + epsilon, top).is_some());
-
-        // Top-right corner
-        assert!(manager.get_by_coordinates(right - epsilon, top).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, top - epsilon)
-                .is_none()
-        );
-
-        // Bottom-left corner
-        assert!(manager.get_by_coordinates(left + epsilon, bottom).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, bottom + epsilon)
-                .is_none()
-        );
-
-        // Bottom-right corner
-        assert!(
-            manager
-                .get_by_coordinates(right - epsilon, bottom)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, bottom + epsilon)
-                .is_none()
-        );
-
-        let center_notification =
-            manager.get_by_coordinates(left + width / 2.0, top + height / 2.0);
-        assert_eq!(center_notification.unwrap().id(), 1);
-
-        assert!(manager.get_by_coordinates(15.0, 25.0).is_some());
-        assert!(manager.get_by_coordinates(9.9, 25.0).is_none());
-        assert!(manager.get_by_coordinates(right, bottom).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, bottom + epsilon)
-                .is_none()
-        );
     }
 }

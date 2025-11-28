@@ -149,6 +149,9 @@ impl Component for Icons {
                     width: length(width),
                     height: length(height),
                 },
+                align_self: Some(taffy::AlignSelf::Start),
+                justify_self: Some(taffy::JustifySelf::Start),
+                align_content: Some(taffy::AlignContent::Start),
                 padding: taffy::Rect {
                     top: length(style.padding.top.resolve(0.)),
                     left: length(style.padding.left.resolve(0.)),

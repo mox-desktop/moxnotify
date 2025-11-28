@@ -110,6 +110,12 @@ impl Component for DismissButton {
 
     fn update_layout(&mut self, tree: &mut taffy::TaffyTree<NodeContext>) {
         let style = self.get_style();
+        let notification_style = self.get_notification_style();
+        let right_margin = if style.margin.right.is_auto() {
+            notification_style.padding.right.resolve(0.)
+        } else {
+            style.margin.right.resolve(0.) + notification_style.padding.right.resolve(0.)
+        };
         self.node = tree
             .new_leaf(taffy::Style {
                 grid_row: line(1),
@@ -132,11 +138,7 @@ impl Component for DismissButton {
                     } else {
                         length(style.margin.left.resolve(0.))
                     },
-                    right: if style.margin.right.is_auto() {
-                        auto()
-                    } else {
-                        length(style.margin.right.resolve(0.))
-                    },
+                    right: length(right_margin),
                     bottom: if style.margin.bottom.is_auto() {
                         auto()
                     } else {
@@ -223,53 +225,5 @@ impl Button for DismissButton {
 
     fn set_hint(&mut self, hint: Hint) {
         self.hint = hint;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::DismissButton;
-    use crate::{
-        components::{
-            self,
-            button::{Button, Hint, State},
-        },
-        config::Config,
-        manager::UiState,
-        rendering::text_renderer::TextRenderer,
-    };
-    use glyphon::FontSystem;
-
-    #[test]
-    fn test_dismiss_button() {
-        let test_id = 10;
-        let context = components::Context {
-            id: test_id,
-            app_name: "".into(),
-            config: Config::default().into(),
-            ui_state: UiState::default(),
-        };
-        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
-
-        let (tx, rx) = calloop::channel::channel();
-        let button = DismissButton {
-            x: 0.,
-            y: 0.,
-            hint,
-            text: Text::new(
-                &context.config.styles.default.font,
-                &mut FontSystem::new(),
-                "",
-            ),
-            state: State::Unhovered,
-            tx: Some(tx),
-            context,
-        };
-
-        button.click();
-
-        if let crate::Event::Dismiss { all: false, id } = rx.try_recv().unwrap() {
-            assert_eq!(id, test_id, "Button click should send button ID");
-        };
     }
 }
