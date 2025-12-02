@@ -1,6 +1,7 @@
 use crate::{EmitEvent, Event, history};
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 #[cfg(not(debug_assertions))]
 use zbus::fdo::DBusProxy;
@@ -13,6 +14,18 @@ struct MoxnotifyInterface {
 
 #[zbus::interface(name = "pl.mox.Notify")]
 impl MoxnotifyInterface {
+    async fn output(&self, all: bool, output: Arc<str>) {
+        let selected_output = if all {
+            Event::SetOutput(None)
+        } else {
+            Event::SetOutput(Some(output))
+        };
+
+        if let Err(e) = self.event_sender.send(selected_output) {
+            log::error!("{e}");
+        }
+    }
+
     async fn focus(&self) {
         if let Err(e) = self.event_sender.send(Event::FocusSurface) {
             log::error!("{e}");
