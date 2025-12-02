@@ -10,6 +10,19 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum NotifyCommand {
+    #[command(about = "Change on which output the notifications will show up")]
+    Output {
+        #[arg(long, group = "mode", help = "Set the output to a specific value")]
+        set: Option<String>,
+
+        #[arg(
+            long,
+            group = "mode",
+            help = "Unset so the system chooses automatically"
+        )]
+        unset: bool,
+    },
+
     #[command(about = "Focus the notification viewer")]
     Focus,
 
@@ -94,6 +107,15 @@ async fn main() -> anyhow::Result<()> {
             SwitchAction::Toggle => notify::Event::ToggleInhibit,
             SwitchAction::State => notify::Event::InhibitState,
         },
+        NotifyCommand::Output { set, unset } => {
+            if let Some(output) = set {
+                notify::Event::SetOutput(Some(output))
+            } else if unset {
+                notify::Event::SetOutput(None)
+            } else {
+                unreachable!()
+            }
+        }
     };
 
     notify::emit(event).await.map_err(Into::into)

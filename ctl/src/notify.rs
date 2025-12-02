@@ -20,6 +20,7 @@ pub enum Event {
     ToggleInhibit,
     ToggleMute,
     MuteState,
+    SetOutput(Option<String>),
 }
 
 #[derive(Default, PartialEq, Clone, Copy, Type, Deserialize)]
@@ -72,6 +73,8 @@ trait Notify {
     async fn inhibited(&self) -> zbus::Result<bool>;
 
     async fn waiting(&self) -> zbus::Result<u32>;
+
+    async fn output(&self, all: bool, output: String) -> zbus::Result<()>;
 }
 
 pub async fn emit(event: Event) -> zbus::Result<()> {
@@ -88,6 +91,11 @@ pub async fn emit(event: Event) -> zbus::Result<()> {
     let mut out = io::stdout().lock();
 
     match event {
+        Event::SetOutput(output) => {
+            notify
+                .output(output.is_none(), output.unwrap_or("".to_string()))
+                .await?
+        }
         Event::Focus => notify.focus().await?,
         Event::Waiting => {
             writeln!(out, "{}", notify.waiting().await?)?;

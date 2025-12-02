@@ -57,14 +57,10 @@ impl Surface {
         wl_surface: wl_surface::WlSurface,
         layer_shell: &zwlr_layer_shell_v1::ZwlrLayerShellV1,
         qh: &QueueHandle<Moxnotify>,
-        outputs: &[Output],
+        output: Option<&Output>,
         config: &Config,
         font_system: Rc<RefCell<FontSystem>>,
     ) -> anyhow::Result<Self> {
-        let output = outputs
-            .iter()
-            .find(|output| output.name.as_ref() == config.general.output.as_ref());
-
         let layer_surface = layer_shell.get_layer_surface(
             &wl_surface,
             output.map(|o| &o.wl_output),
@@ -338,12 +334,31 @@ impl Moxnotify {
 
         if self.surface.is_none() {
             let wl_surface = self.compositor.create_surface(&self.qh, ());
+            let output = self
+                .outputs
+                .iter()
+                .find(|output| output.name.as_ref() == self.output.as_ref());
+
+            if let Some(output) = output
+                && let Some(output_name) = output.name.as_ref()
+                && self.output.is_some()
+            {
+                log::info!("Surface created on output: {}; Reason: cli", output_name);
+            } else if let Some(output) = output
+                && let Some(output_name) = output.name.as_ref()
+                && output.name.is_some()
+            {
+                log::info!("Surface created on output: {}; Reason: config", output_name);
+            } else {
+                log::info!("Surface will be created on output chosen by compositor");
+            }
+
             self.surface = Surface::new(
                 &self.wgpu_state,
                 wl_surface,
                 &self.layer_shell,
                 &self.qh,
-                &self.outputs,
+                output,
                 &self.config,
                 Rc::clone(&self.font_system),
             )
