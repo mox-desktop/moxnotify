@@ -137,7 +137,7 @@ pub struct General {
     pub margin: Insets,
     pub anchor: Anchor,
     pub layer: Layer,
-    pub output: Option<Box<str>>,
+    pub output: Option<Arc<str>>,
     pub default_timeout: Timeout,
     pub ignore_timeout: bool,
 }

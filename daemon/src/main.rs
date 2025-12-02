@@ -48,7 +48,7 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
 #[derive(Debug)]
 pub struct Output {
     id: u32,
-    name: Option<Box<str>>,
+    name: Option<Arc<str>>,
     scale: f32,
     wl_output: wl_output::WlOutput,
 }
@@ -80,6 +80,7 @@ pub struct Moxnotify {
     compositor: wl_compositor::WlCompositor,
     audio: Audio,
     font_system: Rc<RefCell<FontSystem>>,
+    output: Option<Arc<str>>,
 }
 
 impl Moxnotify {
@@ -112,6 +113,8 @@ impl Moxnotify {
         });
 
         Ok(Self {
+            // TODO: figure out a better way to handle it, Box clone is expensive
+            output: config.general.output.clone(),
             idle_notification,
             audio: Audio::try_new().unwrap(),
             globals,
@@ -419,6 +422,19 @@ impl Moxnotify {
 
                 return Ok(());
             }
+            Event::SetOutput(output) => {
+                log::info!("Setting output to: {output:?}");
+                self.output = output;
+            }
+            Event::ShowOutput => {
+                log::debug!("Getting current output");
+                _ = self.emit_sender.send(EmitEvent::ShowOutput(
+                    self.output
+                        .as_ref()
+                        .map(Arc::clone)
+                        .unwrap_or("auto".into()),
+                ));
+            }
         }
 
         self.update_surface_size();
@@ -489,6 +505,7 @@ pub enum EmitEvent {
     Muted(bool),
     HistoryState(history::HistoryState),
     Inhibited(bool),
+    ShowOutput(Arc<str>),
 }
 
 #[derive(Debug)]
@@ -510,6 +527,8 @@ pub enum Event {
     Inhibit,
     Uninhibit,
     GetInhibited,
+    SetOutput(Option<Arc<str>>),
+    ShowOutput,
 }
 
 impl Dispatch<wl_output::WlOutput, ()> for Moxnotify {
