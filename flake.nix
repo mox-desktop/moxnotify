@@ -25,6 +25,7 @@
                 libclang
                 libGL
                 egl-wayland
+                protobuf_30
                 ;
             };
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;
