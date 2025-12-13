@@ -11,7 +11,7 @@ keywords.workspace = true
 
 [dependencies]
 env_logger = { version = "0.11.6", default-features = false }
-serde = { version = "1.0.217", features = ["rc"], default-features = false }
+serde = { version = "1.0.217", features = ["derive", "rc"], default-features = false }
 futures-lite = { version = "2.6.0", default-features = false }
 tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = "0.1"
@@ -22,6 +22,8 @@ log = "0.4.27"
 tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
+rusqlite = { version = "0.35.0", features = ["bundled"] }
+base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

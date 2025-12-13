@@ -1,3 +1,4 @@
+mod history;
 pub mod collector {
     tonic::include_proto!("collector");
 }
@@ -8,6 +9,7 @@ use env_logger::Builder;
 use log::LevelFilter;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -15,9 +17,35 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
 
-#[derive(Default)]
+// TODO: set through config, also change paths
+fn path() -> PathBuf {
+    let path = std::env::var("XDG_DATA_HOME")
+        .map(|data_home| PathBuf::from(data_home).join("moxnotify-control-plane/db.mox"))
+        .or_else(|_| {
+            std::env::var("HOME")
+                .map(|home| PathBuf::from(home).join(".local/share/moxnotify-control-plane/db.mox"))
+        })
+        .unwrap_or_else(|_| PathBuf::from(""));
+
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).ok();
+    }
+
+    path
+}
+
 pub struct ControlPlaneService {
+    history: Arc<Mutex<history::History>>,
     active_connections: Arc<Mutex<HashMap<SocketAddr, ConnectionInfo>>>,
+}
+
+impl ControlPlaneService {
+    fn new() -> Self {
+        Self {
+            history: Arc::new(Mutex::new(history::History::try_new(&path()).unwrap())),
+            active_connections: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
 }
 
 struct ConnectionInfo {
@@ -55,6 +83,8 @@ impl ControlPlane for ControlPlaneService {
 
         let mut stream = request.into_inner();
         let (_tx, rx) = mpsc::channel(128);
+
+        let history = Arc::clone(&self.history);
 
         tokio::spawn(async move {
             while let Some(msg_result) = stream.next().await {
@@ -104,6 +134,11 @@ impl ControlPlane for ControlPlaneService {
                                     notification.hints.as_ref().unwrap().sound_name,
                                     image_desc,
                                 );
+
+                                let history = history.lock().unwrap();
+                                if let Err(e) = history.insert(&notification) {
+                                    log::error!("Failed to insert notification into database");
+                                }
 
                                 // TODO: Route notification to frontend
                             }
@@ -156,7 +191,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let addr = "[::1]:50051".parse()?;
-    let service = ControlPlaneService::default();
+    let service = ControlPlaneService::new();
 
     log::info!("Control plane server listening on {}", addr);
 

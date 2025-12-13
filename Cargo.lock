@@ -596,10 +596,12 @@ name = "control_plane"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "env_logger",
  "futures-lite",
  "log",
  "prost",
+ "rusqlite",
  "serde",
  "serde_json",
  "tokio",
