@@ -1,4 +1,3 @@
-use fast_image_resize::{self as fr, ResizeOptions};
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use image::DynamicImage;

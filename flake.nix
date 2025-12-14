@@ -28,6 +28,8 @@
                 protobuf_30
                 pnpm
                 nodejs_25
+                tilt
+                valkey
                 ;
             };
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;

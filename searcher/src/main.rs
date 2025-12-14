@@ -1,83 +1,130 @@
+use axum::Json;
+use axum::extract::State;
+use axum::routing::post;
+use axum::{Router, routing::get};
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::path::PathBuf;
 use tantivy::collector::TopDocs;
+use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
-use tantivy::schema::*;
-use tantivy::{Index, IndexWriter, ReloadPolicy, doc};
-use tempfile::TempDir;
+use tantivy::tokenizer::{NgramTokenizer, TextAnalyzer};
+use tantivy::{
+    DocAddress, Index, IndexReader, IndexWriter, Order, ReloadPolicy, Searcher, doc, schema::*,
+};
 
-fn main() -> tantivy::Result<()> {
-    let index_path = TempDir::new()?;
+fn path() -> PathBuf {
+    let path = std::env::var("XDG_DATA_HOME")
+        .map(|data_home| PathBuf::from(data_home).join("moxnotify"))
+        .or_else(|_| {
+            std::env::var("HOME").map(|home| PathBuf::from(home).join(".local/share/moxnotify"))
+        })
+        .unwrap_or_else(|_| PathBuf::from(""));
 
-    let mut schema_builder = Schema::builder();
-    schema_builder.add_text_field("title", TEXT | STORED);
-    schema_builder.add_text_field("body", TEXT);
-    let schema = schema_builder.build();
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).ok();
+    }
 
-    let index = Index::create_in_dir(&index_path, schema.clone())?;
-    let mut index_writer: IndexWriter = index.writer(50_000_000)?;
+    path
+}
 
-    let title = schema.get_field("title").unwrap();
+#[derive(Clone)]
+struct GlobalState {
+    reader: IndexReader,
+    parser: QueryParser,
+    schema: Schema,
+}
+
+#[tokio::main]
+async fn main() -> tantivy::Result<()> {
+    let index = Index::open(MmapDirectory::open(path()).unwrap()).unwrap();
+
+    let schema = index.schema();
+    let summary = schema.get_field("summary").unwrap();
     let body = schema.get_field("body").unwrap();
-
-    let _old_man_doc = TantivyDocument::default();
-
-    index_writer.add_document(doc!(
-        title => "The Old Man and the Sea",
-        body =>
-        "He was an old man who fished alone in a skiff in the Gulf Stream and he had gone \
-         eighty-four days now without taking a fish.",
-    ));
-
-    index_writer.add_document(doc!(
-    title => "Of Mice and Men",
-    body => "A few miles south of Soledad, the Salinas River drops in close to the hillside \
-            bank and runs deep and green. The water is warm too, for it has slipped twinkling \
-            over the yellow sands in the sunlight before reaching the narrow pool. On one \
-            side of the river the golden foothill slopes curve up to the strong and rocky \
-            Gabilan Mountains, but on the valley side the water is lined with trees—willows \
-            fresh and green with every spring, carrying in their lower leaf junctures the \
-            debris of the winter’s flooding; and sycamores with mottled, white, recumbent \
-            limbs and branches that arch over the pool"
-    ))?;
-
-    index_writer.add_document(doc!(
-    title => "Frankenstein",
-    title => "The Modern Prometheus",
-    body => "You will rejoice to hear that no disaster has accompanied the commencement of an \
-             enterprise which you have regarded with such evil forebodings.  I arrived here \
-             yesterday, and my first task is to assure my dear sister of my welfare and \
-             increasing confidence in the success of my undertaking."
-    ))?;
-
-    index_writer.commit()?;
+    let app_name = schema.get_field("app_name").unwrap();
+    let hint_category = schema.get_field("hint_category").unwrap();
 
     let reader = index
         .reader_builder()
-        .reload_policy(ReloadPolicy::OnCommitWithDelay)
+        .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
 
-    let searcher = reader.searcher();
+    let mut query_parser =
+        QueryParser::for_index(&index, vec![summary, body, app_name, hint_category]);
+    query_parser.set_field_boost(summary, 2.);
 
-    let query_parser = QueryParser::for_index(&index, vec![title, body]);
-    let query = query_parser.parse_query("sea whale")?;
+    let state = GlobalState {
+        reader,
+        schema,
+        parser: query_parser,
+    };
 
-    let top_docs = searcher.search(&query, &TopDocs::with_limit(10))?;
+    let app = Router::new()
+        .route("/api/search", post(search))
+        .with_state(state);
 
-    for (_score, doc_address) in top_docs {
-        let retrieved_doc: TantivyDocument = searcher.doc(doc_address)?;
-        println!("{}", retrieved_doc.to_json(&schema));
-    }
-
-    let query = query_parser.parse_query("title:sea^20 body:whale^70")?;
-
-    let (_score, doc_address) = searcher
-        .search(&query, &TopDocs::with_limit(1))?
-        .into_iter()
-        .next()
-        .unwrap();
-
-    let explanation = query.explain(&searcher, doc_address)?;
-
-    println!("{}", explanation.to_pretty_json());
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3029").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 
     Ok(())
+}
+
+async fn search(
+    State(state): State<GlobalState>,
+    Json(payload): Json<Query>,
+) -> Json<Vec<serde_json::Value>> {
+    state.reader.reload().unwrap();
+
+    let searcher = state.reader.searcher();
+    let query = state.parser.parse_query(&payload.query).unwrap();
+
+    let limit = payload.max_hits.unwrap_or(20) as usize;
+    let top_docs: Vec<DocAddress> = if let Some(sort_by) = payload.sort_by {
+        let sort_order = match payload.sort_order {
+            Some(SortOrder::Asc) => Order::Asc,
+            _ => Order::Desc,
+        };
+        searcher
+            .search(
+                &query,
+                &TopDocs::with_limit(limit).order_by_u64_field(sort_by, sort_order),
+            )
+            .unwrap()
+            .into_iter()
+            .map(|(_, addr)| addr)
+            .collect()
+    } else {
+        searcher
+            .search(&query, &TopDocs::with_limit(limit))
+            .unwrap()
+            .into_iter()
+            .map(|(_, addr)| addr)
+            .collect()
+    };
+
+    let docs = top_docs
+        .into_iter()
+        .map(|doc| {
+            let doc: TantivyDocument = searcher.doc(doc).unwrap();
+            serde_json::from_str(&doc.to_json(&state.schema)).unwrap()
+        })
+        .collect();
+
+    Json(docs)
+}
+
+#[derive(Deserialize)]
+struct Query {
+    query: String,
+    max_hits: Option<u32>,
+    sort_by: Option<String>,
+    sort_order: Option<SortOrder>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum SortOrder {
+    Asc,
+    Desc,
 }

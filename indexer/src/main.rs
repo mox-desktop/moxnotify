@@ -64,18 +64,18 @@ async fn main() -> tantivy::Result<()> {
 
     let mut schema_builder = Schema::builder();
 
-    schema_builder.add_u64_field("id", INDEXED | STORED);
+    schema_builder.add_u64_field("id", INDEXED | STORED | FAST);
 
     schema_builder.add_text_field("summary", TEXT | STORED);
     schema_builder.add_text_field("body", TEXT | STORED);
-    schema_builder.add_text_field("app_name", TEXT | STORED);
+    schema_builder.add_text_field("app_name", STRING | STORED | FAST);
     schema_builder.add_text_field("app_icon", STORED);
 
     // searchable + stored hints
     schema_builder.add_text_field("hint_category", TEXT | STORED);
     schema_builder.add_text_field("hint_desktop_entry", TEXT | STORED);
-    schema_builder.add_i64_field("hint_value", INDEXED | STORED);
-    schema_builder.add_i64_field("hint_urgency", INDEXED | STORED);
+    schema_builder.add_i64_field("hint_value", INDEXED | STORED | FAST);
+    schema_builder.add_i64_field("hint_urgency", INDEXED | STORED | FAST);
 
     // stored-only hints
     schema_builder.add_bool_field("hint_action_icons", STORED);
@@ -94,7 +94,7 @@ async fn main() -> tantivy::Result<()> {
 
     let index =
         Index::open_or_create(MmapDirectory::open(path()).unwrap(), schema.clone()).unwrap();
-    let index_writer: IndexWriter = index.writer(50_000_000)?;
+    let mut index_writer: IndexWriter = index.writer(50_000_000)?;
 
     let id = schema.get_field("id").unwrap();
     let summary = schema.get_field("summary").unwrap();
@@ -122,7 +122,7 @@ async fn main() -> tantivy::Result<()> {
             && let Some(notification) = msg.notification
         {
             log::info!(
-                "Received notification: id={}, app_name='{}', summary='{}', body='{}'",
+                "Indexing notification: id={}, app_name='{}', summary='{}', body='{}'",
                 notification.id,
                 notification.app_name,
                 notification.summary,
@@ -183,6 +183,8 @@ async fn main() -> tantivy::Result<()> {
 
             index_writer.add_document(doc);
         }
+
+        index_writer.commit()?;
     }
 
     Ok(())
