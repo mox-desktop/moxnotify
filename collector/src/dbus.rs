@@ -4,7 +4,6 @@ use crate::collector::CloseReason;
 use crate::image_data::ImageData;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
 use tokio::sync::broadcast;
@@ -12,7 +11,7 @@ use tokio::sync::broadcast;
 use zbus::fdo::DBusProxy;
 use zbus::{fdo::RequestNameFlags, object_server::SignalEmitter, zvariant::Str};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Image {
     Name(Box<str>),
     File(Box<Path>),
@@ -21,7 +20,7 @@ pub enum Image {
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct NotificationHints {
     pub action_icons: bool,
     pub category: Option<String>,
@@ -95,12 +94,12 @@ impl NotificationHints {
                     "y" => nh.y = i32::try_from(v).ok(),
                     "urgency" => {
                         nh.urgency = match u8::try_from(v) {
-                            Ok(0) => 0 as i32,
-                            Ok(1) => 1 as i32,
-                            Ok(2) => 2 as i32,
+                            Ok(0) => 0_i32,
+                            Ok(1) => 1_i32,
+                            Ok(2) => 2_i32,
                             _ => {
                                 log::warn!("Invalid urgency data");
-                                1 as i32
+                                1_i32
                             }
                         };
                     }
@@ -129,7 +128,7 @@ impl NotificationHints {
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct NotificationData {
     pub id: u32,
     pub app_name: String,

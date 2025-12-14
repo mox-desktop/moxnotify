@@ -1,49 +1,39 @@
-mod history;
 pub mod collector {
     tonic::include_proto!("collector");
+}
+
+pub mod indexer {
+    tonic::include_proto!("indexer");
 }
 
 use collector::control_plane_server::{ControlPlane, ControlPlaneServer};
 use collector::{CollectorMessage, ControlPlaneMessage};
 use env_logger::Builder;
+use indexer::control_plane_indexer_server::{ControlPlaneIndexer, ControlPlaneIndexerServer};
+use indexer::{IndexerNotificationMessage, IndexerSubscribeRequest};
 use log::LevelFilter;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
 
-// TODO: set through config, also change paths
-fn path() -> PathBuf {
-    let path = std::env::var("XDG_DATA_HOME")
-        .map(|data_home| PathBuf::from(data_home).join("moxnotify-control-plane/db.mox"))
-        .or_else(|_| {
-            std::env::var("HOME")
-                .map(|home| PathBuf::from(home).join(".local/share/moxnotify-control-plane/db.mox"))
-        })
-        .unwrap_or_else(|_| PathBuf::from(""));
-
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).ok();
-    }
-
-    path
-}
-
+#[derive(Clone)]
 pub struct ControlPlaneService {
-    history: Arc<Mutex<history::History>>,
     active_connections: Arc<Mutex<HashMap<SocketAddr, ConnectionInfo>>>,
+    notification_broadcast: Arc<broadcast::Sender<IndexerNotificationMessage>>,
 }
 
 impl ControlPlaneService {
     fn new() -> Self {
+        let (tx, _) = broadcast::channel(128);
         Self {
-            history: Arc::new(Mutex::new(history::History::try_new(&path()).unwrap())),
             active_connections: Arc::new(Mutex::new(HashMap::new())),
+            notification_broadcast: Arc::new(tx),
         }
     }
 }
@@ -83,8 +73,7 @@ impl ControlPlane for ControlPlaneService {
 
         let mut stream = request.into_inner();
         let (_tx, rx) = mpsc::channel(128);
-
-        let history = Arc::clone(&self.history);
+        let notification_broadcast = Arc::clone(&self.notification_broadcast);
 
         tokio::spawn(async move {
             while let Some(msg_result) = stream.next().await {
@@ -94,51 +83,73 @@ impl ControlPlane for ControlPlaneService {
                             Some(collector::collector_message::Message::NewNotification(
                                 notification,
                             )) => {
-                                let image_desc = notification
-                                    .hints
-                                    .as_ref()
-                                    .and_then(|h| h.image.as_ref())
-                                    .and_then(|img| img.image.as_ref())
-                                    .map(|image| match image {
-                                        collector::image::Image::Name(name) => {
-                                            format!("Name({name})")
-                                        }
-                                        collector::image::Image::FilePath(path) => {
-                                            format!("File({path})")
-                                        }
-                                        collector::image::Image::Data(data) => {
-                                            format!("Data({}x{})", data.width, data.height)
-                                        }
-                                    });
-
                                 log::info!(
-                                    "Received notification: id={}, app_name='{}', app_icon={:?}, summary='{}', body='{}', timeout={}, actions={:?}, hints={{ urgency={:?}, category={:?}, desktop_entry={:?}, resident={}, transient={}, suppress_sound={}, action_icons={}, x={}, y={:?}, value={:?}, sound_file={:?}, sound_name={:?}, image={:?} }}",
+                                    "Received notification: id={}, app_name='{}', summary='{}', body='{}'",
                                     notification.id,
                                     notification.app_name,
-                                    notification.app_icon,
                                     notification.summary,
                                     notification.body,
-                                    notification.timeout,
-                                    notification.actions,
-                                    notification.hints.as_ref().unwrap().urgency,
-                                    notification.hints.as_ref().unwrap().category,
-                                    notification.hints.as_ref().unwrap().desktop_entry,
-                                    notification.hints.as_ref().unwrap().resident,
-                                    notification.hints.as_ref().unwrap().transient,
-                                    notification.hints.as_ref().unwrap().suppress_sound,
-                                    notification.hints.as_ref().unwrap().action_icons,
-                                    notification.hints.as_ref().unwrap().x,
-                                    notification.hints.as_ref().unwrap().y,
-                                    notification.hints.as_ref().unwrap().value,
-                                    notification.hints.as_ref().unwrap().sound_file.as_ref(),
-                                    notification.hints.as_ref().unwrap().sound_name,
-                                    image_desc,
                                 );
 
-                                let history = history.lock().unwrap();
-                                if let Err(e) = history.insert(&notification) {
-                                    log::error!("Failed to insert notification into database");
-                                }
+                                let indexer_notification = indexer::NewNotification {
+                                    id: notification.id,
+                                    app_name: notification.app_name,
+                                    app_icon: notification.app_icon,
+                                    summary: notification.summary,
+                                    body: notification.body,
+                                    timeout: notification.timeout,
+                                    actions: notification
+                                        .actions
+                                        .into_iter()
+                                        .map(|a| indexer::Action {
+                                            key: a.key,
+                                            label: a.label,
+                                        })
+                                        .collect(),
+                                    hints: notification.hints.map(|h| indexer::NotificationHints {
+                                        action_icons: h.action_icons,
+                                        category: h.category,
+                                        value: h.value,
+                                        desktop_entry: h.desktop_entry,
+                                        resident: h.resident,
+                                        sound_file: h.sound_file,
+                                        sound_name: h.sound_name,
+                                        suppress_sound: h.suppress_sound,
+                                        transient: h.transient,
+                                        x: h.x,
+                                        y: h.y,
+                                        urgency: h.urgency as i32,
+                                        image: h.image.map(|img| indexer::Image {
+                                            image: img.image.map(|i| match i {
+                                                collector::image::Image::Name(name) => {
+                                                    indexer::image::Image::Name(name)
+                                                }
+                                                collector::image::Image::FilePath(path) => {
+                                                    indexer::image::Image::FilePath(path)
+                                                }
+                                                collector::image::Image::Data(data) => {
+                                                    indexer::image::Image::Data(
+                                                        indexer::ImageData {
+                                                            width: data.width,
+                                                            height: data.height,
+                                                            rowstride: data.rowstride,
+                                                            has_alpha: data.has_alpha,
+                                                            bits_per_sample: data.bits_per_sample,
+                                                            channels: data.channels,
+                                                            data: data.data,
+                                                        },
+                                                    )
+                                                }
+                                            }),
+                                        }),
+                                    }),
+                                };
+
+                                let message = IndexerNotificationMessage {
+                                    notification: Some(indexer_notification),
+                                };
+
+                                let _ = notification_broadcast.send(message);
 
                                 // TODO: Route notification to frontend
                             }
@@ -183,6 +194,57 @@ impl ControlPlane for ControlPlaneService {
     }
 }
 
+#[tonic::async_trait]
+impl ControlPlaneIndexer for ControlPlaneService {
+    type StreamNotificationsStream = Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<
+                    Item = Result<IndexerNotificationMessage, Status>,
+                > + Send
+                + 'static,
+        >,
+    >;
+
+    async fn stream_notifications(
+        &self,
+        _request: Request<IndexerSubscribeRequest>,
+    ) -> Result<Response<Self::StreamNotificationsStream>, Status> {
+        let remote_addr = _request.remote_addr().unwrap();
+        log::info!("New indexer connection from: {:?}", remote_addr);
+
+        let mut rx = self.notification_broadcast.subscribe();
+        let (tx, stream_rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        if tx.send(Ok(msg)).await.is_err() {
+                            log::info!("Indexer client disconnected: {:?}", remote_addr);
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!(
+                            "Indexer {:?} lagged, skipped {} messages",
+                            remote_addr,
+                            skipped
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::error!("Broadcast channel closed for indexer: {:?}", remote_addr);
+                        break;
+                    }
+                }
+            }
+        });
+
+        let output_stream: Self::StreamNotificationsStream =
+            Box::pin(ReceiverStream::new(stream_rx));
+        Ok(Response::new(output_stream))
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let log_level = LevelFilter::Info;
@@ -196,7 +258,8 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Control plane server listening on {}", addr);
 
     Server::builder()
-        .add_service(ControlPlaneServer::new(service))
+        .add_service(ControlPlaneServer::new(service.clone()))
+        .add_service(ControlPlaneIndexerServer::new(service))
         .serve(addr)
         .await?;
 

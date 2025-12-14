@@ -22,8 +22,6 @@ log = "0.4.27"
 tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
-rusqlite = { version = "0.35.0", features = ["bundled"] }
-base64 = { version = "0.22.1", default-features = false, features = ["std"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

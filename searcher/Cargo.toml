@@ -1,0 +1,15 @@
+[package]
+name = "searcher"
+keywords.workspace = true
+categories.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+description.workspace = true
+readme.workspace = true
+
+[dependencies]
+tantivy = "0.25.0"
+tempfile = "3.23.0"
