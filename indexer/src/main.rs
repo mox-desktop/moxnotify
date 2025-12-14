@@ -11,7 +11,7 @@ use prost::Message;
 use std::path::PathBuf;
 use tantivy::directory::MmapDirectory;
 use tantivy::schema::*;
-use tantivy::{Index, IndexWriter, doc};
+use tantivy::{Index, IndexWriter};
 use tokio_stream::StreamExt;
 use tonic::Request;
 
@@ -94,7 +94,7 @@ async fn main() -> tantivy::Result<()> {
 
     let index =
         Index::open_or_create(MmapDirectory::open(path()).unwrap(), schema.clone()).unwrap();
-    let mut index_writer: IndexWriter = index.writer(50_000_000)?;
+    let index_writer: IndexWriter = index.writer(50_000_000)?;
 
     let id = schema.get_field("id").unwrap();
     let summary = schema.get_field("summary").unwrap();

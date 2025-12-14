@@ -21,63 +21,8 @@ pub struct ImageData {
 
 impl ImageData {
     #[must_use]
-    pub fn to_rgba(self) -> Self {
-        if !self.has_alpha {
-            let mut data = self.data;
-            let mut new_data = Vec::with_capacity(data.len() / self.channels as usize * 4);
-
-            data.chunks_exact_mut(self.channels as usize)
-                .for_each(|chunk| {
-                    new_data.extend_from_slice(chunk);
-                    new_data.push(0xFF);
-                });
-
-            Self {
-                has_alpha: true,
-                data: new_data,
-                channels: 4,
-                rowstride: self.width as i32 * 4,
-                ..self
-            }
-        } else {
-            self
-        }
-    }
-
-    pub fn resize(self, size: u32) -> anyhow::Result<Self> {
-        let mut src = fr::images::Image::from_vec_u8(
-            self.width,
-            self.height,
-            self.data,
-            fr::PixelType::U8x4,
-        )?;
-
-        let alpha_mul_div = fr::MulDiv::default();
-        alpha_mul_div.multiply_alpha_inplace(&mut src)?;
-
-        let mut dst = fr::images::Image::new(size, size, fr::PixelType::U8x4);
-        let mut resizer = fr::Resizer::new();
-        resizer.resize(&src, &mut dst, &ResizeOptions::default())?;
-
-        alpha_mul_div.divide_alpha_inplace(&mut dst)?;
-
-        Ok(Self {
-            width: dst.width(),
-            height: dst.height(),
-            rowstride: (dst.width() * 4) as i32,
-            data: dst.into_vec(),
-            ..self
-        })
-    }
-
-    #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.data
-    }
-
-    #[must_use]
-    pub fn size(&self) -> (u32, u32) {
-        (self.width, self.height)
     }
 
     #[must_use]

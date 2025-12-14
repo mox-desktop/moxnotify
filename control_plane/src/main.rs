@@ -118,7 +118,7 @@ impl ControlPlane for ControlPlaneService {
                                         transient: h.transient,
                                         x: h.x,
                                         y: h.y,
-                                        urgency: h.urgency as i32,
+                                        urgency: h.urgency,
                                         image: h.image.map(|img| indexer::Image {
                                             image: img.image.map(|i| match i {
                                                 collector::image::Image::Name(name) => {

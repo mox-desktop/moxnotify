@@ -1,40 +1,30 @@
 use crate::EmitEvent;
 use crate::Event;
-use crate::collector::CloseReason;
+use crate::collector;
+use crate::collector::{
+    Action, CloseReason, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
+};
 use crate::image_data::ImageData;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
-use std::path::PathBuf;
-use std::{collections::HashMap, path::Path};
+use std::collections::HashMap;
 use tokio::sync::broadcast;
 #[cfg(not(debug_assertions))]
 use zbus::fdo::DBusProxy;
 use zbus::{fdo::RequestNameFlags, object_server::SignalEmitter, zvariant::Str};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Image {
-    Name(Box<str>),
-    File(Box<Path>),
-    Data(ImageData),
-}
-
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-#[derive(Debug, Default, Clone)]
-pub struct NotificationHints {
-    pub action_icons: bool,
-    pub category: Option<String>,
-    pub value: Option<i32>,
-    pub desktop_entry: Option<String>,
-    pub resident: bool,
-    pub sound_file: Option<PathBuf>,
-    pub sound_name: Option<String>,
-    pub suppress_sound: bool,
-    pub transient: bool,
-    pub x: i32,
-    pub y: Option<i32>,
-    pub urgency: i32,
-    pub image: Option<Image>,
+fn convert_image_data(image_data: &ImageData) -> ProtoImageData {
+    ProtoImageData {
+        width: image_data.width(),
+        height: image_data.height(),
+        rowstride: image_data.rowstride(),
+        has_alpha: image_data.has_alpha(),
+        bits_per_sample: image_data.bits_per_sample(),
+        channels: image_data.channels(),
+        data: image_data.data().to_vec(),
+    }
 }
 
 impl NotificationHints {
@@ -67,10 +57,10 @@ impl NotificationHints {
                         };
                     }
                     "sound-file" => {
-                        nh.sound_file = Str::try_from(v).ok().map(|s| Path::new(s.as_str()).into());
+                        nh.sound_file = Str::try_from(v).ok().map(|s| s.to_string());
                     }
                     "sound-name" => {
-                        nh.sound_name = Str::try_from(v).ok().map(|s| s.as_str().into());
+                        nh.sound_name = Str::try_from(v).ok().map(|s| s.to_string());
                     }
                     "suppress-sound" => {
                         nh.suppress_sound = match v {
@@ -106,16 +96,26 @@ impl NotificationHints {
                     "image-path" | "image_path" => {
                         if let Ok(s) = Str::try_from(v) {
                             nh.image = if let Ok(path) = url::Url::parse(&s) {
-                                Some(Image::File(Path::new(path.as_str()).into()))
+                                Some(Image {
+                                    image: Some(collector::image::Image::FilePath(
+                                        path.to_string(),
+                                    )),
+                                })
                             } else {
-                                Some(Image::Name(s.as_str().into()))
+                                Some(Image {
+                                    image: Some(collector::image::Image::Name(s.as_str().into())),
+                                })
                             };
                         }
                     }
                     "image-data" | "image_data" | "icon_data" => {
                         if let zbus::zvariant::Value::Structure(v) = v {
                             if let Ok(image) = ImageData::try_from(v) {
-                                nh.image = Some(Image::Data(image));
+                                nh.image = Some(Image {
+                                    image: Some(collector::image::Image::Data(convert_image_data(
+                                        &image,
+                                    ))),
+                                });
                             } else {
                                 log::warn!("Invalid image data");
                             }
@@ -126,18 +126,6 @@ impl NotificationHints {
                 nh
             })
     }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct NotificationData {
-    pub id: u32,
-    pub app_name: String,
-    pub app_icon: Option<String>,
-    pub summary: String,
-    pub body: String,
-    pub timeout: i32,
-    pub actions: Vec<(String, String)>,
-    pub hints: NotificationHints,
 }
 
 struct NotificationsImpl {
@@ -189,7 +177,7 @@ impl NotificationsImpl {
 
         if let Err(e) = self
             .event_sender
-            .send(Event::Notify(Box::new(NotificationData {
+            .send(Event::Notify(Box::new(NewNotification {
                 id,
                 app_name: app_name.into(),
                 summary: summary.into(),
@@ -197,9 +185,12 @@ impl NotificationsImpl {
                 timeout: expire_timeout,
                 actions: actions
                     .chunks_exact(2)
-                    .map(|action| (action[0].into(), action[1].into()))
+                    .map(|action| Action {
+                        key: action[0].to_string(),
+                        label: action[1].to_string(),
+                    })
                     .collect(),
-                hints: NotificationHints::new(hints),
+                hints: Some(NotificationHints::new(hints)),
                 app_icon,
             })))
         {
