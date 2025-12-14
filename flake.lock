@@ -2,11 +2,11 @@
   "nodes": {
     "nixpkgs": {
       "locked": {
-        "lastModified": 1762977756,
-        "narHash": "sha256-4PqRErxfe+2toFJFgcRKZ0UI9NSIOJa+7RXVtBhy4KE=",
+        "lastModified": 1765472234,
+        "narHash": "sha256-9VvC20PJPsleGMewwcWYKGzDIyjckEz8uWmT0vCDYK0=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c5ae371f1a6a7fd27823bc500d9390b38c05fa55",
+        "rev": "2fbfb1d73d239d2402a8fe03963e37aab15abe8b",
         "type": "github"
       },
       "original": {
@@ -29,11 +29,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1763260832,
-        "narHash": "sha256-KMEJ9S7bZLvDIfVu2XdEJTZVYAc/arjFt5KnhGqwCOg=",
+        "lastModified": 1765593578,
+        "narHash": "sha256-qbl874bCIy9+OLImdfBfZ9ITUDDjjTAB04Dk4PlZFV0=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "c3cea2a0ec0d5debbef4aa2a0cfe59bd0fb0aeeb",
+        "rev": "348b94ed9ddffccdf1a65582a2dcff0a4a3eeeb4",
         "type": "github"
       },
       "original": {
@@ -48,17 +48,17 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1758049156,
-        "narHash": "sha256-1WwkfzlRgYs8YmDlflTqJvbKowZMtOW946dXdVCLgPM=",
-        "owner": "mox-desktop",
-        "repo": "tooling",
-        "rev": "489521b7a1a38d76491c9b443e4af9beec7f0350",
-        "type": "github"
+        "lastModified": 1765646871,
+        "narHash": "sha256-0e6ipFkPiTHIBPy7IaIQ9vcFg17jQHXtHDgP3bjU0Qs=",
+        "ref": "refs/heads/master",
+        "rev": "1161a4daae126430131adc75659e7b2afbddf294",
+        "revCount": 9,
+        "type": "git",
+        "url": "https://forgejo.r0chd.pl/mox-desktop/tooling.git"
       },
       "original": {
-        "owner": "mox-desktop",
-        "repo": "tooling",
-        "type": "github"
+        "type": "git",
+        "url": "https://forgejo.r0chd.pl/mox-desktop/tooling.git"
       }
     }
   },

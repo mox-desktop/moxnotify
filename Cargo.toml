@@ -1,5 +1,5 @@
 [workspace]
-members = ["daemon", "ctl", "collector", "control_plane"]
+members = ["daemon", "ctl", "collector", "control_plane", "webui"]
 resolver = "2"
 
 [profile.release]

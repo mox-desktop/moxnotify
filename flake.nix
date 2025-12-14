@@ -1,5 +1,5 @@
 {
-  inputs.tooling.url = "github:mox-desktop/tooling";
+  inputs.tooling.url = "git+https://forgejo.r0chd.pl/mox-desktop/tooling.git";
 
   outputs =
     { self, tooling, ... }:
@@ -26,6 +26,8 @@
                 libGL
                 egl-wayland
                 protobuf_30
+                pnpm
+                nodejs_25
                 ;
             };
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;
