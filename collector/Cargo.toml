@@ -28,11 +28,13 @@ image = { version = "0.25.6", default-features = false, features = [
   "ico",
   "webp",
   "rayon",
+  "serde",
 ] }
 fast_image_resize = "5.1.1"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 pollster = "0.4.0"
+chrono = "0.4.42"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

@@ -32,9 +32,9 @@ export function NotificationList({ notifications }: NotificationListProps) {
         </h2>
       </div>
 
-      <div className="space-y-2">
-        {notifications.map((notification) => (
-          <NotificationCard key={notification.id} notification={notification} />
+      <div className="space-y-1.5">
+        {notifications.map((notification, index) => (
+          <NotificationCard key={`${notification.id}-${notification.timestamp.getTime()}-${index}`} notification={notification} />
         ))}
       </div>
     </div>
@@ -63,23 +63,28 @@ function NotificationCard({ notification }: { notification: DbusNotification }) 
     },
   }
 
-  const config = urgencyConfig[notification.urgency]
+  // Default to Normal (1) if urgency is invalid or undefined
+  const urgency = notification.urgency
+  const validUrgency = urgency === 0 || urgency === 1 || urgency === 2 ? urgency : 1
+  const config = urgencyConfig[validUrgency]
   const Icon = config.icon
-
+  
   const actionButtons: Array<{ key: string; label: string }> = []
-  for (let i = 0; i < notification.actions.length; i += 2) {
-    if (i + 1 < notification.actions.length) {
-      actionButtons.push({
-        key: notification.actions[i],
-        label: notification.actions[i + 1],
-      })
+  if (notification.actions && Array.isArray(notification.actions)) {
+    for (let i = 0; i < notification.actions.length; i += 2) {
+      if (i + 1 < notification.actions.length) {
+        actionButtons.push({
+          key: notification.actions[i],
+          label: notification.actions[i + 1],
+        })
+      }
     }
   }
 
   return (
     <Card className={`border-l-4 ${config.borderColor} transition-colors hover:bg-muted/50`}>
-      <CardContent className="p-4">
-        <div className="flex gap-4">
+      <CardContent className="p-2.5">
+        <div className="flex gap-3">
           {notification.app_icon ? (
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-muted">
               <ImageIcon className="h-5 w-5 text-muted-foreground" />
@@ -137,14 +142,28 @@ function NotificationCard({ notification }: { notification: DbusNotification }) 
 
             <div className="flex flex-wrap gap-2 pt-1">
               <span className="font-mono text-xs text-muted-foreground">ID: {notification.id}</span>
-              {notification.replaces_id !== 0 && (
-                <span className="font-mono text-xs text-muted-foreground">Replaces: {notification.replaces_id}</span>
-              )}
-              {notification.expire_timeout !== -1 && (
-                <span className="font-mono text-xs text-muted-foreground">
-                  Timeout: {notification.expire_timeout}ms
-                </span>
-              )}
+              {(() => {
+                // Debug: log first notification to see expire_timeout
+                if (notification.id === 1 || Object.keys(notification).includes('expire_timeout')) {
+                  console.log("Notification expire_timeout value:", notification.expire_timeout, "Type:", typeof notification.expire_timeout, "Full keys:", Object.keys(notification))
+                }
+                // Always try to display timeout - check multiple possible field names
+                const timeout = notification.expire_timeout !== undefined 
+                  ? notification.expire_timeout 
+                  : (notification as any).expireTimeout !== undefined
+                  ? (notification as any).expireTimeout
+                  : (notification as any).timeout
+                
+                return timeout !== undefined && timeout !== null && (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {timeout === -1
+                      ? "Timeout: Default"
+                      : timeout === 0
+                      ? "Timeout: Never"
+                      : `Timeout: ${timeout}ms`}
+                  </span>
+                )
+              })()}
             </div>
           </div>
         </div>

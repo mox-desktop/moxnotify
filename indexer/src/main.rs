@@ -2,15 +2,13 @@ mod indexer {
     tonic::include_proto!("indexer");
 }
 
-use base64::engine::{Engine, general_purpose};
 use env_logger::Builder;
 use indexer::IndexerSubscribeRequest;
 use indexer::control_plane_indexer_client::ControlPlaneIndexerClient;
 use log::LevelFilter;
-use prost::Message;
 use std::path::PathBuf;
 use tantivy::directory::MmapDirectory;
-use tantivy::schema::*;
+use tantivy::{DateTime, schema::*};
 use tantivy::{Index, IndexWriter};
 use tokio_stream::StreamExt;
 use tonic::Request;
@@ -35,7 +33,6 @@ async fn main() -> tantivy::Result<()> {
     let log_level = LevelFilter::Info;
     Builder::new().filter(Some("indexer"), log_level).init();
 
-    // Connect to control plane
     let control_plane_addr = std::env::var("MOXNOTIFY_CONTROL_PLANE_ADDR")
         .unwrap_or_else(|_| "http://[::1]:50051".to_string());
 
@@ -52,7 +49,6 @@ async fn main() -> tantivy::Result<()> {
 
     log::info!("Connected to control plane, subscribing to notifications...");
 
-    // Subscribe to notifications
     let request = Request::new(IndexerSubscribeRequest {});
     let mut stream = client
         .stream_notifications(request)
@@ -65,31 +61,22 @@ async fn main() -> tantivy::Result<()> {
     let mut schema_builder = Schema::builder();
 
     schema_builder.add_u64_field("id", INDEXED | STORED | FAST);
+    schema_builder.add_i64_field("timeout", STORED);
+    schema_builder.add_date_field(
+        "timestamp",
+        DateOptions::default()
+            .set_indexed()
+            .set_fast()
+            .set_stored()
+            .set_precision(DateTimePrecision::Milliseconds),
+    );
 
     schema_builder.add_text_field("summary", TEXT | STORED);
     schema_builder.add_text_field("body", TEXT | STORED);
     schema_builder.add_text_field("app_name", STRING | STORED | FAST);
     schema_builder.add_text_field("app_icon", STORED);
 
-    // searchable + stored hints
-    schema_builder.add_text_field("hint_category", TEXT | STORED);
-    schema_builder.add_text_field("hint_desktop_entry", TEXT | STORED);
-    schema_builder.add_i64_field("hint_value", INDEXED | STORED | FAST);
-    schema_builder.add_i64_field("hint_urgency", INDEXED | STORED | FAST);
-
-    // stored-only hints
-    schema_builder.add_bool_field("hint_action_icons", STORED);
-    schema_builder.add_bool_field("hint_resident", STORED);
-    schema_builder.add_bool_field("hint_suppress_sound", STORED);
-    schema_builder.add_bool_field("hint_transient", STORED);
-
-    schema_builder.add_text_field("hint_sound_file", STORED);
-    schema_builder.add_text_field("hint_sound_name", STORED);
-
-    schema_builder.add_i64_field("hint_x", STORED);
-    schema_builder.add_i64_field("hint_y", STORED);
-
-    schema_builder.add_text_field("hint_image", STORED);
+    schema_builder.add_json_field("hints", STORED);
     let schema = schema_builder.build();
 
     let index =
@@ -98,90 +85,48 @@ async fn main() -> tantivy::Result<()> {
 
     let id = schema.get_field("id").unwrap();
     let summary = schema.get_field("summary").unwrap();
+    let timestamp = schema.get_field("timestamp").unwrap();
     let body = schema.get_field("body").unwrap();
     let app_name = schema.get_field("app_name").unwrap();
     let app_icon = schema.get_field("app_icon").unwrap();
+    let timeout = schema.get_field("timeout").unwrap();
 
-    let hint_category = schema.get_field("hint_category").unwrap();
-    let hint_desktop_entry = schema.get_field("hint_desktop_entry").unwrap();
-    let hint_value = schema.get_field("hint_value").unwrap();
-    let hint_urgency = schema.get_field("hint_urgency").unwrap();
-
-    let hint_action_icons = schema.get_field("hint_action_icons").unwrap();
-    let hint_resident = schema.get_field("hint_resident").unwrap();
-    let hint_suppress_sound = schema.get_field("hint_suppress_sound").unwrap();
-    let hint_transient = schema.get_field("hint_transient").unwrap();
-    let hint_sound_file = schema.get_field("hint_sound_file").unwrap();
-    let hint_sound_name = schema.get_field("hint_sound_name").unwrap();
-    let hint_x = schema.get_field("hint_x").unwrap();
-    let hint_y = schema.get_field("hint_y").unwrap();
-    let hint_image = schema.get_field("hint_image").unwrap();
+    let hints = schema.get_field("hints").unwrap();
 
     while let Some(msg_result) = stream.next().await {
         if let Ok(msg) = msg_result
             && let Some(notification) = msg.notification
         {
             log::info!(
-                "Indexing notification: id={}, app_name='{}', summary='{}', body='{}'",
+                "Indexing notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
                 notification.id,
                 notification.app_name,
                 notification.summary,
                 notification.body,
+                notification.hints.as_ref().unwrap().urgency
             );
 
             let mut doc = TantivyDocument::default();
 
             doc.add_u64(id, notification.id as u64);
+            doc.add_date(
+                timestamp,
+                DateTime::from_timestamp_millis(notification.timestamp),
+            );
             doc.add_text(summary, notification.summary);
             doc.add_text(body, notification.body);
             doc.add_text(app_name, notification.app_name);
+            doc.add_i64(timeout, notification.timeout as i64);
 
             if let Some(icon) = notification.app_icon {
                 doc.add_text(app_icon, icon);
             }
 
             if let Some(h) = notification.hints {
-                doc.add_bool(hint_action_icons, h.action_icons);
-                doc.add_bool(hint_resident, h.resident);
-                doc.add_bool(hint_suppress_sound, h.suppress_sound);
-                doc.add_bool(hint_transient, h.transient);
-
-                doc.add_i64(hint_x, h.x as i64);
-                if let Some(y) = h.y {
-                    doc.add_i64(hint_y, y as i64);
-                }
-
-                doc.add_i64(hint_urgency, h.urgency as i64);
-
-                if let Some(v) = h.value {
-                    doc.add_i64(hint_value, v as i64);
-                }
-
-                if let Some(cat) = h.category {
-                    doc.add_text(hint_category, cat);
-                }
-
-                if let Some(entry) = h.desktop_entry {
-                    doc.add_text(hint_desktop_entry, entry);
-                }
-
-                if let Some(sf) = h.sound_file {
-                    doc.add_text(hint_sound_file, sf);
-                }
-
-                if let Some(sn) = h.sound_name {
-                    doc.add_text(hint_sound_name, sn);
-                }
-
-                if let Some(img) = h.image {
-                    let mut buf = Vec::new();
-                    img.encode(&mut buf);
-                    let encoded = general_purpose::STANDARD.encode(buf);
-                    doc.add_text(hint_image, encoded);
-                }
+                doc.add_text(hints, serde_json::to_string(&h).unwrap());
             }
 
-            index_writer.add_document(doc);
+            index_writer.add_document(doc)?;
         }
 
         index_writer.commit()?;

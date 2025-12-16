@@ -23,6 +23,7 @@ tokio-stream = "0.1"
 anyhow = "1.0.100"
 serde_json = "1.0.145"
 base64 = "0.22.1"
+serde = "1.0.228"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

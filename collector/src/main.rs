@@ -30,12 +30,12 @@ impl Collector {
         let msg = match event {
             Event::Notify(data) => {
                 log::info!(
-                    "Collected notification: id={}, app_name='{}', app_icon={:?}, summary='{}', body='{}', timeout={}, actions={:?}",
+                    "Collected notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}', timeout={}, actions={:?}",
                     data.id,
                     data.app_name,
-                    data.app_icon,
                     data.summary,
                     data.body,
+                    data.hints.as_ref().unwrap().urgency,
                     data.timeout,
                     data.actions,
                 );

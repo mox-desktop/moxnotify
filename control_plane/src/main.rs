@@ -84,11 +84,12 @@ impl ControlPlane for ControlPlaneService {
                                 notification,
                             )) => {
                                 log::info!(
-                                    "Received notification: id={}, app_name='{}', summary='{}', body='{}'",
+                                    "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
                                     notification.id,
                                     notification.app_name,
                                     notification.summary,
                                     notification.body,
+                                    notification.hints.as_ref().unwrap().urgency
                                 );
 
                                 let indexer_notification = indexer::NewNotification {
@@ -106,6 +107,7 @@ impl ControlPlane for ControlPlaneService {
                                             label: a.label,
                                         })
                                         .collect(),
+                                    timestamp: notification.timestamp,
                                     hints: notification.hints.map(|h| indexer::NotificationHints {
                                         action_icons: h.action_icons,
                                         category: h.category,

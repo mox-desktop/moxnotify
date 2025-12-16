@@ -24,7 +24,7 @@ export interface DbusNotification {
   body: string
 
   // Actions available for this notification
-  actions: string[]
+  actions?: string[]
 
   // Hints dictionary containing additional data
   hints: Record<string, unknown>

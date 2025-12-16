@@ -5,6 +5,7 @@ use crate::collector::{
     Action, CloseReason, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
 };
 use crate::image_data::ImageData;
+use chrono::offset::Local;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use std::collections::HashMap;
@@ -192,6 +193,7 @@ impl NotificationsImpl {
                     .collect(),
                 hints: Some(NotificationHints::new(hints)),
                 app_icon,
+                timestamp: Local::now().timestamp_millis(),
             })))
         {
             log::error!("Error: {e}");

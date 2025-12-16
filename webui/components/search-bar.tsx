@@ -30,7 +30,7 @@ export function SearchBar({ value, onChange, onRun }: SearchBarProps) {
           className="pl-10"
         />
       </div>
-      <Button onClick={onRun}>Run</Button>
+      <Button onClick={onRun} className="cursor-pointer">Run</Button>
     </div>
   )
 }

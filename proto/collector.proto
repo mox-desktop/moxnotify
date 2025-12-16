@@ -33,6 +33,7 @@ message NewNotification {
   int32 timeout = 6;
   repeated Action actions = 7;
   NotificationHints hints = 8;
+  int64 timestamp = 9;
 }
 
 // Action definition

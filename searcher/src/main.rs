@@ -1,16 +1,16 @@
 use axum::Json;
+use axum::Router;
 use axum::extract::State;
 use axum::routing::post;
-use axum::{Router, routing::get};
+use chrono::DateTime as ChronoDateTime;
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::ops::Bound as StdBound;
 use std::path::PathBuf;
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
-use tantivy::query::QueryParser;
-use tantivy::tokenizer::{NgramTokenizer, TextAnalyzer};
+use tantivy::query::{BooleanQuery, Occur, QueryParser, RangeQuery};
 use tantivy::{
-    DocAddress, Index, IndexReader, IndexWriter, Order, ReloadPolicy, Searcher, doc, schema::*,
+    DateTime, DocAddress, Index, IndexReader, Order, ReloadPolicy, Term, doc, schema::*,
 };
 
 fn path() -> PathBuf {
@@ -33,6 +33,7 @@ struct GlobalState {
     reader: IndexReader,
     parser: QueryParser,
     schema: Schema,
+    timestamp_field: Field,
 }
 
 #[tokio::main]
@@ -43,21 +44,21 @@ async fn main() -> tantivy::Result<()> {
     let summary = schema.get_field("summary").unwrap();
     let body = schema.get_field("body").unwrap();
     let app_name = schema.get_field("app_name").unwrap();
-    let hint_category = schema.get_field("hint_category").unwrap();
+    let timestamp_field = schema.get_field("timestamp").unwrap();
 
     let reader = index
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
 
-    let mut query_parser =
-        QueryParser::for_index(&index, vec![summary, body, app_name, hint_category]);
+    let mut query_parser = QueryParser::for_index(&index, vec![summary, body, app_name]);
     query_parser.set_field_boost(summary, 2.);
 
     let state = GlobalState {
         reader,
         schema,
         parser: query_parser,
+        timestamp_field,
     };
 
     let app = Router::new()
@@ -77,7 +78,53 @@ async fn search(
     state.reader.reload().unwrap();
 
     let searcher = state.reader.searcher();
-    let query = state.parser.parse_query(&payload.query).unwrap();
+    let text_query = state.parser.parse_query(&payload.query).unwrap();
+
+    let query = if payload.start_timestamp.is_some() || payload.end_timestamp.is_some() {
+        let lower_bound = payload
+            .start_timestamp
+            .as_ref()
+            .and_then(|ts_str| {
+                ChronoDateTime::parse_from_rfc3339(ts_str)
+                    .ok()
+                    .map(|dt| {
+                        let timestamp_ms = dt.timestamp_millis();
+                        DateTime::from_timestamp_millis(timestamp_ms)
+                    })
+            })
+            .map(|date_time| {
+                let term = Term::from_field_date(state.timestamp_field, date_time);
+                StdBound::Included(term)
+            })
+            .unwrap_or(StdBound::Unbounded);
+
+        let upper_bound = payload
+            .end_timestamp
+            .as_ref()
+            .and_then(|ts_str| {
+                ChronoDateTime::parse_from_rfc3339(ts_str)
+                    .ok()
+                    .map(|dt| {
+                        let timestamp_ms = dt.timestamp_millis();
+                        DateTime::from_timestamp_millis(timestamp_ms)
+                    })
+            })
+            .map(|date_time| {
+                let term = Term::from_field_date(state.timestamp_field, date_time);
+                StdBound::Included(term)
+            })
+            .unwrap_or(StdBound::Unbounded);
+
+        let range_query: Box<dyn tantivy::query::Query> =
+            Box::new(RangeQuery::new(lower_bound, upper_bound));
+
+        Box::new(BooleanQuery::new(vec![
+            (Occur::Must, text_query),
+            (Occur::Must, range_query),
+        ])) as Box<dyn tantivy::query::Query>
+    } else {
+        text_query
+    };
 
     let limit = payload.max_hits.unwrap_or(20) as usize;
     let top_docs: Vec<DocAddress> = if let Some(sort_by) = payload.sort_by {
@@ -107,7 +154,10 @@ async fn search(
         .into_iter()
         .map(|doc| {
             let doc: TantivyDocument = searcher.doc(doc).unwrap();
-            serde_json::from_str(&doc.to_json(&state.schema)).unwrap()
+            let json_value: serde_json::Value =
+                serde_json::from_str(&doc.to_json(&state.schema)).unwrap();
+
+            json_value
         })
         .collect();
 
@@ -117,6 +167,8 @@ async fn search(
 #[derive(Deserialize)]
 struct Query {
     query: String,
+    start_timestamp: Option<String>,
+    end_timestamp: Option<String>,
     max_hits: Option<u32>,
     sort_by: Option<String>,
     sort_order: Option<SortOrder>,
