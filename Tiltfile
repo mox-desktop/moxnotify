@@ -71,19 +71,28 @@ local_resource(
 local_resource(
     'run-collector',
     cmd='cargo build --bin collector',
-    serve_cmd='cargo run --bin collector'
+    serve_cmd='cargo run --bin collector',
+    resource_deps=['run-control-plane']
 )
 
 local_resource(
     'run-indexer',
     cmd='cargo build --bin indexer',
-    serve_cmd='cargo run --bin indexer'
+    serve_cmd='cargo run --bin indexer',
+    resource_deps=['run-control-plane']
 )
 
 local_resource(
     'run-searcher',
     cmd='cargo build --bin searcher',
     serve_cmd='cargo run --bin searcher'
+)
+
+local_resource(
+    'run-scheduler',
+    cmd='cargo build --bin scheduler',
+    serve_cmd='cargo run --bin scheduler',
+    resource_deps=['run-control-plane']
 )
 
 local_resource(

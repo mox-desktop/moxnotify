@@ -85,12 +85,10 @@ async fn search(
             .start_timestamp
             .as_ref()
             .and_then(|ts_str| {
-                ChronoDateTime::parse_from_rfc3339(ts_str)
-                    .ok()
-                    .map(|dt| {
-                        let timestamp_ms = dt.timestamp_millis();
-                        DateTime::from_timestamp_millis(timestamp_ms)
-                    })
+                ChronoDateTime::parse_from_rfc3339(ts_str).ok().map(|dt| {
+                    let timestamp_ms = dt.timestamp_millis();
+                    DateTime::from_timestamp_millis(timestamp_ms)
+                })
             })
             .map(|date_time| {
                 let term = Term::from_field_date(state.timestamp_field, date_time);
@@ -102,12 +100,10 @@ async fn search(
             .end_timestamp
             .as_ref()
             .and_then(|ts_str| {
-                ChronoDateTime::parse_from_rfc3339(ts_str)
-                    .ok()
-                    .map(|dt| {
-                        let timestamp_ms = dt.timestamp_millis();
-                        DateTime::from_timestamp_millis(timestamp_ms)
-                    })
+                ChronoDateTime::parse_from_rfc3339(ts_str).ok().map(|dt| {
+                    let timestamp_ms = dt.timestamp_millis();
+                    DateTime::from_timestamp_millis(timestamp_ms)
+                })
             })
             .map(|date_time| {
                 let term = Term::from_field_date(state.timestamp_field, date_time);

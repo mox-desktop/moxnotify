@@ -1,17 +1,25 @@
 mod dbus;
 mod image_data;
+pub mod moxnotify {
+    pub mod common {
+        tonic::include_proto!("moxnotify.common");
+    }
+    pub mod types {
+        tonic::include_proto!("moxnotify.types");
+    }
+}
 pub mod collector {
     tonic::include_proto!("collector");
 }
 
 use calloop::EventLoop;
+use collector::CollectorMessage;
 use collector::collector_message::Message;
 use collector::control_plane_client::ControlPlaneClient;
-use collector::{
-    ActionInvoked, CloseReason, CollectorMessage, NewNotification, NotificationClosed,
-};
 use env_logger::Builder;
 use log::LevelFilter;
+use moxnotify::common::CloseReason;
+use moxnotify::types::{ActionInvoked, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;

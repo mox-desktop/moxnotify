@@ -11,7 +11,10 @@ keywords.workspace = true
 
 [dependencies]
 env_logger = { version = "0.11.6", default-features = false }
-serde = { version = "1.0.217", features = ["derive", "rc"], default-features = false }
+serde = { version = "1.0.217", features = [
+  "derive",
+  "rc",
+], default-features = false }
 futures-lite = { version = "2.6.0", default-features = false }
 tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
 tokio-stream = "0.1"

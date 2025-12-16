@@ -1,3 +1,12 @@
+pub mod moxnotify {
+    pub mod common {
+        tonic::include_proto!("moxnotify.common");
+    }
+    pub mod types {
+        tonic::include_proto!("moxnotify.types");
+    }
+}
+
 pub mod collector {
     tonic::include_proto!("collector");
 }
@@ -6,12 +15,21 @@ pub mod indexer {
     tonic::include_proto!("indexer");
 }
 
+pub mod scheduler {
+    tonic::include_proto!("scheduler");
+}
+
 use collector::control_plane_server::{ControlPlane, ControlPlaneServer};
 use collector::{CollectorMessage, ControlPlaneMessage};
 use env_logger::Builder;
 use indexer::control_plane_indexer_server::{ControlPlaneIndexer, ControlPlaneIndexerServer};
 use indexer::{IndexerNotificationMessage, IndexerSubscribeRequest};
 use log::LevelFilter;
+use moxnotify::types::NewNotification;
+use scheduler::control_plane_scheduler_server::{
+    ControlPlaneScheduler, ControlPlaneSchedulerServer,
+};
+use scheduler::{SchedulerNotificationMessage, SchedulerSubscribeRequest};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -25,7 +43,7 @@ use tonic::{Request, Response, Status, transport::Server};
 #[derive(Clone)]
 pub struct ControlPlaneService {
     active_connections: Arc<Mutex<HashMap<SocketAddr, ConnectionInfo>>>,
-    notification_broadcast: Arc<broadcast::Sender<IndexerNotificationMessage>>,
+    notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
 }
 
 impl ControlPlaneService {
@@ -92,68 +110,7 @@ impl ControlPlane for ControlPlaneService {
                                     notification.hints.as_ref().unwrap().urgency
                                 );
 
-                                let indexer_notification = indexer::NewNotification {
-                                    id: notification.id,
-                                    app_name: notification.app_name,
-                                    app_icon: notification.app_icon,
-                                    summary: notification.summary,
-                                    body: notification.body,
-                                    timeout: notification.timeout,
-                                    actions: notification
-                                        .actions
-                                        .into_iter()
-                                        .map(|a| indexer::Action {
-                                            key: a.key,
-                                            label: a.label,
-                                        })
-                                        .collect(),
-                                    timestamp: notification.timestamp,
-                                    hints: notification.hints.map(|h| indexer::NotificationHints {
-                                        action_icons: h.action_icons,
-                                        category: h.category,
-                                        value: h.value,
-                                        desktop_entry: h.desktop_entry,
-                                        resident: h.resident,
-                                        sound_file: h.sound_file,
-                                        sound_name: h.sound_name,
-                                        suppress_sound: h.suppress_sound,
-                                        transient: h.transient,
-                                        x: h.x,
-                                        y: h.y,
-                                        urgency: h.urgency,
-                                        image: h.image.map(|img| indexer::Image {
-                                            image: img.image.map(|i| match i {
-                                                collector::image::Image::Name(name) => {
-                                                    indexer::image::Image::Name(name)
-                                                }
-                                                collector::image::Image::FilePath(path) => {
-                                                    indexer::image::Image::FilePath(path)
-                                                }
-                                                collector::image::Image::Data(data) => {
-                                                    indexer::image::Image::Data(
-                                                        indexer::ImageData {
-                                                            width: data.width,
-                                                            height: data.height,
-                                                            rowstride: data.rowstride,
-                                                            has_alpha: data.has_alpha,
-                                                            bits_per_sample: data.bits_per_sample,
-                                                            channels: data.channels,
-                                                            data: data.data,
-                                                        },
-                                                    )
-                                                }
-                                            }),
-                                        }),
-                                    }),
-                                };
-
-                                let message = IndexerNotificationMessage {
-                                    notification: Some(indexer_notification),
-                                };
-
-                                let _ = notification_broadcast.send(message);
-
-                                // TODO: Route notification to frontend
+                                let _ = notification_broadcast.send(notification.clone());
                             }
                             Some(collector::collector_message::Message::NotificationClosed(
                                 closed,
@@ -220,8 +177,11 @@ impl ControlPlaneIndexer for ControlPlaneService {
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
-                    Ok(msg) => {
-                        if tx.send(Ok(msg)).await.is_err() {
+                    Ok(notification) => {
+                        let message = IndexerNotificationMessage {
+                            notification: Some(notification),
+                        };
+                        if tx.send(Ok(message)).await.is_err() {
                             log::info!("Indexer client disconnected: {:?}", remote_addr);
                             break;
                         }
@@ -235,6 +195,61 @@ impl ControlPlaneIndexer for ControlPlaneService {
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         log::error!("Broadcast channel closed for indexer: {:?}", remote_addr);
+                        break;
+                    }
+                }
+            }
+        });
+
+        let output_stream: Self::StreamNotificationsStream =
+            Box::pin(ReceiverStream::new(stream_rx));
+        Ok(Response::new(output_stream))
+    }
+}
+
+#[tonic::async_trait]
+impl ControlPlaneScheduler for ControlPlaneService {
+    type StreamNotificationsStream = Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<
+                    Item = Result<SchedulerNotificationMessage, Status>,
+                > + Send
+                + 'static,
+        >,
+    >;
+
+    async fn stream_notifications(
+        &self,
+        _request: Request<SchedulerSubscribeRequest>,
+    ) -> Result<Response<Self::StreamNotificationsStream>, Status> {
+        let remote_addr = _request.remote_addr().unwrap();
+        log::info!("New scheduler connection from: {:?}", remote_addr);
+
+        let mut rx = self.notification_broadcast.subscribe();
+        let (tx, stream_rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(notification) => {
+                        // Wrap the shared NewNotification in SchedulerNotificationMessage
+                        let message = SchedulerNotificationMessage {
+                            notification: Some(notification),
+                        };
+                        if tx.send(Ok(message)).await.is_err() {
+                            log::info!("Scheduler client disconnected: {:?}", remote_addr);
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!(
+                            "Scheduler {:?} lagged, skipped {} messages",
+                            remote_addr,
+                            skipped
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::error!("Broadcast channel closed for scheduler: {:?}", remote_addr);
                         break;
                     }
                 }
@@ -261,7 +276,8 @@ async fn main() -> anyhow::Result<()> {
 
     Server::builder()
         .add_service(ControlPlaneServer::new(service.clone()))
-        .add_service(ControlPlaneIndexerServer::new(service))
+        .add_service(ControlPlaneIndexerServer::new(service.clone()))
+        .add_service(ControlPlaneSchedulerServer::new(service))
         .serve(addr)
         .await?;
 

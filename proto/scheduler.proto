@@ -1,0 +1,14 @@
+syntax = "proto3";
+package scheduler;
+
+import "types.proto";
+
+service ControlPlaneScheduler {
+    rpc StreamNotifications (SchedulerSubscribeRequest) returns (stream SchedulerNotificationMessage);
+}
+
+message SchedulerSubscribeRequest {}
+
+message SchedulerNotificationMessage {
+  moxnotify.types.NewNotification notification = 1;
+}

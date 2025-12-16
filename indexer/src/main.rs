@@ -1,3 +1,11 @@
+pub mod moxnotify {
+    pub mod common {
+        tonic::include_proto!("moxnotify.common");
+    }
+    pub mod types {
+        tonic::include_proto!("moxnotify.types");
+    }
+}
 mod indexer {
     tonic::include_proto!("indexer");
 }

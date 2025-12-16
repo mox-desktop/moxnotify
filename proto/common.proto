@@ -1,0 +1,15 @@
+syntax = "proto3";
+package moxnotify.common;
+
+enum Urgency {
+  URGENCY_LOW = 0;
+  URGENCY_NORMAL = 1;
+  URGENCY_CRITICAL = 2;
+}
+
+enum CloseReason {
+  REASON_EXPIRED = 0;
+  REASON_DISMISSED_BY_USER = 1;
+  REASON_CLOSE_NOTIFICATION_CALL = 2;
+  REASON_UNKNOWN = 3;
+}

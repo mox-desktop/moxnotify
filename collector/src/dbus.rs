@@ -1,10 +1,10 @@
 use crate::EmitEvent;
 use crate::Event;
-use crate::collector;
-use crate::collector::{
-    Action, CloseReason, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
-};
 use crate::image_data::ImageData;
+use crate::moxnotify::common::CloseReason;
+use crate::moxnotify::types::{
+    Action, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
+};
 use chrono::offset::Local;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
@@ -98,13 +98,15 @@ impl NotificationHints {
                         if let Ok(s) = Str::try_from(v) {
                             nh.image = if let Ok(path) = url::Url::parse(&s) {
                                 Some(Image {
-                                    image: Some(collector::image::Image::FilePath(
+                                    image: Some(crate::moxnotify::types::image::Image::FilePath(
                                         path.to_string(),
                                     )),
                                 })
                             } else {
                                 Some(Image {
-                                    image: Some(collector::image::Image::Name(s.as_str().into())),
+                                    image: Some(crate::moxnotify::types::image::Image::Name(
+                                        s.as_str().into(),
+                                    )),
                                 })
                             };
                         }
@@ -113,9 +115,9 @@ impl NotificationHints {
                         if let zbus::zvariant::Value::Structure(v) = v {
                             if let Ok(image) = ImageData::try_from(v) {
                                 nh.image = Some(Image {
-                                    image: Some(collector::image::Image::Data(convert_image_data(
-                                        &image,
-                                    ))),
+                                    image: Some(crate::moxnotify::types::image::Image::Data(
+                                        convert_image_data(&image),
+                                    )),
                                 });
                             } else {
                                 log::warn!("Invalid image data");

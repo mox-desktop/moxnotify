@@ -1,5 +1,13 @@
 [workspace]
-members = ["daemon", "ctl", "collector", "control_plane", "indexer", "searcher"]
+members = [
+  "daemon",
+  "ctl",
+  "collector",
+  "control_plane",
+  "indexer",
+  "searcher",
+  "scheduler",
+]
 resolver = "2"
 
 [profile.release]

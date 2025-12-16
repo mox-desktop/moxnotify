@@ -4,3 +4,4 @@ result
 vendor
 webui/node_modules/
 webui/.next
+dump.rdb
