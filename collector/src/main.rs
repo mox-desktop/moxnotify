@@ -7,17 +7,17 @@ pub mod moxnotify {
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
-}
-pub mod collector {
-    tonic::include_proto!("collector");
+    pub mod collector {
+        tonic::include_proto!("moxnotify.collector");
+    }
 }
 
 use calloop::EventLoop;
-use collector::CollectorMessage;
-use collector::collector_message::Message;
-use collector::control_plane_client::ControlPlaneClient;
 use env_logger::Builder;
 use log::LevelFilter;
+use moxnotify::collector::CollectorMessage;
+use moxnotify::collector::collector_message::Message;
+use moxnotify::collector::collector_service_client::CollectorServiceClient;
 use moxnotify::common::CloseReason;
 use moxnotify::types::{ActionInvoked, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
@@ -29,7 +29,7 @@ type NotificationId = u32;
 
 struct Collector {
     #[allow(dead_code)]
-    client: ControlPlaneClient<Channel>,
+    client: CollectorServiceClient<Channel>,
     message_sender: mpsc::Sender<CollectorMessage>,
 }
 
@@ -86,7 +86,7 @@ async fn main() -> anyhow::Result<()> {
     let log_level = LevelFilter::Info;
     Builder::new().filter(Some("collector"), log_level).init();
 
-    let mut client = ControlPlaneClient::connect("http://[::1]:50051")
+    let mut client = CollectorServiceClient::connect("http://[::1]:50051")
         .await
         .unwrap();
 
@@ -113,7 +113,9 @@ async fn main() -> anyhow::Result<()> {
             while let Some(msg_result) = incoming_stream.next().await {
                 match msg_result {
                     Ok(msg) => match msg.message {
-                        Some(collector::control_plane_message::Message::ActionInvoked(action)) => {
+                        Some(moxnotify::collector::collector_response::Message::ActionInvoked(
+                            action,
+                        )) => {
                             log::info!(
                                 "Action invoked: id={}, key={}, token={}",
                                 action.id,
@@ -122,9 +124,11 @@ async fn main() -> anyhow::Result<()> {
                             );
                             let _ = emit_sender.send(EmitEvent::ActionInvoked(action));
                         }
-                        Some(collector::control_plane_message::Message::NotificationClosed(
-                            closed,
-                        )) => {
+                        Some(
+                            moxnotify::collector::collector_response::Message::NotificationClosed(
+                                closed,
+                            ),
+                        ) => {
                             log::info!(
                                 "Notification closed by control plane: id={}, reason={:?}",
                                 closed.id,
@@ -133,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
                             let _ = emit_sender.send(EmitEvent::NotificationClosed(closed));
                         }
                         None => {
-                            log::warn!("Received empty ControlPlaneMessage");
+                            log::warn!("Received empty CollectorResponse");
                         }
                     },
                     Err(e) => {

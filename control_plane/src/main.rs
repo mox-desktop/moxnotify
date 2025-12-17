@@ -5,31 +5,26 @@ pub mod moxnotify {
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
+    pub mod collector {
+        tonic::include_proto!("moxnotify.collector");
+    }
+    pub mod indexer {
+        tonic::include_proto!("moxnotify.indexer");
+    }
+    pub mod scheduler {
+        tonic::include_proto!("moxnotify.scheduler");
+    }
 }
 
-pub mod collector {
-    tonic::include_proto!("collector");
-}
-
-pub mod indexer {
-    tonic::include_proto!("indexer");
-}
-
-pub mod scheduler {
-    tonic::include_proto!("scheduler");
-}
-
-use collector::control_plane_server::{ControlPlane, ControlPlaneServer};
-use collector::{CollectorMessage, ControlPlaneMessage};
 use env_logger::Builder;
-use indexer::control_plane_indexer_server::{ControlPlaneIndexer, ControlPlaneIndexerServer};
-use indexer::{IndexerNotificationMessage, IndexerSubscribeRequest};
 use log::LevelFilter;
+use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
+use moxnotify::collector::{CollectorMessage, CollectorResponse};
+use moxnotify::indexer::indexer_service_server::{IndexerService, IndexerServiceServer};
+use moxnotify::indexer::{IndexerNotificationMessage, IndexerSubscribeRequest};
+use moxnotify::scheduler::scheduler_service_server::{SchedulerService, SchedulerServiceServer};
+use moxnotify::scheduler::{SchedulerNotificationMessage, SchedulerSubscribeRequest};
 use moxnotify::types::NewNotification;
-use scheduler::control_plane_scheduler_server::{
-    ControlPlaneScheduler, ControlPlaneSchedulerServer,
-};
-use scheduler::{SchedulerNotificationMessage, SchedulerSubscribeRequest};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -61,10 +56,10 @@ struct ConnectionInfo {
 }
 
 #[tonic::async_trait]
-impl ControlPlane for ControlPlaneService {
+impl CollectorService for ControlPlaneService {
     type NotificationsStream = Pin<
         Box<
-            dyn tonic::codegen::tokio_stream::Stream<Item = Result<ControlPlaneMessage, Status>>
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<CollectorResponse, Status>>
                 + Send
                 + 'static,
         >,
@@ -98,7 +93,7 @@ impl ControlPlane for ControlPlaneService {
                 match msg_result {
                     Ok(msg) => {
                         match msg.message {
-                            Some(collector::collector_message::Message::NewNotification(
+                            Some(moxnotify::collector::collector_message::Message::NewNotification(
                                 notification,
                             )) => {
                                 log::info!(
@@ -112,7 +107,7 @@ impl ControlPlane for ControlPlaneService {
 
                                 let _ = notification_broadcast.send(notification.clone());
                             }
-                            Some(collector::collector_message::Message::NotificationClosed(
+                            Some(moxnotify::collector::collector_message::Message::NotificationClosed(
                                 closed,
                             )) => {
                                 log::info!(
@@ -154,7 +149,7 @@ impl ControlPlane for ControlPlaneService {
 }
 
 #[tonic::async_trait]
-impl ControlPlaneIndexer for ControlPlaneService {
+impl IndexerService for ControlPlaneService {
     type StreamNotificationsStream = Pin<
         Box<
             dyn tonic::codegen::tokio_stream::Stream<
@@ -208,7 +203,7 @@ impl ControlPlaneIndexer for ControlPlaneService {
 }
 
 #[tonic::async_trait]
-impl ControlPlaneScheduler for ControlPlaneService {
+impl SchedulerService for ControlPlaneService {
     type StreamNotificationsStream = Pin<
         Box<
             dyn tonic::codegen::tokio_stream::Stream<
@@ -275,9 +270,9 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Control plane server listening on {}", addr);
 
     Server::builder()
-        .add_service(ControlPlaneServer::new(service.clone()))
-        .add_service(ControlPlaneIndexerServer::new(service.clone()))
-        .add_service(ControlPlaneSchedulerServer::new(service))
+        .add_service(CollectorServiceServer::new(service.clone()))
+        .add_service(IndexerServiceServer::new(service.clone()))
+        .add_service(SchedulerServiceServer::new(service))
         .serve(addr)
         .await?;
 

@@ -1,0 +1,14 @@
+syntax = "proto3";
+package moxnotify.client;
+
+import "types.proto";
+
+service ClientService {
+    rpc Notify (ClientNotifyRequest) returns (stream ClientNotifyMessage);
+}
+
+message ClientNotifyRequest {}
+
+message ClientNotifyMessage {
+    moxnotify.types.NewNotification notification = 1;
+}

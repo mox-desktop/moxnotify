@@ -52,12 +52,6 @@ enum NotifyCommand {
         action: SwitchAction,
     },
 
-    #[command(about = "Manage notification history visibility")]
-    History {
-        #[command(subcommand)]
-        action: SwitchAction,
-    },
-
     #[command(about = "Inhibit notifications")]
     Inhibit {
         #[command(subcommand)]
@@ -94,12 +88,6 @@ async fn main() -> anyhow::Result<()> {
             SwitchAction::Off => notify::Event::Unmute,
             SwitchAction::Toggle => notify::Event::ToggleMute,
             SwitchAction::State => notify::Event::MuteState,
-        },
-        NotifyCommand::History { action } => match action {
-            SwitchAction::On => notify::Event::ShowHistory,
-            SwitchAction::Off => notify::Event::HideHistory,
-            SwitchAction::Toggle => notify::Event::ToggleHistory,
-            SwitchAction::State => notify::Event::HistoryState,
         },
         NotifyCommand::Inhibit { action } => match action {
             SwitchAction::On => notify::Event::Inhibit,

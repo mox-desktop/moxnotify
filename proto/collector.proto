@@ -1,10 +1,10 @@
 syntax = "proto3";
-package collector;
+package moxnotify.collector;
 
 import "types.proto";
 
-service ControlPlane {
-  rpc Notifications (stream CollectorMessage) returns (stream ControlPlaneMessage);
+service CollectorService {
+  rpc Notifications (stream CollectorMessage) returns (stream CollectorResponse);
 }
 
 message CollectorMessage {
@@ -14,7 +14,7 @@ message CollectorMessage {
   }
 }
 
-message ControlPlaneMessage {
+message CollectorResponse {
   oneof message {
     moxnotify.types.ActionInvoked action_invoked = 1;
     moxnotify.types.NotificationClosed notification_closed = 2;

@@ -1,9 +1,9 @@
 syntax = "proto3";
-package scheduler;
+package moxnotify.scheduler;
 
 import "types.proto";
 
-service ControlPlaneScheduler {
+service SchedulerService {
     rpc StreamNotifications (SchedulerSubscribeRequest) returns (stream SchedulerNotificationMessage);
 }
 

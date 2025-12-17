@@ -1,9 +1,9 @@
 syntax = "proto3";
-package indexer;
+package moxnotify.indexer;
 
 import "types.proto";
 
-service ControlPlaneIndexer {
+service IndexerService {
   rpc StreamNotifications (IndexerSubscribeRequest) returns (stream IndexerNotificationMessage);
 }
 

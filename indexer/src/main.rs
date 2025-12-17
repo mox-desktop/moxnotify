@@ -5,15 +5,15 @@ pub mod moxnotify {
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
-}
-mod indexer {
-    tonic::include_proto!("indexer");
+    pub mod indexer {
+        tonic::include_proto!("moxnotify.indexer");
+    }
 }
 
 use env_logger::Builder;
-use indexer::IndexerSubscribeRequest;
-use indexer::control_plane_indexer_client::ControlPlaneIndexerClient;
 use log::LevelFilter;
+use moxnotify::indexer::IndexerSubscribeRequest;
+use moxnotify::indexer::indexer_service_client::IndexerServiceClient;
 use std::path::PathBuf;
 use tantivy::directory::MmapDirectory;
 use tantivy::{DateTime, schema::*};
@@ -46,7 +46,7 @@ async fn main() -> tantivy::Result<()> {
 
     log::info!("Connecting to control plane at: {}", control_plane_addr);
 
-    let mut client = ControlPlaneIndexerClient::connect(control_plane_addr)
+    let mut client = IndexerServiceClient::connect(control_plane_addr)
         .await
         .map_err(|e| {
             tantivy::TantivyError::InvalidArgument(format!(
