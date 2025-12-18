@@ -20,7 +20,7 @@ use std::{
 };
 use text::{Body, Summary};
 
-use crate::{CRITICAL, LOW, NORMAL};
+use crate::moxnotify::common::Urgency;
 
 #[derive(Default, Clone)]
 pub struct SoundFile {
@@ -1108,12 +1108,11 @@ impl Default for Timeout {
 }
 
 impl Timeout {
-    pub fn get(&self, urgency: i32) -> i32 {
+    pub fn get(&self, urgency: Urgency) -> i32 {
         match urgency {
-            LOW => self.urgency_low,
-            NORMAL => self.urgency_normal,
-            CRITICAL => self.urgency_critical,
-            _ => unreachable!(),
+            Urgency::Low => self.urgency_low,
+            Urgency::Normal => self.urgency_normal,
+            Urgency::Critical => self.urgency_critical,
         }
     }
 }

@@ -1,12 +1,12 @@
 use super::UiState;
 use crate::{
-    LOW, NotificationData,
     components::{
         Component,
         notification::{Notification, Ready},
         text::Text,
     },
     config::Config,
+    moxnotify::{common::Urgency, types::NewNotification},
 };
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
@@ -61,7 +61,7 @@ impl NotificationView {
                 self.prev = Some(Notification::<Ready>::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
-                    NotificationData {
+                    NewNotification {
                         summary,
                         ..Default::default()
                     },
@@ -90,7 +90,7 @@ impl NotificationView {
                 self.next = Some(Notification::<Ready>::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
-                    NotificationData {
+                    NewNotification {
                         summary,
                         ..Default::default()
                     },
@@ -115,10 +115,10 @@ impl NotificationView {
                     total_width - style.border.size.left - style.border.size.right,
                     extents.height - style.border.size.top - style.border.size.bottom,
                 ],
-                rect_color: style.background.color(LOW),
+                rect_color: style.background.color(Urgency::Low),
                 border_radius: style.border.radius.into(),
                 border_size: style.border.size.into(),
-                border_color: style.border.color.color(LOW),
+                border_color: style.border.color.color(Urgency::Low),
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
                 depth: 0.9,
             };
@@ -128,7 +128,7 @@ impl NotificationView {
                 prev.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::LOW)
+                    .get_text_areas(Urgency::Low)
                     .swap_remove(0),
             ));
         }
@@ -149,10 +149,10 @@ impl NotificationView {
                     total_width - style.border.size.left - style.border.size.right,
                     extents.height - style.border.size.top - style.border.size.bottom,
                 ],
-                rect_color: style.background.color(LOW),
+                rect_color: style.background.color(Urgency::Low),
                 border_radius: style.border.radius.into(),
                 border_size: style.border.size.into(),
-                border_color: style.border.color.color(LOW),
+                border_color: style.border.color.color(Urgency::Low),
                 scale: self.ui_state.scale.load(Ordering::Relaxed),
                 depth: 0.9,
             };
@@ -162,7 +162,7 @@ impl NotificationView {
                 next.summary
                     .as_ref()
                     .expect("Something went horribly wrong")
-                    .get_text_areas(crate::LOW)
+                    .get_text_areas(Urgency::Low)
                     .swap_remove(0),
             ));
         }

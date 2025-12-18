@@ -4,11 +4,7 @@ package moxnotify.indexer;
 import "types.proto";
 
 service IndexerService {
-  rpc StreamNotifications (IndexerSubscribeRequest) returns (stream IndexerNotificationMessage);
+  rpc StreamNotifications (IndexerSubscribeRequest) returns (stream moxnotify.types.NotificationMessage);
 }
 
 message IndexerSubscribeRequest {}
-
-message IndexerNotificationMessage {
-  moxnotify.types.NewNotification notification = 1;
-}

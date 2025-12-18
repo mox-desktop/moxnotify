@@ -5,6 +5,7 @@ use super::{
 use crate::{
     components::{self, Bounds, Component, Data},
     config,
+    moxnotify::common::Urgency,
 };
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use moxui::shape_renderer;
@@ -347,7 +348,7 @@ impl Component for Body {
         &self.get_notification_style().body
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -363,7 +364,7 @@ impl Component for Body {
         }]
     }
 
-    fn get_text_areas(&self, urgency: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         let render_bounds = self.get_render_bounds();
 
@@ -447,7 +448,7 @@ impl Component for Body {
         self.y = y;
     }
 
-    fn get_data(&self, urgency: i32) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)
             .into_iter()
             .map(Data::Instance)

@@ -13,6 +13,7 @@ mod audio;
 pub mod components;
 mod config;
 mod dbus;
+mod grpc;
 mod input;
 mod manager;
 mod rendering;
@@ -22,8 +23,8 @@ mod wayland;
 use crate::{
     config::keymaps,
     moxnotify::{
-        client::ClientNotifyRequest,
-        types::{Action, NotificationHints},
+        common::{CloseReason, Urgency},
+        types::NewNotification,
     },
 };
 use audio::Audio;
@@ -37,13 +38,11 @@ use futures_lite::stream::StreamExt;
 use glyphon::FontSystem;
 use input::Seat;
 use log::LevelFilter;
-use manager::{NotificationManager, Reason};
-use moxnotify::client::client_service_client::ClientServiceClient;
+use manager::NotificationManager;
 use rendering::{
     surface::{FocusReason, Surface},
     wgpu_state,
 };
-use serde::Serialize;
 use std::{
     cell::RefCell,
     path::{Path, PathBuf},
@@ -52,7 +51,6 @@ use std::{
     sync::{Arc, atomic::Ordering},
 };
 use tokio::sync::broadcast;
-use tonic::Request;
 use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
     globals::{GlobalList, registry_queue_init},
@@ -63,9 +61,9 @@ use wayland_protocols::ext::idle_notify::v1::client::{
 };
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
 
-pub const LOW: i32 = 0;
-pub const NORMAL: i32 = 1;
-pub const CRITICAL: i32 = 2;
+// Urgency enum is now defined in proto/common.proto
+// Use Urgency::UrgencyLow, Urgency::UrgencyNormal, Urgency::UrgencyCritical
+// Convert to i32 using `as i32` when needed for compatibility
 
 #[derive(Debug)]
 pub struct Output {
@@ -165,17 +163,20 @@ impl Moxnotify {
             Event::Dismiss { all, id } => {
                 if all {
                     log::info!("Dismissing all notifications");
-                    self.dismiss_range(.., Some(Reason::DismissedByUser));
+                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser));
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
-                        self.dismiss_with_reason(notification.id(), Some(Reason::DismissedByUser));
+                        self.dismiss_with_reason(
+                            notification.id(),
+                            Some(CloseReason::ReasonDismissedByUser),
+                        );
                     } else {
                         log::debug!("No notifications to dismiss");
                     }
                 } else {
                     log::info!("Dismissing notification with id={id}");
-                    self.dismiss_with_reason(id, Some(Reason::DismissedByUser));
+                    self.dismiss_with_reason(id, Some(CloseReason::ReasonDismissedByUser));
                 }
             }
             Event::InvokeAction { id, key } => {
@@ -193,7 +194,7 @@ impl Moxnotify {
                     .notifications()
                     .iter()
                     .find(|notification| notification.id() == id)
-                    .is_some_and(|n| n.data().hints.resident)
+                    .is_some_and(|n| n.data().hints.as_ref().unwrap().resident)
                 {
                     self.dismiss_with_reason(id, None);
                 }
@@ -225,42 +226,46 @@ impl Moxnotify {
                     data.summary
                 );
 
-                let path = match (data.hints.sound_file.clone(), data.hints.sound_name.clone()) {
+                let path = match (
+                    data.hints.as_ref().unwrap().sound_file.clone(),
+                    data.hints.as_ref().unwrap().sound_name.clone(),
+                ) {
                     (None, Some(sound_name)) => freedesktop_sound::lookup(&sound_name)
                         .with_cache()
                         .find()
                         .map(std::convert::Into::into),
-                    (None, None) => match data.hints.urgency {
-                        LOW => self
-                            .config
-                            .general
-                            .default_sound_file
-                            .urgency_low
-                            .as_ref()
-                            .map(Arc::clone),
-                        NORMAL => self
-                            .config
-                            .general
-                            .default_sound_file
-                            .urgency_normal
-                            .as_ref()
-                            .map(Arc::clone),
-                        CRITICAL => self
-                            .config
-                            .general
-                            .default_sound_file
-                            .urgency_critical
-                            .as_ref()
-                            .map(Arc::clone),
-                        _ => unreachable!(),
-                    },
+                    (None, None) => {
+                        match Urgency::try_from(data.hints.as_ref().unwrap().urgency).unwrap() {
+                            Urgency::Low => self
+                                .config
+                                .general
+                                .default_sound_file
+                                .urgency_low
+                                .as_ref()
+                                .map(Arc::clone),
+                            Urgency::Normal => self
+                                .config
+                                .general
+                                .default_sound_file
+                                .urgency_normal
+                                .as_ref()
+                                .map(Arc::clone),
+                            Urgency::Critical => self
+                                .config
+                                .general
+                                .default_sound_file
+                                .urgency_critical
+                                .as_ref()
+                                .map(Arc::clone),
+                        }
+                    }
                     (Some(sound_file), Some(_) | None) => {
                         let str = sound_file.as_str();
                         PathBuf::from_str(str).map(|path| path.into()).ok()
                     }
                 };
 
-                let suppress_sound = data.hints.suppress_sound;
+                let suppress_sound = data.hints.as_ref().unwrap().suppress_sound;
 
                 self.notifications.add(*data);
 
@@ -273,7 +278,7 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_with_reason(id, Some(Reason::CloseNotificationCall));
+                self.dismiss_with_reason(id, Some(CloseReason::ReasonCloseNotificationCall));
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
@@ -424,7 +429,8 @@ pub enum EmitEvent {
     },
     NotificationClosed {
         id: NotificationId,
-        reason: Reason,
+        reason: CloseReason,
+        uuid: String,
     },
     Open {
         uri: Arc<str>,
@@ -444,7 +450,7 @@ pub enum Event {
     Dismiss { all: bool, id: NotificationId },
     InvokeAction { id: NotificationId, key: String },
     InvokeAnchor(Arc<str>),
-    Notify(Box<NotificationData>),
+    Notify(Box<NewNotification>),
     CloseNotification(u32),
     List,
     FocusSurface,
@@ -456,18 +462,6 @@ pub enum Event {
     GetInhibited,
     SetOutput(Option<Arc<str>>),
     ShowOutput,
-}
-
-#[derive(Debug, Default, Serialize, Clone)]
-pub struct NotificationData {
-    pub id: u32,
-    pub app_name: Arc<str>,
-    pub app_icon: Option<String>,
-    pub summary: String,
-    pub body: String,
-    pub timeout: i32,
-    pub actions: Vec<Action>,
-    pub hints: NotificationHints,
 }
 
 impl Dispatch<wl_output::WlOutput, ()> for Moxnotify {
@@ -580,53 +574,9 @@ async fn main() -> anyhow::Result<()> {
 
     {
         let event_sender = event_sender.clone();
+        let emit_receiver = emit_sender.subscribe();
         scheduler.schedule(async move {
-            let scheduler_addr = std::env::var("MOXNOTIFY_SCHEDULER_ADDR")
-                .unwrap_or_else(|_| "http://[::1]:50052".to_string());
-
-            log::info!("Connecting to scheduler at: {}", scheduler_addr);
-
-            let mut client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
-
-            log::info!("Connected to scheduler, subscribing to notifications...");
-
-            let request = Request::new(ClientNotifyRequest{});
-            let mut stream = client.notify(request).await.unwrap().into_inner();
-
-            log::info!("Subscribed to notifications");
-
-            while let Some(msg_result) = stream.next().await {
-                if let Ok(msg) = msg_result
-                    && let Some(notification) = msg.notification
-                {
-                    log::info!(
-                        "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                        notification.id,
-                        notification.app_name,
-                        notification.summary,
-                        notification.body,
-                        notification.hints.as_ref().unwrap().urgency
-                    );
-
-                    if let Err(e) = event_sender
-                        .send(Event::Notify(Box::new(NotificationData {
-                            id: notification.id,
-                            app_name: notification.app_name.into(),
-                            app_icon: notification.app_icon,
-                            summary: notification.summary,
-                            body: notification.body,
-                            timeout: notification.timeout,
-                            actions: notification.actions,
-                            // THIS UNWRAP IS THE ENTIRE REASON WHY THIS STRUCT EXISTS
-                            // BECAUSE NESTED MESSAGES ARE ALWASYS AN Option<T>
-                            // RAHHHHH
-                            hints: notification.hints.unwrap(),
-                        })))
-                    {
-                        log::error!("Error: {e}");
-                    }
-                }
-            }
+            grpc::serve(event_sender, emit_receiver).await;
         })?;
     }
 

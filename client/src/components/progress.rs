@@ -1,6 +1,7 @@
 use crate::{
     components::{self, Bounds, Component},
     config::{self, Insets, Size, border::BorderRadius},
+    moxnotify::common::Urgency,
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
@@ -105,11 +106,11 @@ impl Component for Progress {
         }
     }
 
-    fn get_text_areas(&self, _: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
         vec![]
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
 
         let progress_ratio = (self.value as f32 / 100.0).min(1.0);

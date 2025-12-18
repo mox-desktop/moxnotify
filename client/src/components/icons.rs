@@ -1,7 +1,7 @@
 use crate::{
     components::{self, Bounds, Component},
     config::StyleState,
-    moxnotify::types::Image,
+    moxnotify::{common::Urgency, types::Image},
     utils::image_data::ImageData,
 };
 use moxui::{
@@ -171,11 +171,11 @@ impl Component for Icons {
         }
     }
 
-    fn get_instances(&self, _: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, _: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         Vec::new()
     }
 
-    fn get_text_areas(&self, _: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
@@ -249,7 +249,7 @@ impl Component for Icons {
         texture_areas
     }
 
-    fn get_data(&self, _: i32) -> Vec<Data<'_>> {
+    fn get_data(&self, _: Urgency) -> Vec<Data<'_>> {
         self.get_textures().into_iter().map(Data::Texture).collect()
     }
 }

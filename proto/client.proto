@@ -4,11 +4,14 @@ package moxnotify.client;
 import "types.proto";
 
 service ClientService {
-    rpc Notify (ClientNotifyRequest) returns (stream ClientNotifyMessage);
+    rpc Notify (ClientNotifyRequest) returns (stream moxnotify.types.NotificationMessage);
+    rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
 }
 
 message ClientNotifyRequest {}
 
-message ClientNotifyMessage {
-    moxnotify.types.NewNotification notification = 1;
+message ClientNotificationClosedRequest {
+    moxnotify.types.NotificationClosed notification_closed = 1;
 }
+
+message ClientNotificationClosedResponse {}

@@ -2,6 +2,7 @@ use super::{Button, Component, Hint, State};
 use crate::{
     components::{self, Bounds, text::body::Anchor},
     config::button::ButtonState,
+    moxnotify::common::Urgency,
     rendering::text_renderer::Text,
 };
 use moxui::{shape_renderer, texture_renderer};
@@ -29,7 +30,7 @@ impl Component for AnchorButton {
         &self.context.config.styles.hover.buttons.dismiss.default
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
         vec![shape_renderer::ShapeInstance {
@@ -44,7 +45,7 @@ impl Component for AnchorButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         let style = self.get_style();
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,

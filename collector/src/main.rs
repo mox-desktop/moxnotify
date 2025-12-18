@@ -52,12 +52,9 @@ impl Collector {
                     message: Some(Message::NewNotification(*data)),
                 }
             }
-            Event::CloseNotification(id) => CollectorMessage {
-                message: Some(Message::NotificationClosed(NotificationClosed {
-                    id,
-                    reason: CloseReason::ReasonCloseNotificationCall as i32,
-                })),
-            },
+            Event::CloseNotification(id) => {
+                return Ok(());
+            }
         };
 
         self.message_sender
@@ -107,6 +104,28 @@ async fn main() -> anyhow::Result<()> {
     let (event_sender, event_receiver) = calloop::channel::channel();
     let (emit_sender, emit_receiver) = broadcast::channel(128);
 
+    let uuid = loop {
+        match incoming_stream.next().await {
+            Some(Ok(msg)) => {
+                if let Some(uuid) = msg.message
+                    && let moxnotify::collector::collector_response::Message::ConnectionRegistered(
+                        ack,
+                    ) = uuid
+                {
+                    log::info!("Registered, uuid: {}", ack.message);
+                    break ack.message;
+                }
+            }
+            Some(Err(err)) => {
+                log::warn!("Error reading from control plane: {}", err);
+            }
+            None => {
+                log::info!("Control plane stream ended before UUID arrived");
+                return Ok(());
+            }
+        }
+    };
+
     {
         let emit_sender = emit_sender.clone();
         scheduler.schedule(async move {
@@ -139,6 +158,7 @@ async fn main() -> anyhow::Result<()> {
                         None => {
                             log::warn!("Received empty CollectorResponse");
                         }
+                        _ => {}
                     },
                     Err(e) => {
                         log::error!("Error receiving message from control plane: {}", e);
@@ -152,7 +172,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let event_sender = event_sender.clone();
         scheduler.schedule(async move {
-            if let Err(e) = dbus::serve(event_sender, emit_receiver).await {
+            if let Err(e) = dbus::serve(event_sender, emit_receiver, uuid).await {
                 log::error!("{e}");
             }
         })?;

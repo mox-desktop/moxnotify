@@ -1,7 +1,7 @@
 use crate::EmitEvent;
 use crate::Event;
 use crate::image_data::ImageData;
-use crate::moxnotify::common::CloseReason;
+use crate::moxnotify::common::{CloseReason, Urgency};
 use crate::moxnotify::types::{
     Action, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
 };
@@ -85,12 +85,12 @@ impl NotificationHints {
                     "y" => nh.y = i32::try_from(v).ok(),
                     "urgency" => {
                         nh.urgency = match u8::try_from(v) {
-                            Ok(0) => 0_i32,
-                            Ok(1) => 1_i32,
-                            Ok(2) => 2_i32,
+                            Ok(0) => Urgency::Low as i32,
+                            Ok(1) => Urgency::Normal as i32,
+                            Ok(2) => Urgency::Critical as i32,
                             _ => {
                                 log::warn!("Invalid urgency data");
-                                1_i32
+                                Urgency::Normal as i32
                             }
                         };
                     }
@@ -134,6 +134,7 @@ impl NotificationHints {
 struct NotificationsImpl {
     next_id: u32,
     event_sender: calloop::channel::Sender<Event>,
+    uuid: String,
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -196,6 +197,7 @@ impl NotificationsImpl {
                 hints: Some(NotificationHints::new(hints)),
                 app_icon,
                 timestamp: Local::now().timestamp_millis(),
+                uuid: self.uuid.clone(),
             })))
         {
             log::error!("Error: {e}");
@@ -243,10 +245,12 @@ impl NotificationsImpl {
 pub async fn serve(
     event_sender: calloop::channel::Sender<Event>,
     mut emit_receiver: broadcast::Receiver<EmitEvent>,
+    uuid: String,
 ) -> zbus::Result<()> {
     let server = NotificationsImpl {
         next_id: 1,
         event_sender,
+        uuid,
     };
 
     let conn = zbus::connection::Builder::session()?

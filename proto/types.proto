@@ -38,7 +38,7 @@ message NotificationHints {
   bool transient = 9;
   int32 x = 10;
   optional int32 y = 11;
-  int32 urgency = 12;
+  moxnotify.common.Urgency urgency = 12;
   optional Image image = 13;
 }
 
@@ -52,15 +52,21 @@ message NewNotification {
   repeated Action actions = 7;
   NotificationHints hints = 8;
   int64 timestamp = 9;
+  string uuid = 10;
 }
 
 message NotificationClosed {
   uint32 id = 1;
   moxnotify.common.CloseReason reason = 2;
+  string uuid = 3;
 }
 
 message ActionInvoked {
   uint32 id = 1;
   string action_key = 2;
   string token = 3;
+}
+
+message NotificationMessage {
+  NewNotification notification = 1;
 }

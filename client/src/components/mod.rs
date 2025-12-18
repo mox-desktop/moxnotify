@@ -7,6 +7,7 @@ pub mod text;
 use crate::{
     config::{Config, StyleState},
     manager::UiState,
+    moxnotify::common::Urgency,
 };
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::{Arc, atomic::Ordering};
@@ -14,7 +15,7 @@ use std::sync::{Arc, atomic::Ordering};
 #[derive(Clone, Default)]
 pub struct Context {
     pub id: u32,
-    pub app_name: Arc<str>,
+    pub app_name: String,
     pub config: Arc<Config>,
     pub ui_state: UiState,
 }
@@ -64,9 +65,9 @@ pub trait Component {
 
     fn get_style(&self) -> &Self::Style;
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance>;
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance>;
 
-    fn get_text_areas(&self, urgency: i32) -> Vec<glyphon::TextArea<'_>>;
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>>;
 
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>>;
 
@@ -76,7 +77,7 @@ pub trait Component {
 
     fn set_position(&mut self, x: f32, y: f32);
 
-    fn get_data(&self, urgency: i32) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         self.get_instances(urgency)
             .into_iter()
             .map(Data::Instance)

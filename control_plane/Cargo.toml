@@ -25,6 +25,7 @@ log = "0.4.27"
 tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
+uuid = "1.19.0"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

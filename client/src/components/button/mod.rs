@@ -10,7 +10,7 @@ use crate::{
         button::ButtonState,
         keymaps::{self},
     },
-    moxnotify::types::Action,
+    moxnotify::{common::Urgency, types::Action},
     rendering::text_renderer,
 };
 use action::ActionButton;
@@ -58,7 +58,7 @@ pub struct Finished;
 pub struct ButtonManager<State = NotReady> {
     context: components::Context,
     buttons: Vec<Box<dyn Button<Style = ButtonState>>>,
-    urgency: i32,
+    urgency: Urgency,
     sender: Option<calloop::channel::Sender<crate::Event>>,
     _state: std::marker::PhantomData<State>,
 }
@@ -66,7 +66,7 @@ pub struct ButtonManager<State = NotReady> {
 impl ButtonManager<NotReady> {
     pub fn new(
         context: components::Context,
-        urgency: i32,
+        urgency: Urgency,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Self {
         Self {
@@ -465,7 +465,7 @@ impl Component for Hint {
         }
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = &self.context.config.styles.hover.hint;
         let bounds = self.get_render_bounds();
 
@@ -486,7 +486,7 @@ impl Component for Hint {
         self.y = y;
     }
 
-    fn get_text_areas(&self, urgency: i32) -> Vec<TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
         let style = self.get_style();
         let text_extents = self.text.get_bounds();
         let bounds = self.get_render_bounds();

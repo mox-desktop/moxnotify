@@ -14,30 +14,37 @@ pub mod moxnotify {
 }
 
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
-use crate::moxnotify::client::{ClientNotifyMessage, ClientNotifyRequest};
+use crate::moxnotify::client::{
+    ClientNotificationClosedRequest, ClientNotificationClosedResponse, ClientNotifyRequest,
+};
+use crate::moxnotify::scheduler::SchedulerNotificationClosedRequest;
 use crate::moxnotify::scheduler::{
     SchedulerSubscribeRequest, scheduler_service_client::SchedulerServiceClient,
 };
+use crate::moxnotify::types::NotificationClosed;
 use env_logger::Builder;
 use log::LevelFilter;
-use moxnotify::types::NewNotification;
+use moxnotify::types::{NewNotification, NotificationMessage};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
+use tonic::transport::Channel;
 use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Clone)]
 struct Scheduler {
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
+    client: Arc<Mutex<SchedulerServiceClient<Channel>>>,
 }
 
 impl Scheduler {
-    fn new() -> Self {
+    fn new(client: SchedulerServiceClient<Channel>) -> Self {
         let (tx, _) = broadcast::channel(128);
         Self {
+            client: Arc::new(Mutex::new(client)),
             notification_broadcast: Arc::new(tx),
         }
     }
@@ -47,7 +54,7 @@ impl Scheduler {
 impl ClientService for Scheduler {
     type NotifyStream = Pin<
         Box<
-            dyn tonic::codegen::tokio_stream::Stream<Item = Result<ClientNotifyMessage, Status>>
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
                 + Send
                 + 'static,
         >,
@@ -55,9 +62,9 @@ impl ClientService for Scheduler {
 
     async fn notify(
         &self,
-        _request: Request<ClientNotifyRequest>,
+        request: Request<ClientNotifyRequest>,
     ) -> Result<Response<Self::NotifyStream>, Status> {
-        let remote_addr = _request.remote_addr().unwrap();
+        let remote_addr = request.remote_addr().unwrap();
         log::info!("New client connection from: {:?}", remote_addr);
 
         let mut rx = self.notification_broadcast.subscribe();
@@ -67,7 +74,7 @@ impl ClientService for Scheduler {
             loop {
                 match rx.recv().await {
                     Ok(notification) => {
-                        let message = ClientNotifyMessage {
+                        let message = NotificationMessage {
                             notification: Some(notification),
                         };
                         if tx.send(Ok(message)).await.is_err() {
@@ -93,6 +100,29 @@ impl ClientService for Scheduler {
         let output_stream: Self::NotifyStream = Box::pin(ReceiverStream::new(stream_rx));
         Ok(Response::new(output_stream))
     }
+
+    async fn notification_closed(
+        &self,
+        request: Request<ClientNotificationClosedRequest>,
+    ) -> Result<Response<ClientNotificationClosedResponse>, Status> {
+        let mut client = self.client.lock().unwrap();
+
+        let closed = request.into_inner().notification_closed.unwrap();
+        log::info!(
+            "Received notification_closed request: id: {}, reason: {:?}",
+            closed.id,
+            closed.reason()
+        );
+
+        client.notification_closed(SchedulerNotificationClosedRequest {
+            notification_closed: Some(NotificationClosed {
+                id: closed.id,
+                reason: closed.reason,
+            }),
+        });
+
+        Ok(Response::new(ClientNotificationClosedResponse {}))
+    }
 }
 
 #[tokio::main]
@@ -105,7 +135,11 @@ async fn main() -> anyhow::Result<()> {
     let control_plane_addr = std::env::var("MOXNOTIFY_CONTROL_PLANE_ADDR")
         .unwrap_or_else(|_| "http://[::1]:50051".to_string());
 
-    let scheduler = Scheduler::new();
+    log::info!("Connecting to control plane at: {}", control_plane_addr);
+
+    let mut client = SchedulerServiceClient::connect(control_plane_addr).await?;
+
+    let scheduler = Scheduler::new(client.clone());
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
 
     let scheduler_clone = scheduler.clone();
@@ -118,10 +152,6 @@ async fn main() -> anyhow::Result<()> {
             .await
             .expect("Server failed to start");
     });
-
-    log::info!("Connecting to control plane at: {}", control_plane_addr);
-
-    let mut client = SchedulerServiceClient::connect(control_plane_addr).await?;
 
     log::info!("Connected to control plane, subscribing to notifications...");
 

@@ -1,5 +1,5 @@
 use super::partial::PartialColor;
-use crate::{CRITICAL, LOW, NORMAL};
+use crate::moxnotify::common::Urgency;
 use serde::{
     Deserialize, Deserializer,
     de::{self, MapAccess, Visitor},
@@ -92,16 +92,15 @@ impl Color {
         }
     }
 
-    pub fn get(&self, urgency: i32) -> [u8; 4] {
+    pub fn get(&self, urgency: Urgency) -> [u8; 4] {
         match urgency {
-            LOW => self.urgency_low,
-            NORMAL => self.urgency_normal,
-            CRITICAL => self.urgency_critical,
-            _ => unreachable!(),
+            Urgency::Low => self.urgency_low,
+            Urgency::Normal => self.urgency_normal,
+            Urgency::Critical => self.urgency_critical,
         }
     }
 
-    pub fn color(self, urgency: i32) -> [f32; 4] {
+    pub fn color(self, urgency: Urgency) -> [f32; 4] {
         let rgba = self.get(urgency);
 
         [
@@ -112,12 +111,11 @@ impl Color {
         ]
     }
 
-    pub fn into_glyphon(self, urgency: i32) -> glyphon::Color {
+    pub fn into_glyphon(self, urgency: Urgency) -> glyphon::Color {
         let value = match urgency {
-            LOW => self.urgency_low,
-            NORMAL => self.urgency_normal,
-            CRITICAL => self.urgency_critical,
-            _ => unreachable!(),
+            Urgency::Low => self.urgency_low,
+            Urgency::Normal => self.urgency_normal,
+            Urgency::Critical => self.urgency_critical,
         };
 
         glyphon::Color::rgba(value[0], value[1], value[2], value[3])

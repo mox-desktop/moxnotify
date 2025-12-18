@@ -4,11 +4,14 @@ package moxnotify.scheduler;
 import "types.proto";
 
 service SchedulerService {
-    rpc StreamNotifications (SchedulerSubscribeRequest) returns (stream SchedulerNotificationMessage);
+    rpc StreamNotifications (SchedulerSubscribeRequest) returns (stream moxnotify.types.NotificationMessage);
+    rpc NotificationClosed (SchedulerNotificationClosedRequest) returns (SchedulerNotificationClosedResponse);
 }
 
 message SchedulerSubscribeRequest {}
 
-message SchedulerNotificationMessage {
-  moxnotify.types.NewNotification notification = 1;
+message SchedulerNotificationClosedRequest {
+  moxnotify.types.NotificationClosed notification_closed = 1;
 }
+
+message SchedulerNotificationClosedResponse {}

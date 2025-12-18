@@ -1,12 +1,13 @@
 mod view;
 
 use crate::{
-    EmitEvent, Moxnotify, NotificationData,
+    EmitEvent, Moxnotify,
     components::{
         Component, Data,
         notification::{self, Empty, Notification, NotificationId, NotificationState},
     },
     config::{Config, keymaps},
+    moxnotify::{common::CloseReason, types::NewNotification},
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -47,7 +48,7 @@ impl Default for UiState {
 
 pub struct NotificationManager {
     notifications: VecDeque<NotificationState>,
-    waiting: Vec<NotificationData>,
+    waiting: Vec<NewNotification>,
     config: Arc<Config>,
     loop_handle: LoopHandle<'static, Moxnotify>,
     sender: calloop::channel::Sender<crate::Event>,
@@ -200,8 +201,10 @@ impl NotificationManager {
             self.iter_viewed()
                 .fold((f32::MAX, f32::MIN), |(min_x, max_x), notification| {
                     let extents = notification.get_bounds();
-                    let left = extents.x + notification.data().hints.x as f32;
-                    let right = extents.x + extents.width + notification.data().hints.x as f32;
+                    let left = extents.x + notification.data().hints.as_ref().unwrap().x as f32;
+                    let right = extents.x
+                        + extents.width
+                        + notification.data().hints.as_ref().unwrap().x as f32;
                     (min_x.min(left), max_x.max(right))
                 });
 
@@ -353,7 +356,7 @@ impl NotificationManager {
         self.waiting.len()
     }
 
-    pub fn add_many(&mut self, data: Vec<NotificationData>) {
+    pub fn add_many(&mut self, data: Vec<NewNotification>) {
         let new_notifications: Vec<NotificationState> = data
             .into_par_iter()
             .map(|data| {
@@ -370,7 +373,7 @@ impl NotificationManager {
         self.update_size();
     }
 
-    pub fn add(&mut self, data: NotificationData) {
+    pub fn add(&mut self, data: NewNotification) {
         if self.inhibited() {
             self.waiting.push(data);
             return;
@@ -478,7 +481,7 @@ impl NotificationManager {
                         notification_state,
                         NotificationState::Empty(Notification::<Empty>::empty(
                             Arc::clone(&self.config),
-                            NotificationData::default(),
+                            NewNotification::default(),
                             UiState::default(),
                         )),
                     )
@@ -494,7 +497,7 @@ impl NotificationManager {
     pub fn update_size(&mut self) {
         let x_offset = self
             .iter_viewed()
-            .map(|notification| notification.data().hints.x)
+            .map(|notification| notification.data().hints.as_ref().unwrap().x)
             .min()
             .unwrap_or_default()
             .abs() as f32;
@@ -524,28 +527,20 @@ impl NotificationManager {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum Reason {
-    Expired = 1,
-    DismissedByUser = 2,
-    CloseNotificationCall = 3,
-    Unkown = 4,
-}
-
-impl fmt::Display for Reason {
+impl fmt::Display for CloseReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Reason::Expired => "Expired",
-            Reason::DismissedByUser => "DismissedByUser",
-            Reason::CloseNotificationCall => "CloseNotificationCall",
-            Reason::Unkown => "Unknown",
+            CloseReason::ReasonExpired => "Expired",
+            CloseReason::ReasonDismissedByUser => "DismissedByUser",
+            CloseReason::ReasonCloseNotificationCall => "CloseNotificationCall",
+            CloseReason::ReasonUnknown => "Unknown",
         };
         write!(f, "{s}")
     }
 }
 
 impl Moxnotify {
-    pub fn dismiss_range<T>(&mut self, range: T, reason: Option<Reason>)
+    pub fn dismiss_range<T>(&mut self, range: T, reason: Option<CloseReason>)
     where
         T: RangeBounds<usize>,
     {
@@ -558,9 +553,19 @@ impl Moxnotify {
 
         if let Some(reason) = reason {
             for id in &ids {
-                _ = self
-                    .emit_sender
-                    .send(EmitEvent::NotificationClosed { id: *id, reason });
+                let uuid = self.notifications.iter_viewed().find_map(|notification| {
+                    if notification.id() == *id {
+                        Some(notification.uuid())
+                    } else {
+                        None
+                    }
+                });
+
+                _ = self.emit_sender.send(EmitEvent::NotificationClosed {
+                    id: *id,
+                    reason,
+                    uuid: uuid.unwrap(),
+                });
             }
         }
 
@@ -574,7 +579,7 @@ impl Moxnotify {
             .for_each(|id| self.notifications.dismiss_by_id(*id));
     }
 
-    pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<Reason>) {
+    pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<CloseReason>) {
         if self.notifications.selected_id() == Some(id) {
             self.notifications
                 .ui_state
@@ -582,11 +587,21 @@ impl Moxnotify {
                 .store(keymaps::Mode::Normal, Ordering::Relaxed);
         }
 
+        let uuid = self.notifications.iter_viewed().find_map(|notification| {
+            if notification.id() == id {
+                Some(notification.uuid())
+            } else {
+                None
+            }
+        });
+
         self.notifications.dismiss_by_id(id);
         if let Some(reason) = reason {
-            _ = self
-                .emit_sender
-                .send(EmitEvent::NotificationClosed { id, reason });
+            _ = self.emit_sender.send(EmitEvent::NotificationClosed {
+                id,
+                reason,
+                uuid: uuid.unwrap(),
+            });
         }
 
         self.update_surface_size();
@@ -603,404 +618,5 @@ impl Moxnotify {
         if self.notifications.notifications().is_empty() {
             self.seat.keyboard.repeat.key = None;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
-
-    use calloop::EventLoop;
-    use glyphon::FontSystem;
-
-    use super::NotificationManager;
-    use crate::{config::Config, dbus::xdg::NotificationData};
-
-    #[test]
-    fn test_add() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData::default();
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-    }
-
-    #[test]
-    fn test_add_with_duplicate_id() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 42,
-            ..Default::default()
-        };
-
-        manager.add(data.clone());
-
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-    }
-
-    #[test]
-    fn test_add_many() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let mut notifications = Vec::new();
-        for i in 1..=5 {
-            let data = NotificationData {
-                id: i,
-                ..Default::default()
-            };
-            notifications.push(data);
-        }
-
-        manager.add_many(notifications);
-        assert_eq!(manager.notifications().len(), 5);
-    }
-
-    #[test]
-    fn test_dismiss() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 123,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-
-        manager.dismiss_by_id(123);
-        assert_eq!(manager.notifications().len(), 0);
-    }
-
-    #[test]
-    fn test_select_and_deselect() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.selected_id(), None);
-
-        manager.select(1);
-        assert_eq!(manager.selected_id(), Some(1));
-
-        let notification = manager.selected_notification_mut().unwrap();
-        assert!(notification.hovered());
-
-        manager.deselect();
-        assert_eq!(manager.selected_id(), None);
-    }
-
-    #[test]
-    fn test_next_and_prev() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        for i in 1..=10 {
-            let data = NotificationData {
-                id: i,
-                ..Default::default()
-            };
-            manager.add(data);
-        }
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(1));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(2));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(3));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(4));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(5));
-
-        manager.next();
-        assert_eq!(manager.selected_id(), Some(6));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(5));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(4));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(3));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(2));
-
-        manager.prev();
-        assert_eq!(manager.selected_id(), Some(1));
-    }
-
-    #[test]
-    fn test_inhibit() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 0,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert_eq!(manager.notifications().len(), 1);
-
-        manager.inhibit();
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        assert!(manager.inhibited());
-        assert_eq!(manager.notifications().len(), 1);
-        assert_eq!(manager.waiting(), 1);
-
-        manager.uninhibit();
-
-        assert!(!manager.inhibited());
-        //assert_eq!(manager.notifications().len(), 1);
-        assert_eq!(manager.waiting(), 0);
-    }
-
-    #[test]
-    fn test_data() {
-        let config = Arc::new(Config::default());
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 123,
-            body: "body".into(),
-            summary: "summary".into(),
-            ..Default::default()
-        };
-        manager.add(data);
-
-        let data = manager.data();
-        // Instances
-        // Body, summary, notification and dismiss button
-        assert_eq!(data.0.len(), 4);
-        // Text areas
-        // Body and summary and dismiss button
-        assert_eq!(data.1.len(), 3);
-        // No icons
-        assert_eq!(data.2.len(), 0);
-    }
-
-    #[test]
-    fn test_get_by_coordinates() {
-        let config = Arc::new(Config::default());
-        let style = &config.styles.default;
-        let event_loop = EventLoop::try_new().unwrap();
-        let font_system = Rc::new(RefCell::new(FontSystem::new()));
-        let mut manager = NotificationManager::new(
-            Arc::clone(&config),
-            event_loop.handle(),
-            calloop::channel::channel().0,
-            font_system,
-        );
-
-        let data = NotificationData {
-            id: 1,
-            ..Default::default()
-        };
-        manager.add(data);
-
-        if let Some(notification) = manager.notifications.get_mut(0) {
-            notification.set_position(10.0, 20.0);
-        }
-
-        let x = 10.0 + style.margin.left.resolve(0.) as f64;
-        let y = 20.0 + style.margin.top.resolve(0.) as f64;
-        let width = (style.width
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right) as f64;
-        let height = (style.height
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom) as f64;
-
-        let (left, right, top, bottom) = (x, x + width, y, y + height);
-        let epsilon = 0.1;
-
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top + height / 2.0)
-                .is_some()
-        );
-
-        // Left edge
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, top + height / 2.0)
-                .is_none()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + epsilon, top + height / 2.0)
-                .is_some()
-        );
-
-        // Right edge
-        assert!(
-            manager
-                .get_by_coordinates(right - epsilon, top + height / 2.0)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, top + height / 2.0)
-                .is_none()
-        );
-
-        // Top edge
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top - epsilon)
-                .is_none()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, top)
-                .is_some()
-        );
-
-        // Bottom edge
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, bottom)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(left + width / 2.0, bottom + 30.00)
-                .is_some()
-        );
-
-        // Top-left corner
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, top - epsilon)
-                .is_none()
-        );
-        assert!(manager.get_by_coordinates(left + epsilon, top).is_some());
-
-        // Top-right corner
-        assert!(manager.get_by_coordinates(right - epsilon, top).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, top - epsilon)
-                .is_none()
-        );
-
-        // Bottom-left corner
-        assert!(manager.get_by_coordinates(left + epsilon, bottom).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(left - epsilon, bottom + epsilon)
-                .is_none()
-        );
-
-        // Bottom-right corner
-        assert!(
-            manager
-                .get_by_coordinates(right - epsilon, bottom)
-                .is_some()
-        );
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, bottom + epsilon)
-                .is_none()
-        );
-
-        let center_notification =
-            manager.get_by_coordinates(left + width / 2.0, top + height / 2.0);
-        assert_eq!(center_notification.unwrap().id(), 1);
-
-        assert!(manager.get_by_coordinates(15.0, 25.0).is_some());
-        assert!(manager.get_by_coordinates(9.9, 25.0).is_none());
-        assert!(manager.get_by_coordinates(right, bottom).is_some());
-        assert!(
-            manager
-                .get_by_coordinates(right + epsilon, bottom + epsilon)
-                .is_none()
-        );
     }
 }

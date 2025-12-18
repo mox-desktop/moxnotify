@@ -1,7 +1,7 @@
 use crate::{
     Moxnotify,
     config::keymaps::{self, Key, KeyAction, KeyWithModifiers, Keys, Modifiers},
-    manager::Reason,
+    moxnotify::common::CloseReason,
 };
 use calloop::{
     RegistrationToken,
@@ -258,7 +258,7 @@ impl Moxnotify {
                 }
                 KeyAction::DismissNotification => {
                     if let Some(id) = self.notifications.selected_id() {
-                        self.dismiss_with_reason(id, Some(Reason::DismissedByUser));
+                        self.dismiss_with_reason(id, Some(CloseReason::ReasonDismissedByUser));
                         return Ok(());
                     }
                 }

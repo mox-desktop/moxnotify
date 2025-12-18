@@ -6,9 +6,10 @@ use super::text::body::Body;
 use super::text::summary::Summary;
 use super::{Bounds, UiState};
 use crate::components;
-use crate::manager::Reason;
+use crate::moxnotify::common::{CloseReason, Urgency};
+use crate::moxnotify::types::NewNotification;
 use crate::{
-    Config, Moxnotify, NotificationData,
+    Config, Moxnotify,
     components::{Component, Data},
     config::{Size, StyleState},
 };
@@ -39,7 +40,15 @@ impl NotificationState {
     }
 
     #[must_use]
-    pub fn data(&self) -> &NotificationData {
+    pub fn uuid(&self) -> String {
+        match self {
+            Self::Empty(n) => n.uuid.clone(),
+            Self::Ready(n) => n.uuid.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn data(&self) -> &NewNotification {
         match self {
             Self::Empty(n) => &n.data,
             Self::Ready(n) => &n.data,
@@ -100,7 +109,7 @@ impl NotificationState {
     pub fn replace(
         &mut self,
         font_system: &mut FontSystem,
-        data: NotificationData,
+        data: NewNotification,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match self {
@@ -135,9 +144,10 @@ pub struct Notification<State> {
     progress: Option<Progress>,
     pub registration_token: Option<RegistrationToken>,
     pub buttons: Option<ButtonManager<Finished>>,
-    pub data: NotificationData,
+    pub data: NewNotification,
     pub summary: Option<Summary>,
     pub body: Option<Body>,
+    pub uuid: String,
     context: components::Context,
     _state: std::marker::PhantomData<State>,
 }
@@ -187,14 +197,14 @@ impl Component for Notification<Ready> {
         let style = self.get_style();
 
         Bounds {
-            x: extents.x + style.margin.left + self.x + self.data.hints.x as f32,
+            x: extents.x + style.margin.left + self.x + self.data.hints.as_ref().unwrap().x as f32,
             y: extents.y + style.margin.top,
             width: extents.width - style.margin.left - style.margin.right,
             height: extents.height - style.margin.top - style.margin.bottom,
         }
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
 
@@ -213,7 +223,7 @@ impl Component for Notification<Ready> {
         }]
     }
 
-    fn get_text_areas(&self, _: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _: Urgency) -> Vec<glyphon::TextArea<'_>> {
         Vec::new()
     }
 
@@ -443,7 +453,7 @@ impl Component for Notification<Ready> {
         }
     }
 
-    fn get_data(&self, urgency: i32) -> Vec<Data<'_>> {
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
         let mut data = self
             .get_instances(urgency)
             .into_iter()
@@ -479,17 +489,18 @@ impl<State> Notification<State> {
     #[must_use]
     pub fn empty(
         config: Arc<Config>,
-        data: NotificationData,
+        data: NewNotification,
         ui_state: UiState,
     ) -> Notification<Empty> {
         let context = components::Context {
             id: data.id,
-            app_name: Arc::clone(&data.app_name),
+            app_name: data.app_name.clone(),
             config,
             ui_state,
         };
 
         Notification {
+            uuid: data.uuid.clone(),
             context,
             summary: None,
             progress: None,
@@ -509,12 +520,12 @@ impl<State> Notification<State> {
     pub fn counter(
         config: Arc<Config>,
         font_system: &mut FontSystem,
-        data: NotificationData,
+        data: NewNotification,
         ui_state: UiState,
     ) -> Notification<Ready> {
         let context = components::Context {
             id: data.id,
-            app_name: Arc::clone(&data.app_name),
+            app_name: data.app_name.clone(),
             config,
             ui_state,
         };
@@ -527,6 +538,7 @@ impl<State> Notification<State> {
             progress: None,
             registration_token: None,
             buttons: None,
+            uuid: data.uuid.clone(),
             data,
             summary: Some(Summary::new(context.clone(), font_system)),
             body: None,
@@ -539,25 +551,32 @@ impl<State> Notification<State> {
     pub fn new(
         config: Arc<Config>,
         font_system: &mut FontSystem,
-        data: NotificationData,
+        data: NewNotification,
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification<Ready> {
         let context = components::Context {
             id: data.id,
-            app_name: Arc::clone(&data.app_name),
+            app_name: data.app_name.clone(),
             config,
             ui_state,
         };
 
-        let icons = match (data.hints.image.as_ref(), data.app_icon.as_deref()) {
+        let icons = match (
+            data.hints.as_ref().unwrap().image.as_ref(),
+            data.app_icon.as_deref(),
+        ) {
             (None, None) => None,
             (image, app_icon) => Some(Icons::new(context.clone(), image, app_icon)),
         };
 
-        let mut buttons = ButtonManager::new(context.clone(), data.hints.urgency, sender)
-            .add_dismiss(font_system)
-            .add_actions(&data.actions, font_system);
+        let mut buttons = ButtonManager::new(
+            context.clone(),
+            data.hints.as_ref().unwrap().urgency.try_into().unwrap(),
+            sender,
+        )
+        .add_dismiss(font_system)
+        .add_actions(&data.actions, font_system);
 
         let dismiss_button = buttons
             .buttons()
@@ -613,8 +632,11 @@ impl<State> Notification<State> {
 
         Notification {
             summary,
+            uuid: data.uuid.clone(),
             progress: data
                 .hints
+                .as_ref()
+                .unwrap()
                 .value
                 .map(|value| Progress::new(context.clone(), value)),
             context,
@@ -633,13 +655,13 @@ impl<State> Notification<State> {
     pub fn replace(
         &mut self,
         font_system: &mut FontSystem,
-        data: NotificationData,
+        data: NewNotification,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) {
         match (
             self.progress.as_mut(),
-            data.hints.value,
-            self.data.hints.value == data.hints.value,
+            data.hints.as_ref().unwrap().value,
+            self.data.hints.as_ref().unwrap().value == data.hints.as_ref().unwrap().value,
         ) {
             (Some(progress), Some(value), false) => progress.set_value(value),
             (None, Some(value), _) => {
@@ -693,7 +715,7 @@ impl<State> Notification<State> {
             let id = self.id();
             self.registration_token = loop_handle
                 .insert_source(timer, move |_, (), moxnotify| {
-                    moxnotify.dismiss_with_reason(id, Some(Reason::Expired));
+                    moxnotify.dismiss_with_reason(id, Some(CloseReason::ReasonExpired));
 
                     let loop_handle = moxnotify.loop_handle.clone();
                     moxnotify
@@ -726,7 +748,7 @@ impl<State> Notification<State> {
             .styles
             .notification
             .iter()
-            .find(|entry| entry.app == self.data.app_name);
+            .find(|entry| *entry.app == self.data.app_name);
 
         let ignore_timeout = notification_style_entry
             .and_then(|entry| entry.ignore_timeout)
@@ -737,13 +759,13 @@ impl<State> Notification<State> {
             .unwrap_or(&self.context.config.general.default_timeout);
 
         if ignore_timeout {
-            (default_timeout.get(self.data.hints.urgency) > 0)
-                .then(|| (default_timeout.get(self.data.hints.urgency) as u64) * 1000)
+            (default_timeout.get(self.urgency()) > 0)
+                .then(|| (default_timeout.get(self.urgency()) as u64) * 1000)
         } else {
             match self.data.timeout {
                 0 => None,
-                -1 => (default_timeout.get(self.data.hints.urgency) > 0)
-                    .then(|| (default_timeout.get(self.data.hints.urgency) as u64) * 1000),
+                -1 => (default_timeout.get(self.urgency()) > 0)
+                    .then(|| (default_timeout.get(self.urgency()) as u64) * 1000),
                 t if t > 0 => Some(t as u64),
                 _ => None,
             }
@@ -760,8 +782,14 @@ impl<State> Notification<State> {
     }
 
     #[must_use]
-    pub fn urgency(&self) -> i32 {
-        self.data.hints.urgency
+    pub fn urgency(&self) -> Urgency {
+        self.data
+            .hints
+            .as_ref()
+            .unwrap()
+            .urgency
+            .try_into()
+            .unwrap()
     }
 
     #[must_use]
@@ -791,14 +819,14 @@ impl Notification<Empty> {
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification<Ready> {
         let icons = match (
-            self.data.hints.image.as_ref(),
+            self.data.hints.as_ref().unwrap().image.as_ref(),
             self.data.app_icon.as_deref(),
         ) {
             (None, None) => None,
             (image, app_icon) => Some(Icons::new(self.context.clone(), image, app_icon)),
         };
 
-        let mut buttons = ButtonManager::new(self.context.clone(), self.data.hints.urgency, sender)
+        let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
             .add_dismiss(font_system)
             .add_actions(&self.data.actions, font_system);
 
@@ -858,9 +886,12 @@ impl Notification<Empty> {
 
         Notification {
             summary,
+            uuid: self.uuid,
             progress: self
                 .data
                 .hints
+                .as_ref()
+                .unwrap()
                 .value
                 .map(|value| Progress::new(self.context.clone(), value)),
             y: 0.,

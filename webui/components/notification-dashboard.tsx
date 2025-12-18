@@ -25,7 +25,7 @@ export function NotificationDashboard() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [timeInterval, setTimeInterval] = useState(
-    Number(searchParams.get("interval")) || 15
+    Number(searchParams.get("interval")) || 5
   )
   // Time range filter - how far back to show notifications (in minutes, or "all" for no filter)
   const predefinedTimeRanges = [15, 30, 60, 120, 240, 360, 720, 1440, 2880, 4320, 10080, 20160, 43200, 129600, 259200, 525600]
@@ -33,7 +33,7 @@ export function NotificationDashboard() {
     ? "all" 
     : searchParams.get("timeRange") 
     ? Number(searchParams.get("timeRange")) 
-    : 15
+    : 30
   const [timeRange, setTimeRange] = useState<number | "all">(initialTimeRange)
   const [useCustomTimeRange, setUseCustomTimeRange] = useState(
     typeof initialTimeRange === "number" && !predefinedTimeRanges.includes(initialTimeRange)
@@ -259,11 +259,11 @@ export function NotificationDashboard() {
       params.set("q", searchQuery)
     }
 
-    if (timeInterval !== 15) {
+    if (timeInterval !== 5) {
       params.set("interval", timeInterval.toString())
     }
 
-    if (timeRange !== 15 && timeRange !== "all") {
+    if (timeRange !== 30 && timeRange !== "all") {
       params.set("timeRange", timeRange.toString())
     } else if (timeRange === "all") {
       params.set("timeRange", "all")

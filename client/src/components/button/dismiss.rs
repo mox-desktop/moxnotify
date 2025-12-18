@@ -2,6 +2,7 @@ use super::{Button, ButtonType, Hint, State};
 use crate::{
     components::{self, Bounds, Component},
     config::button::ButtonState,
+    moxnotify::common::Urgency,
     rendering::text_renderer,
 };
 use moxui::{shape_renderer, texture_renderer};
@@ -32,7 +33,7 @@ impl Component for DismissButton {
         }
     }
 
-    fn get_instances(&self, urgency: i32) -> Vec<shape_renderer::ShapeInstance> {
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
@@ -51,7 +52,7 @@ impl Component for DismissButton {
         }]
     }
 
-    fn get_text_areas(&self, urgency: i32) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         let extents = self.get_render_bounds();
         let style = self.get_style();
         let text_extents = self.text.get_bounds();

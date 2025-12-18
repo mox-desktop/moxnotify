@@ -20,11 +20,11 @@ use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
+use moxnotify::indexer::IndexerSubscribeRequest;
 use moxnotify::indexer::indexer_service_server::{IndexerService, IndexerServiceServer};
-use moxnotify::indexer::{IndexerNotificationMessage, IndexerSubscribeRequest};
+use moxnotify::scheduler::SchedulerSubscribeRequest;
 use moxnotify::scheduler::scheduler_service_server::{SchedulerService, SchedulerServiceServer};
-use moxnotify::scheduler::{SchedulerNotificationMessage, SchedulerSubscribeRequest};
-use moxnotify::types::NewNotification;
+use moxnotify::types::{NewNotification, NotificationMessage};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -34,6 +34,11 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
+use uuid::Uuid;
+
+use crate::moxnotify::scheduler::{
+    SchedulerNotificationClosedRequest, SchedulerNotificationClosedResponse,
+};
 
 #[derive(Clone)]
 pub struct ControlPlaneService {
@@ -85,10 +90,28 @@ impl CollectorService for ControlPlaneService {
         }
 
         let mut stream = request.into_inner();
-        let (_tx, rx) = mpsc::channel(128);
+        let (tx, rx) = mpsc::channel(128);
         let notification_broadcast = Arc::clone(&self.notification_broadcast);
 
+        // Send initial connection acknowledgment
+        let tx_clone = tx.clone();
         tokio::spawn(async move {
+            let ack = CollectorResponse {
+                message: Some(
+                    moxnotify::collector::collector_response::Message::ConnectionRegistered(
+                        moxnotify::collector::ConnectionRegistered {
+                            message: Uuid::new_v4().to_string(),
+                        },
+                    ),
+                ),
+            };
+            if let Err(e) = tx_clone.send(Ok(ack)).await {
+                log::warn!("Failed to send connection acknowledgment: {}", e);
+            }
+        });
+
+        tokio::spawn(async move {
+            let _response_tx = tx; // Available for sending responses to collector if needed
             while let Some(msg_result) = stream.next().await {
                 match msg_result {
                     Ok(msg) => {
@@ -152,9 +175,8 @@ impl CollectorService for ControlPlaneService {
 impl IndexerService for ControlPlaneService {
     type StreamNotificationsStream = Pin<
         Box<
-            dyn tonic::codegen::tokio_stream::Stream<
-                    Item = Result<IndexerNotificationMessage, Status>,
-                > + Send
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
+                + Send
                 + 'static,
         >,
     >;
@@ -173,10 +195,13 @@ impl IndexerService for ControlPlaneService {
             loop {
                 match rx.recv().await {
                     Ok(notification) => {
-                        let message = IndexerNotificationMessage {
-                            notification: Some(notification),
-                        };
-                        if tx.send(Ok(message)).await.is_err() {
+                        if tx
+                            .send(Ok(NotificationMessage {
+                                notification: Some(notification),
+                            }))
+                            .await
+                            .is_err()
+                        {
                             log::info!("Indexer client disconnected: {:?}", remote_addr);
                             break;
                         }
@@ -206,18 +231,17 @@ impl IndexerService for ControlPlaneService {
 impl SchedulerService for ControlPlaneService {
     type StreamNotificationsStream = Pin<
         Box<
-            dyn tonic::codegen::tokio_stream::Stream<
-                    Item = Result<SchedulerNotificationMessage, Status>,
-                > + Send
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
+                + Send
                 + 'static,
         >,
     >;
 
     async fn stream_notifications(
         &self,
-        _request: Request<SchedulerSubscribeRequest>,
+        request: Request<SchedulerSubscribeRequest>,
     ) -> Result<Response<Self::StreamNotificationsStream>, Status> {
-        let remote_addr = _request.remote_addr().unwrap();
+        let remote_addr = request.remote_addr().unwrap();
         log::info!("New scheduler connection from: {:?}", remote_addr);
 
         let mut rx = self.notification_broadcast.subscribe();
@@ -227,8 +251,7 @@ impl SchedulerService for ControlPlaneService {
             loop {
                 match rx.recv().await {
                     Ok(notification) => {
-                        // Wrap the shared NewNotification in SchedulerNotificationMessage
-                        let message = SchedulerNotificationMessage {
+                        let message = NotificationMessage {
                             notification: Some(notification),
                         };
                         if tx.send(Ok(message)).await.is_err() {
@@ -253,6 +276,17 @@ impl SchedulerService for ControlPlaneService {
 
         let output_stream: Self::StreamNotificationsStream =
             Box::pin(ReceiverStream::new(stream_rx));
+        Ok(Response::new(output_stream))
+    }
+
+    async fn notification_closed(
+        &self,
+        _request: Request<SchedulerNotificationClosedRequest>,
+    ) -> Result<Response<SchedulerNotificationClosedResponse>, Status> {
+        let output_stream = SchedulerNotificationClosedResponse {};
+
+        let _connections = self.active_connections.lock().unwrap();
+
         Ok(Response::new(output_stream))
     }
 }
