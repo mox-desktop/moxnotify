@@ -18,10 +18,5 @@ message CollectorResponse {
   oneof message {
     moxnotify.types.ActionInvoked action_invoked = 1;
     moxnotify.types.NotificationClosed notification_closed = 2;
-    ConnectionRegistered connection_registered = 3;
   }
-}
-
-message ConnectionRegistered {
-  string message = 1;
 }

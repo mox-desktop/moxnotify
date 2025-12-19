@@ -1,7 +1,13 @@
 local_resource(
+    'run-redis',
+    serve_cmd='valkey-server'
+)
+
+local_resource(
     'run-control-plane',
     cmd='cargo build --bin control_plane',
-    serve_cmd='cargo run --bin control_plane'
+    serve_cmd='cargo run --bin control_plane',
+    resource_deps=["run-redis"]
 )
 
 local_resource(
@@ -44,9 +50,3 @@ local_resource(
     serve_cmd='pnpm --dir webui dev',
     resource_deps=['run-searcher']
 )
-
-local_resource(
-    'run-redis',
-    serve_cmd='valkey-server'
-)
-

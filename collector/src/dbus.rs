@@ -133,7 +133,7 @@ impl NotificationHints {
 
 struct NotificationsImpl {
     next_id: u32,
-    event_sender: calloop::channel::Sender<Event>,
+    event_sender: tokio::sync::mpsc::Sender<Event>,
     uuid: String,
 }
 
@@ -199,6 +199,7 @@ impl NotificationsImpl {
                 timestamp: Local::now().timestamp_millis(),
                 uuid: self.uuid.clone(),
             })))
+            .await
         {
             log::error!("Error: {e}");
         }
@@ -207,7 +208,7 @@ impl NotificationsImpl {
     }
 
     async fn close_notification(&self, id: u32) -> zbus::fdo::Result<()> {
-        if let Err(e) = self.event_sender.send(Event::CloseNotification(id)) {
+        if let Err(e) = self.event_sender.send(Event::CloseNotification(id)).await {
             log::error!("Failed to send CloseNotification({id}) event: {e}");
         }
 
@@ -243,7 +244,7 @@ impl NotificationsImpl {
 }
 
 pub async fn serve(
-    event_sender: calloop::channel::Sender<Event>,
+    event_sender: tokio::sync::mpsc::Sender<Event>,
     mut emit_receiver: broadcast::Receiver<EmitEvent>,
     uuid: String,
 ) -> zbus::Result<()> {

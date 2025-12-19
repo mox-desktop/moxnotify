@@ -16,7 +16,7 @@ use crate::moxnotify::client::{
 };
 use env_logger::Builder;
 use log::LevelFilter;
-use moxnotify::types::{NewNotification, NotificationClosed, NotificationMessage};
+use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
 use std::pin::Pin;
@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::{Request, Response, Status, async_trait, transport::Server};
+use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Clone)]
 struct Scheduler {
@@ -104,10 +104,13 @@ impl ClientService for Scheduler {
             closed.reason()
         );
 
-        // Write to Redis stream
         let mut con = self.redis_con.lock().unwrap();
         let json = serde_json::to_string(&closed).unwrap();
-        if let Err(e) = con.xadd("moxnotify:notification_closed", "*", &[("notification", json.as_str())]) {
+        if let Err(e) = con.xadd(
+            "moxnotify:notification_closed",
+            "*",
+            &[("notification", json.as_str())],
+        ) {
             log::error!("Failed to write notification_closed to Redis: {}", e);
         }
 
@@ -152,8 +155,8 @@ async fn main() -> anyhow::Result<()> {
             &StreamReadOptions::default()
                 .group("scheduler-group", "scheduler-1")
                 .block(0),
-        )? {
-            if let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
+        )?
+            && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
                 for stream_id in &stream_key.ids {
                     if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification")
                     {
@@ -191,6 +194,5 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
-        }
     }
 }

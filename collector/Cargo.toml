@@ -21,7 +21,6 @@ serde_json = "1.0.140"
 tracing = { version = "0.1.41", default-features = false }
 log = "0.4.27"
 tonic = "0.14.2"
-calloop = { version = "0.14.2", features = ["executor"] }
 url = { version = "2.5.4", default-features = false }
 image = { version = "0.25.6", default-features = false, features = [
   "jpeg",
@@ -33,7 +32,6 @@ image = { version = "0.25.6", default-features = false, features = [
 fast_image_resize = "5.1.1"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
-pollster = "0.4.0"
 chrono = "0.4.42"
 
 [build-dependencies]

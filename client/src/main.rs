@@ -34,7 +34,6 @@ use clap::Parser;
 use components::notification::NotificationId;
 use config::Config;
 use env_logger::Builder;
-use futures_lite::stream::StreamExt;
 use glyphon::FontSystem;
 use input::Seat;
 use log::LevelFilter;
@@ -576,7 +575,9 @@ async fn main() -> anyhow::Result<()> {
         let event_sender = event_sender.clone();
         let emit_receiver = emit_sender.subscribe();
         scheduler.schedule(async move {
-            grpc::serve(event_sender, emit_receiver).await;
+            if let Err(e) = grpc::serve(event_sender, emit_receiver).await {
+                log::error!("{:?}", e);
+            }
         })?;
     }
 

@@ -8,64 +8,49 @@ pub mod moxnotify {
     pub mod collector {
         tonic::include_proto!("moxnotify.collector");
     }
-    pub mod scheduler {
-        tonic::include_proto!("moxnotify.scheduler");
-    }
 }
 
+use crate::moxnotify::types::NotificationClosed;
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
-use moxnotify::scheduler::SchedulerSubscribeRequest;
-use moxnotify::scheduler::scheduler_service_server::{SchedulerService, SchedulerServiceServer};
-use moxnotify::types::{NewNotification, NotificationMessage};
+use moxnotify::types::NewNotification;
 use redis::TypedCommands;
-use std::collections::HashMap;
-use std::net::SocketAddr;
+use redis::streams::StreamReadOptions;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
-use uuid::Uuid;
-
-use crate::moxnotify::scheduler::{
-    SchedulerNotificationClosedRequest, SchedulerNotificationClosedResponse,
-};
 
 #[derive(Clone)]
 pub struct ControlPlaneService {
-    client: redis::Client,
     con: Arc<Mutex<redis::Connection>>,
-    active_connections: Arc<Mutex<HashMap<SocketAddr, ConnectionInfo>>>,
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
 }
 
 impl ControlPlaneService {
-    fn new() -> Self {
+    fn try_new(mut redis_con: redis::Connection) -> anyhow::Result<Self> {
         let (tx, _) = broadcast::channel(128);
 
-        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
-        let mut con = client.get_connection().unwrap();
+        // If any of these errors it's likely because group already exists
+        _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
+        _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "scheduler-group", "$");
+        _ = redis_con.xgroup_create_mkstream(
+            "moxnotify:notification_closed",
+            "control-plane-group",
+            "$",
+        );
 
-        con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
-        con.xgroup_create_mkstream("moxnotify:notify", "scheduler-group", "$");
-        con.xgroup_create_mkstream("moxnotify:notification_closed", "scheduler-group", "$");
-
-        Self {
-            client,
-            con: Arc::new(Mutex::new(con)),
-            active_connections: Arc::new(Mutex::new(HashMap::new())),
+        Ok(Self {
+            con: Arc::new(Mutex::new(redis_con)),
             notification_broadcast: Arc::new(tx),
-        }
+        })
     }
-}
-
-struct ConnectionInfo {
-    connected_at: std::time::SystemTime,
 }
 
 #[tonic::async_trait]
@@ -86,41 +71,13 @@ impl CollectorService for ControlPlaneService {
 
         log::info!("New connection from: {:?}", remote_addr);
 
-        let active_connections = Arc::clone(&self.active_connections);
-
-        {
-            let mut active_connections = active_connections.lock().unwrap();
-
-            let conn_info = ConnectionInfo {
-                connected_at: std::time::SystemTime::now(),
-            };
-            active_connections.insert(remote_addr, conn_info);
-        }
-
         let mut stream = request.into_inner();
         let (tx, rx) = mpsc::channel(128);
         let notification_broadcast = Arc::clone(&self.notification_broadcast);
 
-        // Send initial connection acknowledgment
-        let tx_clone = tx.clone();
-        tokio::spawn(async move {
-            let ack = CollectorResponse {
-                message: Some(
-                    moxnotify::collector::collector_response::Message::ConnectionRegistered(
-                        moxnotify::collector::ConnectionRegistered {
-                            message: Uuid::new_v4().to_string(),
-                        },
-                    ),
-                ),
-            };
-            if let Err(e) = tx_clone.send(Ok(ack)).await {
-                log::warn!("Failed to send connection acknowledgment: {}", e);
-            }
-        });
-
         let con = Arc::clone(&self.con);
         tokio::spawn(async move {
-            let _response_tx = tx; // Available for sending responses to collector if needed
+            let _response_tx = tx;
             while let Some(msg_result) = stream.next().await {
                 match msg_result {
                     Ok(msg) => {
@@ -137,7 +94,7 @@ impl CollectorService for ControlPlaneService {
                                     notification.hints.as_ref().unwrap().urgency
                                 );
 
-                                let mut con = con.lock().unwrap();
+                                let mut con = con.lock().await;
                                 let json = serde_json::to_string(&notification).unwrap();
                                 con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
                                     .unwrap();
@@ -166,85 +123,10 @@ impl CollectorService for ControlPlaneService {
                 }
             }
 
-            {
-                let active_connections = active_connections.lock().unwrap();
-                if let Some(conn_info) = active_connections.get(&remote_addr) {
-                    log::info!(
-                        "Client disconnected, addr: {:?}, active for: {:?}",
-                        remote_addr,
-                        conn_info.connected_at.elapsed().unwrap_or_default()
-                    );
-                } else {
-                    log::error!("Client disconnected twice, addr: {:?}", remote_addr);
-                }
-            }
+            log::info!("Client disconnected, addr: {:?}", remote_addr,);
         });
 
         let output_stream: Self::NotificationsStream = Box::pin(ReceiverStream::new(rx));
-        Ok(Response::new(output_stream))
-    }
-}
-
-#[tonic::async_trait]
-impl SchedulerService for ControlPlaneService {
-    type StreamNotificationsStream = Pin<
-        Box<
-            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
-                + Send
-                + 'static,
-        >,
-    >;
-
-    async fn stream_notifications(
-        &self,
-        request: Request<SchedulerSubscribeRequest>,
-    ) -> Result<Response<Self::StreamNotificationsStream>, Status> {
-        let remote_addr = request.remote_addr().unwrap();
-        log::info!("New scheduler connection from: {:?}", remote_addr);
-
-        let mut rx = self.notification_broadcast.subscribe();
-        let (tx, stream_rx) = mpsc::channel(128);
-
-        tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(notification) => {
-                        let message = NotificationMessage {
-                            notification: Some(notification),
-                        };
-                        if tx.send(Ok(message)).await.is_err() {
-                            log::info!("Scheduler client disconnected: {:?}", remote_addr);
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        log::warn!(
-                            "Scheduler {:?} lagged, skipped {} messages",
-                            remote_addr,
-                            skipped
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        log::error!("Broadcast channel closed for scheduler: {:?}", remote_addr);
-                        break;
-                    }
-                }
-            }
-        });
-
-        let output_stream: Self::StreamNotificationsStream =
-            Box::pin(ReceiverStream::new(stream_rx));
-        Ok(Response::new(output_stream))
-    }
-
-    async fn notification_closed(
-        &self,
-        _request: Request<SchedulerNotificationClosedRequest>,
-    ) -> Result<Response<SchedulerNotificationClosedResponse>, Status> {
-        let output_stream = SchedulerNotificationClosedResponse {};
-
-        let _connections = self.active_connections.lock().unwrap();
-
         Ok(Response::new(output_stream))
     }
 }
@@ -256,14 +138,80 @@ async fn main() -> anyhow::Result<()> {
         .filter(Some("control_plane"), log_level)
         .init();
 
+    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+
     let addr = "[::1]:50051".parse()?;
-    let service = ControlPlaneService::new();
+    let service = ControlPlaneService::try_new(client.get_connection()?)?;
 
     log::info!("Control plane server listening on {}", addr);
 
+    let con = client.get_connection().unwrap();
+    tokio::spawn(async move {
+        let mut con = con;
+        loop {
+            if let Some(streams) = con
+                .xread_options(
+                    &["moxnotify:notification_closed"],
+                    &[">"],
+                    &StreamReadOptions::default()
+                        .group("control-plane-group", "control-plane")
+                        .block(0),
+                )
+                .unwrap()
+                && let Some(stream_key) = streams
+                    .keys
+                    .iter()
+                    .find(|sk| sk.key == "moxnotify:notification_closed")
+            {
+                for stream_id in &stream_key.ids {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification")
+                    {
+                        match std::str::from_utf8(json) {
+                            Ok(json_str) => {
+                                match serde_json::from_str::<NotificationClosed>(json_str) {
+                                    Ok(closed) => {
+                                        log::info!(
+                                            "Received notification_closed from Redis: id: {}, reason: {:?}",
+                                            closed.id,
+                                            closed.reason()
+                                        );
+
+                                        if let Err(e) = con.xack(
+                                            "moxnotify:notification_closed",
+                                            "control-plane-group",
+                                            &[stream_id.id.as_str()],
+                                        ) {
+                                            log::error!("Failed to ACK message: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!(
+                                            "Failed to parse notification_closed from Redis: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!(
+                                    "Failed to convert notification_closed bytes to string: {}",
+                                    e
+                                );
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                            "Received notification_closed message from Redis but 'notification' field is missing or has unexpected type: stream_id={}",
+                            stream_id.id
+                        );
+                    }
+                }
+            }
+        }
+    });
+
     Server::builder()
         .add_service(CollectorServiceServer::new(service.clone()))
-        .add_service(SchedulerServiceServer::new(service))
         .serve(addr)
         .await?;
 
