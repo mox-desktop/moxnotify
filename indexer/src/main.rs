@@ -5,21 +5,17 @@ pub mod moxnotify {
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
-    pub mod indexer {
-        tonic::include_proto!("moxnotify.indexer");
-    }
 }
 
 use env_logger::Builder;
 use log::LevelFilter;
-use moxnotify::indexer::IndexerSubscribeRequest;
-use moxnotify::indexer::indexer_service_client::IndexerServiceClient;
+use redis::TypedCommands;
+use redis::streams::StreamReadOptions;
 use std::path::PathBuf;
 use tantivy::directory::MmapDirectory;
-use tantivy::{DateTime, schema::*};
-use tantivy::{Index, IndexWriter};
-use tokio_stream::StreamExt;
-use tonic::Request;
+use tantivy::{DateTime, Index, IndexWriter, schema::*};
+
+use crate::moxnotify::types::NewNotification;
 
 fn path() -> PathBuf {
     let path = std::env::var("XDG_DATA_HOME")
@@ -37,34 +33,9 @@ fn path() -> PathBuf {
 }
 
 #[tokio::main]
-async fn main() -> tantivy::Result<()> {
+async fn main() -> anyhow::Result<()> {
     let log_level = LevelFilter::Info;
     Builder::new().filter(Some("indexer"), log_level).init();
-
-    let control_plane_addr = std::env::var("MOXNOTIFY_CONTROL_PLANE_ADDR")
-        .unwrap_or_else(|_| "http://[::1]:50051".to_string());
-
-    log::info!("Connecting to control plane at: {}", control_plane_addr);
-
-    let mut client = IndexerServiceClient::connect(control_plane_addr)
-        .await
-        .map_err(|e| {
-            tantivy::TantivyError::InvalidArgument(format!(
-                "Failed to connect to control plane: {}",
-                e
-            ))
-        })?;
-
-    log::info!("Connected to control plane, subscribing to notifications...");
-
-    let request = Request::new(IndexerSubscribeRequest {});
-    let mut stream = client
-        .stream_notifications(request)
-        .await
-        .map_err(|e| tantivy::TantivyError::InvalidArgument(format!("Failed to subscribe: {}", e)))?
-        .into_inner();
-
-    log::info!("Subscribed to notifications");
 
     let mut schema_builder = Schema::builder();
 
@@ -101,44 +72,64 @@ async fn main() -> tantivy::Result<()> {
 
     let hints = schema.get_field("hints").unwrap();
 
-    while let Some(msg_result) = stream.next().await {
-        if let Ok(msg) = msg_result
-            && let Some(notification) = msg.notification
-        {
-            log::info!(
-                "Indexing notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                notification.id,
-                notification.app_name,
-                notification.summary,
-                notification.body,
-                notification.hints.as_ref().unwrap().urgency
-            );
+    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let mut con = client.get_connection()?;
 
-            let mut doc = TantivyDocument::default();
+    loop {
+        if let Some(streams) = con.xread_options(
+            &["moxnotify:notify"],
+            &[">"],
+            &StreamReadOptions::default()
+                .group("indexer-group", "indexer-1")
+                .block(0),
+        )?
+            && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
+                stream_key.ids.iter().for_each(|stream_id| {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification") {
+                        let notification =
+                            serde_json::from_str::<NewNotification>(str::from_utf8(json).unwrap())
+                                .unwrap();
 
-            doc.add_u64(id, notification.id as u64);
-            doc.add_date(
-                timestamp,
-                DateTime::from_timestamp_millis(notification.timestamp),
-            );
-            doc.add_text(summary, notification.summary);
-            doc.add_text(body, notification.body);
-            doc.add_text(app_name, notification.app_name);
-            doc.add_i64(timeout, notification.timeout as i64);
+                        
+                        log::info!(
+                            "Indexing notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
+                            notification.id,
+                            notification.app_name,
+                            notification.summary,
+                            notification.body,
+                            notification.hints.as_ref().unwrap().urgency
+                        );
 
-            if let Some(icon) = notification.app_icon {
-                doc.add_text(app_icon, icon);
+                        let mut doc = TantivyDocument::default();
+
+                        doc.add_u64(id, notification.id as u64);
+                        doc.add_date(
+                            timestamp,
+                            DateTime::from_timestamp_millis(notification.timestamp),
+                        );
+                        doc.add_text(summary, notification.summary);
+                        doc.add_text(body, notification.body);
+                        doc.add_text(app_name, notification.app_name);
+                        doc.add_i64(timeout, notification.timeout as i64);
+
+                        if let Some(icon) = notification.app_icon {
+                            doc.add_text(app_icon, icon);
+                        }
+
+                        if let Some(h) = notification.hints {
+                            doc.add_text(hints, serde_json::to_string(&h).unwrap());
+                        }
+
+                        index_writer.add_document(doc).unwrap();
+        
+                        con.xack("moxnotify:notify", "indexer-group", &[stream_id.id.as_str()])
+                            .unwrap();
+                        index_writer.commit().unwrap();
+                    }
+                });
             }
-
-            if let Some(h) = notification.hints {
-                doc.add_text(hints, serde_json::to_string(&h).unwrap());
-            }
-
-            index_writer.add_document(doc)?;
-        }
-
-        index_writer.commit()?;
     }
+
 
     Ok(())
 }

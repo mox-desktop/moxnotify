@@ -1,12 +1,9 @@
 pub mod moxnotify {
-    pub mod common {
-        tonic::include_proto!("moxnotify.common");
-    }
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
-    pub mod scheduler {
-        tonic::include_proto!("moxnotify.scheduler");
+    pub mod common {
+        tonic::include_proto!("moxnotify.common");
     }
     pub mod client {
         tonic::include_proto!("moxnotify.client");
@@ -17,35 +14,30 @@ use crate::moxnotify::client::client_service_server::{ClientService, ClientServi
 use crate::moxnotify::client::{
     ClientNotificationClosedRequest, ClientNotificationClosedResponse, ClientNotifyRequest,
 };
-use crate::moxnotify::scheduler::SchedulerNotificationClosedRequest;
-use crate::moxnotify::scheduler::{
-    SchedulerSubscribeRequest, scheduler_service_client::SchedulerServiceClient,
-};
-use crate::moxnotify::types::NotificationClosed;
 use env_logger::Builder;
 use log::LevelFilter;
-use moxnotify::types::{NewNotification, NotificationMessage};
+use moxnotify::types::{NewNotification, NotificationClosed, NotificationMessage};
+use redis::TypedCommands;
+use redis::streams::StreamReadOptions;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
-use tonic::transport::Channel;
-use tonic::{Request, Response, Status, transport::Server};
+use tonic::{Request, Response, Status, async_trait, transport::Server};
 
 #[derive(Clone)]
 struct Scheduler {
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
-    client: Arc<Mutex<SchedulerServiceClient<Channel>>>,
+    redis_con: Arc<Mutex<redis::Connection>>,
 }
 
 impl Scheduler {
-    fn new(client: SchedulerServiceClient<Channel>) -> Self {
+    fn new(redis_con: redis::Connection) -> Self {
         let (tx, _) = broadcast::channel(128);
         Self {
-            client: Arc::new(Mutex::new(client)),
             notification_broadcast: Arc::new(tx),
+            redis_con: Arc::new(Mutex::new(redis_con)),
         }
     }
 }
@@ -105,8 +97,6 @@ impl ClientService for Scheduler {
         &self,
         request: Request<ClientNotificationClosedRequest>,
     ) -> Result<Response<ClientNotificationClosedResponse>, Status> {
-        let mut client = self.client.lock().unwrap();
-
         let closed = request.into_inner().notification_closed.unwrap();
         log::info!(
             "Received notification_closed request: id: {}, reason: {:?}",
@@ -114,12 +104,12 @@ impl ClientService for Scheduler {
             closed.reason()
         );
 
-        client.notification_closed(SchedulerNotificationClosedRequest {
-            notification_closed: Some(NotificationClosed {
-                id: closed.id,
-                reason: closed.reason,
-            }),
-        });
+        // Write to Redis stream
+        let mut con = self.redis_con.lock().unwrap();
+        let json = serde_json::to_string(&closed).unwrap();
+        if let Err(e) = con.xadd("moxnotify:notification_closed", "*", &[("notification", json.as_str())]) {
+            log::error!("Failed to write notification_closed to Redis: {}", e);
+        }
 
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
@@ -132,14 +122,13 @@ async fn main() -> anyhow::Result<()> {
 
     let scheduler_addr =
         std::env::var("MOXNOTIFY_SCHEDULER_ADDR").unwrap_or_else(|_| "[::1]:50052".to_string());
-    let control_plane_addr = std::env::var("MOXNOTIFY_CONTROL_PLANE_ADDR")
-        .unwrap_or_else(|_| "http://[::1]:50051".to_string());
 
-    log::info!("Connecting to control plane at: {}", control_plane_addr);
+    log::info!("Connecting to Redis and subscribing to notifications...");
 
-    let mut client = SchedulerServiceClient::connect(control_plane_addr).await?;
-
-    let scheduler = Scheduler::new(client.clone());
+    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let write_con = client.get_connection()?;
+    let read_con = client.get_connection()?;
+    let scheduler = Scheduler::new(write_con);
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
 
     let scheduler_clone = scheduler.clone();
@@ -153,30 +142,55 @@ async fn main() -> anyhow::Result<()> {
             .expect("Server failed to start");
     });
 
-    log::info!("Connected to control plane, subscribing to notifications...");
+    log::info!("Subscribed to notifications from Redis stream");
 
-    let request = Request::new(SchedulerSubscribeRequest {});
-    let mut stream = client.stream_notifications(request).await?.into_inner();
+    let mut con = read_con;
+    loop {
+        if let Some(streams) = con.xread_options(
+            &["moxnotify:notify"],
+            &[">"],
+            &StreamReadOptions::default()
+                .group("scheduler-group", "scheduler-1")
+                .block(0),
+        )? {
+            if let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
+                for stream_id in &stream_key.ids {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification")
+                    {
+                        match std::str::from_utf8(json) {
+                            Ok(json_str) => {
+                                match serde_json::from_str::<NewNotification>(json_str) {
+                                    Ok(notification) => {
+                                        log::info!(
+                                            "Scheduling notification: id={}, app_name='{}', summary='{}'",
+                                            notification.id,
+                                            notification.app_name,
+                                            notification.summary
+                                        );
 
-    log::info!("Subscribed to notifications");
+                                        let _ = notification_broadcast.send(notification);
 
-    while let Some(msg_result) = stream.next().await {
-        if let Ok(msg) = msg_result
-            && let Some(notification) = msg.notification
-        {
-            log::info!(
-                "Scheduling notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                notification.id,
-                notification.app_name,
-                notification.summary,
-                notification.body,
-                notification.hints.as_ref().unwrap().urgency
-            );
-
-            // Forward notification to clients
-            let _ = notification_broadcast.send(notification);
+                                        // ACK the message after processing
+                                        if let Err(e) = con.xack(
+                                            "moxnotify:notify",
+                                            "scheduler-group",
+                                            &[stream_id.id.as_str()],
+                                        ) {
+                                            log::error!("Failed to ACK message: {}", e);
+                                        }
+                                    }
+                                    Err(e) => {
+                                        log::error!("Failed to parse notification: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Failed to convert bytes to string: {}", e);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
-
-    Ok(())
 }

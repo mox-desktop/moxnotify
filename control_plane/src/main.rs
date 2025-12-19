@@ -8,9 +8,6 @@ pub mod moxnotify {
     pub mod collector {
         tonic::include_proto!("moxnotify.collector");
     }
-    pub mod indexer {
-        tonic::include_proto!("moxnotify.indexer");
-    }
     pub mod scheduler {
         tonic::include_proto!("moxnotify.scheduler");
     }
@@ -20,11 +17,10 @@ use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
-use moxnotify::indexer::IndexerSubscribeRequest;
-use moxnotify::indexer::indexer_service_server::{IndexerService, IndexerServiceServer};
 use moxnotify::scheduler::SchedulerSubscribeRequest;
 use moxnotify::scheduler::scheduler_service_server::{SchedulerService, SchedulerServiceServer};
 use moxnotify::types::{NewNotification, NotificationMessage};
+use redis::TypedCommands;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -42,6 +38,8 @@ use crate::moxnotify::scheduler::{
 
 #[derive(Clone)]
 pub struct ControlPlaneService {
+    client: redis::Client,
+    con: Arc<Mutex<redis::Connection>>,
     active_connections: Arc<Mutex<HashMap<SocketAddr, ConnectionInfo>>>,
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
 }
@@ -49,7 +47,17 @@ pub struct ControlPlaneService {
 impl ControlPlaneService {
     fn new() -> Self {
         let (tx, _) = broadcast::channel(128);
+
+        let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+        let mut con = client.get_connection().unwrap();
+
+        con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
+        con.xgroup_create_mkstream("moxnotify:notify", "scheduler-group", "$");
+        con.xgroup_create_mkstream("moxnotify:notification_closed", "scheduler-group", "$");
+
         Self {
+            client,
+            con: Arc::new(Mutex::new(con)),
             active_connections: Arc::new(Mutex::new(HashMap::new())),
             notification_broadcast: Arc::new(tx),
         }
@@ -110,6 +118,7 @@ impl CollectorService for ControlPlaneService {
             }
         });
 
+        let con = Arc::clone(&self.con);
         tokio::spawn(async move {
             let _response_tx = tx; // Available for sending responses to collector if needed
             while let Some(msg_result) = stream.next().await {
@@ -127,6 +136,11 @@ impl CollectorService for ControlPlaneService {
                                     notification.body,
                                     notification.hints.as_ref().unwrap().urgency
                                 );
+
+                                let mut con = con.lock().unwrap();
+                                let json = serde_json::to_string(&notification).unwrap();
+                                con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
+                                    .unwrap();
 
                                 let _ = notification_broadcast.send(notification.clone());
                             }
@@ -167,62 +181,6 @@ impl CollectorService for ControlPlaneService {
         });
 
         let output_stream: Self::NotificationsStream = Box::pin(ReceiverStream::new(rx));
-        Ok(Response::new(output_stream))
-    }
-}
-
-#[tonic::async_trait]
-impl IndexerService for ControlPlaneService {
-    type StreamNotificationsStream = Pin<
-        Box<
-            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
-                + Send
-                + 'static,
-        >,
-    >;
-
-    async fn stream_notifications(
-        &self,
-        _request: Request<IndexerSubscribeRequest>,
-    ) -> Result<Response<Self::StreamNotificationsStream>, Status> {
-        let remote_addr = _request.remote_addr().unwrap();
-        log::info!("New indexer connection from: {:?}", remote_addr);
-
-        let mut rx = self.notification_broadcast.subscribe();
-        let (tx, stream_rx) = mpsc::channel(128);
-
-        tokio::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Ok(notification) => {
-                        if tx
-                            .send(Ok(NotificationMessage {
-                                notification: Some(notification),
-                            }))
-                            .await
-                            .is_err()
-                        {
-                            log::info!("Indexer client disconnected: {:?}", remote_addr);
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        log::warn!(
-                            "Indexer {:?} lagged, skipped {} messages",
-                            remote_addr,
-                            skipped
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        log::error!("Broadcast channel closed for indexer: {:?}", remote_addr);
-                        break;
-                    }
-                }
-            }
-        });
-
-        let output_stream: Self::StreamNotificationsStream =
-            Box::pin(ReceiverStream::new(stream_rx));
         Ok(Response::new(output_stream))
     }
 }
@@ -305,7 +263,6 @@ async fn main() -> anyhow::Result<()> {
 
     Server::builder()
         .add_service(CollectorServiceServer::new(service.clone()))
-        .add_service(IndexerServiceServer::new(service.clone()))
         .add_service(SchedulerServiceServer::new(service))
         .serve(addr)
         .await?;

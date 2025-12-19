@@ -18,11 +18,11 @@ prost = "0.14.1"
 log = "0.4.27"
 env_logger = { version = "0.11.6", default-features = false }
 tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
-tokio-stream = "0.1"
 anyhow = "1.0.100"
 serde_json = "1.0.145"
 base64 = "0.22.1"
 serde = "1.0.228"
+redis = { version = "1.0.1", features = ["tokio-comp"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

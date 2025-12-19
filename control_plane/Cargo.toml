@@ -26,6 +26,7 @@ tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 uuid = "1.19.0"
+redis = { version = "1.0.1", features = ["tokio-comp"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

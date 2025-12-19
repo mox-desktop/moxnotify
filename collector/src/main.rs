@@ -18,7 +18,6 @@ use log::LevelFilter;
 use moxnotify::collector::CollectorMessage;
 use moxnotify::collector::collector_message::Message;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
-use moxnotify::common::CloseReason;
 use moxnotify::types::{ActionInvoked, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
@@ -52,7 +51,7 @@ impl Collector {
                     message: Some(Message::NewNotification(*data)),
                 }
             }
-            Event::CloseNotification(id) => {
+            Event::CloseNotification(_id) => {
                 return Ok(());
             }
         };
