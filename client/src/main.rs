@@ -1,3 +1,5 @@
+use wayland_backend as _;
+
 pub mod moxnotify {
     pub mod common {
         tonic::include_proto!("moxnotify.common");

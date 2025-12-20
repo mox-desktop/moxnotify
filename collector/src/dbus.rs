@@ -251,7 +251,7 @@ pub async fn serve(
     let server = NotificationsImpl {
         next_id: 1,
         event_sender,
-        uuid,
+        uuid: uuid.clone(),
     };
 
     let conn = zbus::connection::Builder::session()?
@@ -292,6 +292,7 @@ pub async fn serve(
     });
 
     tokio::spawn(async move {
+        let uuid = uuid;
         loop {
             match emit_receiver.recv().await {
                 Ok(EmitEvent::ActionInvoked(action)) => {
@@ -322,18 +323,26 @@ pub async fn serve(
                         CloseReason::ReasonCloseNotificationCall => 3,
                         CloseReason::ReasonUnknown => 4,
                     };
-                    log::info!(
-                        "Notification with ID: {} was closed. Reason: {:?}",
-                        closed.id,
-                        closed.reason()
-                    );
 
-                    _ = NotificationsImpl::notification_closed(
-                        iface.signal_emitter(),
-                        closed.id,
-                        reason,
-                    )
-                    .await;
+                    if closed.uuid == uuid {
+                        log::info!(
+                            "Notification with ID: {} was closed. Reason: {:?}",
+                            closed.id,
+                            closed.reason()
+                        );
+
+                        _ = NotificationsImpl::notification_closed(
+                            iface.signal_emitter(),
+                            closed.id,
+                            reason,
+                        )
+                        .await;
+                    } else {
+                        log::debug!(
+                            "Notification with ID: {} was closed but uuid doesn't match, ignoring.",
+                            closed.id,
+                        );
+                    }
                 }
                 _ => {}
             }

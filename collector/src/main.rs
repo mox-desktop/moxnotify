@@ -12,6 +12,8 @@ pub mod moxnotify {
     }
 }
 
+use std::sync::Arc;
+
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::CollectorMessage;
@@ -21,6 +23,7 @@ use moxnotify::types::{ActionInvoked, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
+use uuid::Uuid;
 
 type NotificationId = u32;
 
@@ -44,12 +47,14 @@ async fn main() -> anyhow::Result<()> {
     let (event_sender, mut event_receiver) = mpsc::channel(128);
     let (emit_sender, emit_receiver) = broadcast::channel(128);
 
-    tokio::spawn(async move {
-        let uuid = "test".to_string();
-        if let Err(e) = dbus::serve(event_sender, emit_receiver, uuid).await {
-            log::error!("D-Bus serve error: {e}");
-        }
-    });
+    {
+        tokio::spawn(async move {
+            let uuid = Uuid::new_v4().to_string();
+            if let Err(e) = dbus::serve(event_sender, emit_receiver, uuid).await {
+                log::error!("D-Bus serve error: {e}");
+            }
+        });
+    }
 
     let addr = "http://[::1]:50051";
     let mut client = CollectorServiceClient::connect(addr.to_string()).await?;
