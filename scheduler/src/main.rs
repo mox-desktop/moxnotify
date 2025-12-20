@@ -12,7 +12,8 @@ pub mod moxnotify {
 
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use crate::moxnotify::client::{
-    ClientNotificationClosedRequest, ClientNotificationClosedResponse, ClientNotifyRequest,
+    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
+    ClientNotificationClosedResponse, ClientNotifyRequest,
 };
 use env_logger::Builder;
 use log::LevelFilter;
@@ -116,6 +117,30 @@ impl ClientService for Scheduler {
 
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
+
+    async fn action_invoked(
+        &self,
+        request: Request<ClientActionInvokedRequest>,
+    ) -> Result<Response<ClientActionInvokedResponse>, Status> {
+        let invoked = request.into_inner().action_invoked.unwrap();
+        log::info!(
+            "Received action_invoked request: id: {}, key: {}",
+            invoked.id,
+            invoked.action_key
+        );
+
+        let mut con = self.redis_con.lock().unwrap();
+        let json = serde_json::to_string(&invoked).unwrap();
+        if let Err(e) = con.xadd(
+            "moxnotify:action_invoked",
+            "*",
+            &[("action", json.as_str())],
+        ) {
+            log::error!("Failed to write action_invoked to Redis: {}", e);
+        }
+
+        Ok(Response::new(ClientActionInvokedResponse {}))
+    }
 }
 
 #[tokio::main]
@@ -155,44 +180,31 @@ async fn main() -> anyhow::Result<()> {
             &StreamReadOptions::default()
                 .group("scheduler-group", "scheduler-1")
                 .block(0),
-        )?
-            && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
-                for stream_id in &stream_key.ids {
-                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification")
-                    {
-                        match std::str::from_utf8(json) {
-                            Ok(json_str) => {
-                                match serde_json::from_str::<NewNotification>(json_str) {
-                                    Ok(notification) => {
-                                        log::info!(
-                                            "Scheduling notification: id={}, app_name='{}', summary='{}'",
-                                            notification.id,
-                                            notification.app_name,
-                                            notification.summary
-                                        );
+        )? && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify")
+        {
+            for stream_id in &stream_key.ids {
+                if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification") {
+                    let json = std::str::from_utf8(json).unwrap();
+                    let notification: NewNotification = serde_json::from_str(json).unwrap();
 
-                                        let _ = notification_broadcast.send(notification);
+                    log::info!(
+                        "Scheduling notification: id={}, app_name='{}', summary='{}'",
+                        notification.id,
+                        notification.app_name,
+                        notification.summary
+                    );
 
-                                        // ACK the message after processing
-                                        if let Err(e) = con.xack(
-                                            "moxnotify:notify",
-                                            "scheduler-group",
-                                            &[stream_id.id.as_str()],
-                                        ) {
-                                            log::error!("Failed to ACK message: {}", e);
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to parse notification: {}", e);
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to convert bytes to string: {}", e);
-                            }
-                        }
+                    notification_broadcast.send(notification);
+
+                    if let Err(e) = con.xack(
+                        "moxnotify:notify",
+                        "scheduler-group",
+                        &[stream_id.id.as_str()],
+                    ) {
+                        log::error!("Failed to ACK message: {}", e);
                     }
                 }
             }
+        }
     }
 }

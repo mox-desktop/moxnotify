@@ -6,6 +6,7 @@ import "types.proto";
 service ClientService {
     rpc Notify (ClientNotifyRequest) returns (stream moxnotify.types.NotificationMessage);
     rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
+    rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
 }
 
 message ClientNotifyRequest {}
@@ -15,3 +16,9 @@ message ClientNotificationClosedRequest {
 }
 
 message ClientNotificationClosedResponse {}
+
+message ClientActionInvokedRequest {
+    moxnotify.types.ActionInvoked action_invoked = 1;    
+}
+
+message ClientActionInvokedResponse {}

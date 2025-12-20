@@ -10,7 +10,7 @@ pub mod moxnotify {
     }
 }
 
-use crate::moxnotify::types::NotificationClosed;
+use crate::moxnotify::types::{ActionInvoked, NotificationClosed};
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
@@ -32,12 +32,14 @@ pub struct ControlPlaneService {
     con: Arc<Mutex<redis::Connection>>,
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
     notification_closed_broadcast: Arc<broadcast::Sender<NotificationClosed>>,
+    action_invoked_broadcast: Arc<broadcast::Sender<ActionInvoked>>,
 }
 
 impl ControlPlaneService {
     fn try_new(mut redis_con: redis::Connection) -> anyhow::Result<Self> {
         let (tx, _) = broadcast::channel(128);
         let (closed_tx, _) = broadcast::channel(128);
+        let (action_tx, _) = broadcast::channel(128);
 
         // If any of these errors it's likely because group already exists
         _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
@@ -47,11 +49,17 @@ impl ControlPlaneService {
             "control-plane-group",
             "$",
         );
+        _ = redis_con.xgroup_create_mkstream(
+            "moxnotify:action_invoked",
+            "control-plane-group",
+            "$",
+        );
 
         Ok(Self {
             con: Arc::new(Mutex::new(redis_con)),
             notification_broadcast: Arc::new(tx),
             notification_closed_broadcast: Arc::new(closed_tx),
+            action_invoked_broadcast: Arc::new(action_tx),
         })
     }
 }
@@ -78,6 +86,7 @@ impl CollectorService for ControlPlaneService {
         let (tx, rx) = mpsc::channel(128);
         let notification_broadcast = Arc::clone(&self.notification_broadcast);
         let notification_closed_broadcast = Arc::clone(&self.notification_closed_broadcast);
+        let action_invoked_broadcast = Arc::clone(&self.action_invoked_broadcast);
         let response_tx = tx.clone();
 
         let con = Arc::clone(&self.con);
@@ -185,6 +194,31 @@ impl CollectorService for ControlPlaneService {
             log::info!("Forward task ended for collector {:?}", remote_addr);
         });
 
+        let mut action_rx = action_invoked_broadcast.subscribe();
+        let response_tx_action = tx.clone();
+        tokio::spawn(async move {
+            loop {
+                match action_rx.recv().await {
+                    Ok(action) => {
+                        let response = CollectorResponse {
+                            message: Some(
+                                moxnotify::collector::collector_response::Message::ActionInvoked(
+                                    action,
+                                ),
+                            ),
+                        };
+                        if response_tx_action.send(Ok(response)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
+                }
+            }
+        });
+
         let output_stream: Self::NotificationsStream = Box::pin(ReceiverStream::new(rx));
         Ok(Response::new(output_stream))
     }
@@ -202,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = "[::1]:50051".parse()?;
     let service = ControlPlaneService::try_new(client.get_connection()?)?;
     let notification_closed_broadcast = Arc::clone(&service.notification_closed_broadcast);
+    let action_invoked_broadcast = Arc::clone(&service.action_invoked_broadcast);
 
     log::info!("Control plane server listening on {}", addr);
 
@@ -286,6 +321,63 @@ async fn main() -> anyhow::Result<()> {
                             "Received notification_closed message from Redis but 'notification' field is missing or has unexpected type: stream_id={}",
                             stream_id.id
                         );
+                    }
+                }
+            }
+        }
+    });
+
+    let con_action = client.get_connection().unwrap();
+    tokio::spawn(async move {
+        let mut con = con_action;
+        loop {
+            if let Some(streams) = con
+                .xread_options(
+                    &["moxnotify:action_invoked"],
+                    &[">"],
+                    &StreamReadOptions::default()
+                        .group("control-plane-group", "control-plane")
+                        .block(0),
+                )
+                .unwrap()
+                && let Some(stream_key) = streams
+                    .keys
+                    .iter()
+                    .find(|sk| sk.key == "moxnotify:action_invoked")
+            {
+                for stream_id in &stream_key.ids {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action")
+                    {
+                        if let Ok(json_str) = std::str::from_utf8(json) {
+                            if let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str) {
+                                log::info!(
+                                    "Received action_invoked from Redis: id: {}, action_key: {}",
+                                    action.id,
+                                    action.action_key
+                                );
+                                log::info!(
+                                    "Broadcasting action_invoked to collectors: id={}, action_key={}",
+                                    action.id,
+                                    action.action_key
+                                );
+                                match action_invoked_broadcast.send(action.clone()) {
+                                    Ok(count) => {
+                                        log::info!(
+                                            "Broadcast sent successfully to {} collector(s)",
+                                            count
+                                        );
+                                        tokio::task::yield_now().await;
+                                    }
+                                    Err(_) => {}
+                                }
+                                log::info!("Finished broadcasting for id={}", action.id);
+                                let _ = con.xack(
+                                    "moxnotify:action_invoked",
+                                    "control-plane-group",
+                                    &[stream_id.id.as_str()],
+                                );
+                            }
+                        }
                     }
                 }
             }

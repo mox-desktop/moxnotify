@@ -2,10 +2,10 @@ use crate::{
     EmitEvent, Event,
     moxnotify::{
         client::{
-            ClientNotificationClosedRequest, ClientNotifyRequest,
+            ClientActionInvokedRequest, ClientNotificationClosedRequest, ClientNotifyRequest,
             client_service_client::ClientServiceClient,
         },
-        types::NotificationClosed,
+        types::{ActionInvoked, NotificationClosed},
     },
 };
 use futures_lite::stream::StreamExt;
@@ -67,10 +67,24 @@ pub async fn serve(
                     .unwrap();
             }
             EmitEvent::ActionInvoked {
-                id: _,
-                key: _,
-                token: _,
-            } => {}
+                id,
+                key,
+                token,
+                uuid,
+            } => {
+                log::info!("Action invoked: id: {}, key: {}", id, key);
+                client
+                    .action_invoked(Request::new(ClientActionInvokedRequest {
+                        action_invoked: Some(ActionInvoked {
+                            id,
+                            action_key: key,
+                            token: token.to_string(),
+                            uuid,
+                        }),
+                    }))
+                    .await
+                    .unwrap();
+            }
             _ => {}
         }
     }

@@ -576,7 +576,7 @@ impl<State> Notification<State> {
             sender,
         )
         .add_dismiss(font_system)
-        .add_actions(&data.actions, font_system);
+        .add_actions(&data.actions, font_system, data.uuid.clone());
 
         let dismiss_button = buttons
             .buttons()
@@ -681,7 +681,7 @@ impl<State> Notification<State> {
         if self.data.actions != data.actions || self.data.body != data.body {
             let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
                 .add_dismiss(font_system)
-                .add_actions(&data.actions, font_system);
+                .add_actions(&data.actions, font_system, self.uuid.clone());
 
             if let Some(body) = &self.body {
                 buttons = buttons.add_anchors(&body.anchors, font_system);
@@ -715,7 +715,7 @@ impl<State> Notification<State> {
             let id = self.id();
             self.registration_token = loop_handle
                 .insert_source(timer, move |_, (), moxnotify| {
-                    moxnotify.dismiss_with_reason(id, Some(CloseReason::ReasonExpired));
+                    moxnotify.dismiss_with_reason(id, CloseReason::ReasonExpired);
 
                     let loop_handle = moxnotify.loop_handle.clone();
                     moxnotify
@@ -828,7 +828,7 @@ impl Notification<Empty> {
 
         let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
             .add_dismiss(font_system)
-            .add_actions(&self.data.actions, font_system);
+            .add_actions(&self.data.actions, font_system, self.uuid.clone());
 
         let dismiss_button = buttons
             .buttons()

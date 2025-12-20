@@ -73,7 +73,9 @@ async fn main() -> anyhow::Result<()> {
                         match msg {
                             moxnotify::collector::collector_response::Message::ActionInvoked(action) => {
                                 log::info!("Received action invoked: id={}, action_key='{}'", action.id, action.action_key);
-                                let _ = emit_sender_clone.send(EmitEvent::ActionInvoked(action));
+                                if let Err(e) = emit_sender_clone.send(EmitEvent::ActionInvoked(action)) {
+                                    log::warn!("Failed to forward action invoked to DBus emitter: {}", e);                                    
+                                }
                             }
                             moxnotify::collector::collector_response::Message::NotificationClosed(closed) => {
                                 log::info!("Received notification closed from control plane: id={}, reason={:?}, forwarding to DBus", closed.id, closed.reason());

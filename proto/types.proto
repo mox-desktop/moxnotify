@@ -65,6 +65,7 @@ message ActionInvoked {
   uint32 id = 1;
   string action_key = 2;
   string token = 3;
+  string uuid = 4;
 }
 
 message NotificationMessage {

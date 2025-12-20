@@ -170,23 +170,24 @@ impl Moxnotify {
                         log::info!("Dismissing first notification (id={})", notification.id());
                         self.dismiss_with_reason(
                             notification.id(),
-                            Some(CloseReason::ReasonDismissedByUser),
+                            CloseReason::ReasonDismissedByUser,
                         );
                     } else {
                         log::debug!("No notifications to dismiss");
                     }
                 } else {
                     log::info!("Dismissing notification with id={id}");
-                    self.dismiss_with_reason(id, Some(CloseReason::ReasonDismissedByUser));
+                    self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
                 }
             }
-            Event::InvokeAction { id, key } => {
+            Event::InvokeAction { id, key, uuid } => {
                 if let Some(surface) = self.surface.as_ref() {
                     let token = surface.token.as_ref().map(Arc::clone);
                     _ = self.emit_sender.send(crate::EmitEvent::ActionInvoked {
                         id,
                         key,
                         token: token.unwrap_or_default(),
+                        uuid,
                     });
                 }
 
@@ -197,7 +198,7 @@ impl Moxnotify {
                     .find(|notification| notification.id() == id)
                     .is_some_and(|n| n.data().hints.as_ref().unwrap().resident)
                 {
-                    self.dismiss_with_reason(id, None);
+                    self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
                 }
             }
             Event::InvokeAnchor(uri) => {
@@ -279,7 +280,7 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_with_reason(id, Some(CloseReason::ReasonCloseNotificationCall));
+                self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
@@ -427,6 +428,7 @@ pub enum EmitEvent {
         id: NotificationId,
         key: String,
         token: Arc<str>,
+        uuid: String,
     },
     NotificationClosed {
         id: NotificationId,
@@ -448,8 +450,15 @@ pub enum EmitEvent {
 #[derive(Debug)]
 pub enum Event {
     Waiting,
-    Dismiss { all: bool, id: NotificationId },
-    InvokeAction { id: NotificationId, key: String },
+    Dismiss {
+        all: bool,
+        id: NotificationId,
+    },
+    InvokeAction {
+        id: NotificationId,
+        key: String,
+        uuid: String,
+    },
     InvokeAnchor(Arc<str>),
     Notify(Box<NewNotification>),
     CloseNotification(u32),

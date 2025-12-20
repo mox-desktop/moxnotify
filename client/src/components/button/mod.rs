@@ -78,8 +78,13 @@ impl ButtonManager<NotReady> {
         }
     }
 
-    pub fn add_actions(self, actions: &[Action], font_system: &mut FontSystem) -> Self {
-        self.internal_add_actions(actions, font_system)
+    pub fn add_actions(
+        self,
+        actions: &[Action],
+        font_system: &mut FontSystem,
+        uuid: String,
+    ) -> Self {
+        self.internal_add_actions(actions, font_system, uuid)
     }
 
     pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
@@ -121,8 +126,13 @@ impl ButtonManager<NotReady> {
 }
 
 impl ButtonManager<Ready> {
-    pub fn add_actions(self, actions: &[Action], font_system: &mut FontSystem) -> Self {
-        self.internal_add_actions(actions, font_system)
+    pub fn add_actions(
+        self,
+        actions: &[Action],
+        font_system: &mut FontSystem,
+        uuid: String,
+    ) -> Self {
+        self.internal_add_actions(actions, font_system, uuid)
     }
 
     pub fn add_anchors(self, anchors: &[Arc<body::Anchor>], font_system: &mut FontSystem) -> Self {
@@ -335,7 +345,12 @@ impl<S> ButtonManager<S> {
         self
     }
 
-    fn internal_add_actions(mut self, actions: &[Action], font_system: &mut FontSystem) -> Self {
+    fn internal_add_actions(
+        mut self,
+        actions: &[Action],
+        font_system: &mut FontSystem,
+        uuid: String,
+    ) -> Self {
         if actions.is_empty() {
             return self;
         }
@@ -356,6 +371,7 @@ impl<S> ButtonManager<S> {
                 let text = text_renderer::Text::new(font, font_system, &action.label);
 
                 Box::new(ActionButton {
+                    uuid: uuid.clone(),
                     context: self.context.clone(),
                     hint: Hint::new(self.context.clone(), "", font_system),
                     text,

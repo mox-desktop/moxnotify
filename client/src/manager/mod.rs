@@ -579,7 +579,7 @@ impl Moxnotify {
             .for_each(|id| self.notifications.dismiss_by_id(*id));
     }
 
-    pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<CloseReason>) {
+    pub fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
         if self.notifications.selected_id() == Some(id) {
             self.notifications
                 .ui_state
@@ -596,13 +596,11 @@ impl Moxnotify {
         });
 
         self.notifications.dismiss_by_id(id);
-        if let Some(reason) = reason {
-            _ = self.emit_sender.send(EmitEvent::NotificationClosed {
-                id,
-                reason,
-                uuid: uuid.unwrap(),
-            });
-        }
+        _ = self.emit_sender.send(EmitEvent::NotificationClosed {
+            id,
+            reason,
+            uuid: uuid.unwrap(),
+        });
 
         self.update_surface_size();
         if let Some(surface) = self.surface.as_mut()
