@@ -42,7 +42,7 @@ async fn main() -> anyhow::Result<()> {
     Builder::new().filter(Some("collector"), log_level).init();
 
     let (event_sender, mut event_receiver) = mpsc::channel(128);
-    let (_emit_sender, emit_receiver) = broadcast::channel(128);
+    let (emit_sender, emit_receiver) = broadcast::channel(128);
 
     tokio::spawn(async move {
         let uuid = "test".to_string();
@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
 
     let (tx, rx) = mpsc::channel(128);
     let message_stream = ReceiverStream::new(rx);
+    let emit_sender_clone = emit_sender.clone();
 
     let mut response_stream = client.notifications(message_stream).await?.into_inner();
     tokio::spawn(async move {
@@ -67,9 +68,13 @@ async fn main() -> anyhow::Result<()> {
                         match msg {
                             moxnotify::collector::collector_response::Message::ActionInvoked(action) => {
                                 log::info!("Received action invoked: id={}, action_key='{}'", action.id, action.action_key);
+                                let _ = emit_sender_clone.send(EmitEvent::ActionInvoked(action));
                             }
                             moxnotify::collector::collector_response::Message::NotificationClosed(closed) => {
-                                log::info!("Received notification closed: id={}, reason={:?}", closed.id, closed.reason());
+                                log::info!("Received notification closed from control plane: id={}, reason={:?}, forwarding to DBus", closed.id, closed.reason());
+                                if let Err(e) = emit_sender_clone.send(EmitEvent::NotificationClosed(closed)) {
+                                    log::warn!("Failed to forward notification closed to DBus emitter: {}", e);
+                                }
                             }
                         }
                     }

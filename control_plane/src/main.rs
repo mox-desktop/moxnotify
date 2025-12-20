@@ -31,11 +31,13 @@ use tonic::{Request, Response, Status, transport::Server};
 pub struct ControlPlaneService {
     con: Arc<Mutex<redis::Connection>>,
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
+    notification_closed_broadcast: Arc<broadcast::Sender<NotificationClosed>>,
 }
 
 impl ControlPlaneService {
     fn try_new(mut redis_con: redis::Connection) -> anyhow::Result<Self> {
         let (tx, _) = broadcast::channel(128);
+        let (closed_tx, _) = broadcast::channel(128);
 
         // If any of these errors it's likely because group already exists
         _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
@@ -49,6 +51,7 @@ impl ControlPlaneService {
         Ok(Self {
             con: Arc::new(Mutex::new(redis_con)),
             notification_broadcast: Arc::new(tx),
+            notification_closed_broadcast: Arc::new(closed_tx),
         })
     }
 }
@@ -74,10 +77,12 @@ impl CollectorService for ControlPlaneService {
         let mut stream = request.into_inner();
         let (tx, rx) = mpsc::channel(128);
         let notification_broadcast = Arc::clone(&self.notification_broadcast);
+        let notification_closed_broadcast = Arc::clone(&self.notification_closed_broadcast);
+        let response_tx = tx.clone();
 
         let con = Arc::clone(&self.con);
+
         tokio::spawn(async move {
-            let _response_tx = tx;
             while let Some(msg_result) = stream.next().await {
                 match msg_result {
                     Ok(msg) => {
@@ -126,6 +131,60 @@ impl CollectorService for ControlPlaneService {
             log::info!("Client disconnected, addr: {:?}", remote_addr,);
         });
 
+        let mut closed_rx = notification_closed_broadcast.subscribe();
+        log::info!(
+            "Subscribed collector {:?} to notification_closed broadcast",
+            remote_addr
+        );
+        tokio::spawn(async move {
+            log::info!(
+                "Started forward task for collector {:?}, receiver is ready",
+                remote_addr
+            );
+            loop {
+                match closed_rx.recv().await {
+                    Ok(closed) => {
+                        log::info!(
+                            "Forwarding notification_closed to collector {:?}: id={}, reason={:?}",
+                            remote_addr,
+                            closed.id,
+                            closed.reason()
+                        );
+                        let response = CollectorResponse {
+                            message: Some(
+                                moxnotify::collector::collector_response::Message::NotificationClosed(
+                                    closed,
+                                ),
+                            ),
+                        };
+                        if response_tx.send(Ok(response)).await.is_err() {
+                            log::info!(
+                                "Collector disconnected, stopping forward task: {:?}",
+                                remote_addr
+                            );
+                            break;
+                        }
+                        log::info!(
+                            "Successfully sent notification_closed to collector {:?}",
+                            remote_addr
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!(
+                            "Collector {:?} lagged, skipped {} notification_closed messages",
+                            remote_addr,
+                            skipped
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::error!("Broadcast channel closed for collector: {:?}", remote_addr);
+                        break;
+                    }
+                }
+            }
+            log::info!("Forward task ended for collector {:?}", remote_addr);
+        });
+
         let output_stream: Self::NotificationsStream = Box::pin(ReceiverStream::new(rx));
         Ok(Response::new(output_stream))
     }
@@ -142,6 +201,7 @@ async fn main() -> anyhow::Result<()> {
 
     let addr = "[::1]:50051".parse()?;
     let service = ControlPlaneService::try_new(client.get_connection()?)?;
+    let notification_closed_broadcast = Arc::clone(&service.notification_closed_broadcast);
 
     log::info!("Control plane server listening on {}", addr);
 
@@ -175,6 +235,28 @@ async fn main() -> anyhow::Result<()> {
                                             closed.id,
                                             closed.reason()
                                         );
+
+                                        log::info!(
+                                            "Broadcasting notification_closed to collectors: id={}, reason={:?}",
+                                            closed.id,
+                                            closed.reason()
+                                        );
+                                        match notification_closed_broadcast.send(closed.clone()) {
+                                            Ok(count) => {
+                                                log::info!(
+                                                    "Broadcast sent successfully to {} collector(s)",
+                                                    count
+                                                );
+                                                tokio::task::yield_now().await;
+                                            }
+                                            Err(e) => {
+                                                log::error!(
+                                                    "Failed to broadcast notification_closed: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                        log::info!("Finished broadcasting for id={}", closed.id);
 
                                         if let Err(e) = con.xack(
                                             "moxnotify:notification_closed",
