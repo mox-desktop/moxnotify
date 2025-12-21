@@ -4,7 +4,7 @@ use crate::{
     EmitEvent, Moxnotify,
     components::{
         Component, Data,
-        notification::{self, Empty, Notification, NotificationId, NotificationState},
+        notification::{self, Notification, NotificationId},
     },
     config::{Config, keymaps},
     moxnotify::{common::CloseReason, types::NewNotification},
@@ -13,7 +13,6 @@ use atomic_float::AtomicF32;
 use calloop::LoopHandle;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer::TextureArea};
-use rayon::prelude::*;
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -47,7 +46,7 @@ impl Default for UiState {
 }
 
 pub struct NotificationManager {
-    notifications: VecDeque<NotificationState>,
+    notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
     loop_handle: LoopHandle<'static, Moxnotify>,
@@ -101,7 +100,7 @@ impl NotificationManager {
         self.inhibited
     }
 
-    pub fn notifications(&self) -> &VecDeque<NotificationState> {
+    pub fn notifications(&self) -> &VecDeque<Notification> {
         &self.notifications
     }
 
@@ -117,10 +116,6 @@ impl NotificationManager {
         let mut textures = Vec::new();
 
         self.iter_viewed()
-            .filter_map(|notification| match notification {
-                NotificationState::Empty(_) => None,
-                NotificationState::Ready(notification) => Some(notification),
-            })
             .flat_map(|notification| notification.get_data(notification.urgency()))
             .for_each(|data_item| match data_item {
                 Data::Instance(instance) => instances.push(instance),
@@ -130,10 +125,6 @@ impl NotificationManager {
 
         let total_width = self
             .iter_viewed()
-            .filter_map(|notification| match notification {
-                NotificationState::Empty(_) => None,
-                NotificationState::Ready(notification) => Some(notification),
-            })
             .map(|notification| {
                 notification.get_render_bounds().x + notification.get_render_bounds().width
             })
@@ -153,7 +144,7 @@ impl NotificationManager {
         (instances, text_areas, textures)
     }
 
-    pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&NotificationState> {
+    pub fn get_by_coordinates(&self, x: f64, y: f64) -> Option<&Notification> {
         self.iter_viewed().find(|notification| {
             let bounds = notification.get_render_bounds();
             x >= bounds.x as f64
@@ -225,7 +216,7 @@ impl NotificationManager {
     }
 
     /// Get mutable reference to the current selected notification
-    pub fn selected_notification_mut(&mut self) -> Option<&mut NotificationState> {
+    pub fn selected_notification_mut(&mut self) -> Option<&mut Notification> {
         let id = self.selected_id();
         self.notifications
             .iter_mut()
@@ -273,11 +264,8 @@ impl NotificationManager {
             }
         }
 
-        self.promote_notifications();
-
-        let Some(NotificationState::Ready(notification)) = self.notifications.get_mut(new_index)
-        else {
-            unreachable!();
+        let Some(notification) = self.notifications.get_mut(new_index) else {
+            return;
         };
 
         notification.hover();
@@ -357,19 +345,27 @@ impl NotificationManager {
     }
 
     pub fn add_many(&mut self, data: Vec<NewNotification>) {
-        let new_notifications: Vec<NotificationState> = data
-            .into_par_iter()
-            .map(|data| {
-                NotificationState::Empty(Notification::<Empty>::empty(
-                    Arc::clone(&self.config),
-                    data,
-                    self.ui_state.clone(),
-                ))
-            })
-            .collect();
+        let new_notifications: Vec<Notification> = {
+            let mut font_system = self.font_system.borrow_mut();
+            data.into_iter()
+                .map(|data| {
+                    Notification::new(
+                        Arc::clone(&self.config),
+                        &mut font_system,
+                        data,
+                        self.ui_state.clone(),
+                        Some(self.sender.clone()),
+                    )
+                })
+                .collect()
+        };
 
         self.notifications.extend(new_notifications);
-        self.promote_notifications();
+        
+        let loop_handle = self.loop_handle.clone();
+        self.iter_viewed_mut()
+            .for_each(|notification| notification.start_timer(&loop_handle));
+        
         self.update_size();
     }
 
@@ -395,8 +391,13 @@ impl NotificationManager {
                 notification.start_timer(&self.loop_handle);
             }
         } else {
-            let mut notification =
-                Notification::<Empty>::empty(Arc::clone(&self.config), data, self.ui_state.clone());
+            let mut notification = Notification::new(
+                Arc::clone(&self.config),
+                &mut self.font_system.borrow_mut(),
+                data,
+                self.ui_state.clone(),
+                Some(self.sender.clone()),
+            );
 
             if self
                 .notification_view
@@ -406,15 +407,13 @@ impl NotificationManager {
                 notification.start_timer(&self.loop_handle);
             }
 
-            self.notifications
-                .push_back(NotificationState::Empty(notification));
+            self.notifications.push_back(notification);
         }
 
-        self.promote_notifications();
         self.update_size();
     }
 
-    pub fn dismiss_by_id(&mut self, id: NotificationId) -> Option<NotificationState> {
+    pub fn dismiss_by_id(&mut self, id: NotificationId) -> Option<Notification> {
         let Some(index) = self.notifications.iter().position(|n| n.id() == id) else {
             return None;
         };
@@ -440,7 +439,6 @@ impl NotificationManager {
         }
 
         let notification = self.notifications.remove(index);
-        self.promote_notifications();
 
         if self.notifications.is_empty() {
             self.deselect();
@@ -450,7 +448,7 @@ impl NotificationManager {
     }
 
     /// Returns an iterator over notifications in view
-    pub fn iter_viewed(&self) -> impl Iterator<Item = &NotificationState> {
+    pub fn iter_viewed(&self) -> impl Iterator<Item = &Notification> {
         self.notification_view
             .visible
             .clone()
@@ -458,7 +456,7 @@ impl NotificationManager {
     }
 
     /// Returns an iterator over notifications in view that returns mutable references
-    pub fn iter_viewed_mut(&mut self) -> impl Iterator<Item = &mut NotificationState> {
+    pub fn iter_viewed_mut(&mut self) -> impl Iterator<Item = &mut Notification> {
         self.notifications
             .iter_mut()
             .enumerate()
@@ -469,31 +467,6 @@ impl NotificationManager {
                     None
                 }
             })
-    }
-
-    /// Promotes notifications from Empty to Ready
-    pub fn promote_notifications(&mut self) {
-        self.notification_view
-            .visible
-            .clone()
-            .for_each(|notification_idx| {
-                if let Some(notification_state) = self.notifications.get_mut(notification_idx)
-                    && matches!(notification_state, NotificationState::Empty(_))
-                    && let NotificationState::Empty(notification) = std::mem::replace(
-                        notification_state,
-                        NotificationState::Empty(Notification::<Empty>::empty(
-                            Arc::clone(&self.config),
-                            NewNotification::default(),
-                            UiState::default(),
-                        )),
-                    )
-                {
-                    *notification_state = NotificationState::Ready(notification.promote(
-                        &mut self.font_system.borrow_mut(),
-                        Some(self.sender.clone()),
-                    ));
-                }
-            });
     }
 
     pub fn update_size(&mut self) {
@@ -550,7 +523,7 @@ impl Moxnotify {
             .notifications
             .notifications()
             .range(range)
-            .map(notification::NotificationState::id)
+            .map(notification::Notification::id)
             .collect();
 
         if let Some(reason) = reason {

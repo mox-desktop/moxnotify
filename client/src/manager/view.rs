@@ -2,11 +2,11 @@ use super::UiState;
 use crate::{
     components::{
         Component,
-        notification::{Notification, Ready},
+        notification::Notification,
         text::Text,
     },
     config::Config,
-    moxnotify::{common::Urgency, types::NewNotification},
+    moxnotify::{common::Urgency, types::{NewNotification, NotificationHints}},
 };
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
@@ -19,8 +19,8 @@ use std::{
 
 pub struct NotificationView {
     pub visible: Range<usize>,
-    pub prev: Option<Notification<Ready>>,
-    pub next: Option<Notification<Ready>>,
+    pub prev: Option<Notification>,
+    pub next: Option<Notification>,
     font_system: Rc<RefCell<FontSystem>>,
     config: Arc<Config>,
     ui_state: UiState,
@@ -58,11 +58,12 @@ impl NotificationView {
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
             } else {
-                self.prev = Some(Notification::<Ready>::counter(
+                self.prev = Some(Notification::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NewNotification {
                         summary,
+                        hints: Some(NotificationHints::default()),
                         ..Default::default()
                     },
                     self.ui_state.clone(),
@@ -87,11 +88,12 @@ impl NotificationView {
                     .expect("Something went horribly wrong")
                     .set_text(&mut font_system, &summary);
             } else {
-                self.next = Some(Notification::<Ready>::counter(
+                self.next = Some(Notification::counter(
                     Arc::clone(&self.config),
                     &mut self.font_system.borrow_mut(),
                     NewNotification {
                         summary,
+                        hints: Some(NotificationHints::default()),
                         ..Default::default()
                     },
                     self.ui_state.clone(),

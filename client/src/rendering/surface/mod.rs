@@ -257,13 +257,13 @@ impl Surface {
                 .set_keyboard_interactivity(KeyboardInteractivity::OnDemand),
         }
 
-        log::info!("Surface focused, reason: {focus_reason}");
+        log::debug!("Surface focused, reason: {focus_reason}");
 
         self.focus_reason = Some(focus_reason);
     }
 
     pub fn unfocus(&mut self) {
-        log::info!("Surface unfocused");
+        log::debug!("Surface unfocused");
         if let Some(FocusReason::Ctl) = self.focus_reason {
             self.layer_surface
                 .set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
@@ -343,14 +343,14 @@ impl Moxnotify {
                 && let Some(output_name) = output.name.as_ref()
                 && self.output.is_some()
             {
-                log::info!("Surface created on output: {}; Reason: cli", output_name);
+                log::debug!("Surface created on output: {}; Reason: cli", output_name);
             } else if let Some(output) = output
                 && let Some(output_name) = output.name.as_ref()
                 && output.name.is_some()
             {
-                log::info!("Surface created on output: {}; Reason: config", output_name);
+                log::debug!("Surface created on output: {}; Reason: config", output_name);
             } else {
-                log::info!("Surface will be created on output chosen by compositor");
+                log::debug!("Surface will be created on output chosen by compositor");
             }
 
             self.surface = Surface::new(

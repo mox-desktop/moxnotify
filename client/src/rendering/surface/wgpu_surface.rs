@@ -55,7 +55,7 @@ impl WgpuSurface {
                 &surface_caps.alpha_modes[0]
             });
 
-        log::info!(
+        log::debug!(
             "Surface configured with alpha mode: {:?}, format: {:?}",
             alpha_mode,
             surface_format

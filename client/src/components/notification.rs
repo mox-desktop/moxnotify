@@ -25,118 +25,9 @@ use std::{
     time::Duration,
 };
 
-pub enum NotificationState {
-    Empty(Notification<Empty>),
-    Ready(Notification<Ready>),
-}
-
-impl NotificationState {
-    #[must_use]
-    pub fn id(&self) -> NotificationId {
-        match self {
-            Self::Empty(n) => n.id(),
-            Self::Ready(n) => n.id(),
-        }
-    }
-
-    #[must_use]
-    pub fn uuid(&self) -> String {
-        match self {
-            Self::Empty(n) => n.uuid.clone(),
-            Self::Ready(n) => n.uuid.clone(),
-        }
-    }
-
-    #[must_use]
-    pub fn data(&self) -> &NewNotification {
-        match self {
-            Self::Empty(n) => &n.data,
-            Self::Ready(n) => &n.data,
-        }
-    }
-
-    pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.start_timer(loop_handle),
-        }
-    }
-
-    pub fn stop_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.stop_timer(loop_handle),
-        }
-    }
-
-    pub fn set_position(&mut self, x: f32, y: f32) {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.set_position(x, y),
-        }
-    }
-
-    #[must_use]
-    pub fn hovered(&self) -> bool {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.hovered(),
-        }
-    }
-
-    #[must_use]
-    pub fn get_bounds(&self) -> Bounds {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.get_bounds(),
-        }
-    }
-
-    pub fn get_render_bounds(&self) -> Bounds {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.get_render_bounds(),
-        }
-    }
-
-    pub fn unhover(&mut self) {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.unhover(),
-        }
-    }
-
-    pub fn replace(
-        &mut self,
-        font_system: &mut FontSystem,
-        data: NewNotification,
-        sender: Option<calloop::channel::Sender<crate::Event>>,
-    ) {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.replace(font_system, data, sender),
-        }
-    }
-
-    #[must_use]
-    pub fn buttons(&self) -> Option<&ButtonManager<Finished>> {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.buttons.as_ref(),
-        }
-    }
-
-    pub fn buttons_mut(&mut self) -> Option<&mut ButtonManager<Finished>> {
-        match self {
-            Self::Empty(_) => unreachable!(),
-            Self::Ready(n) => n.buttons.as_mut(),
-        }
-    }
-}
-
 pub type NotificationId = u32;
 
-pub struct Notification<State> {
+pub struct Notification {
     pub y: f32,
     pub x: f32,
     hovered: bool,
@@ -149,16 +40,15 @@ pub struct Notification<State> {
     pub body: Option<Body>,
     pub uuid: String,
     context: components::Context,
-    _state: std::marker::PhantomData<State>,
 }
 
-impl<State> PartialEq for Notification<State> {
+impl PartialEq for Notification {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
 }
 
-impl Component for Notification<Ready> {
+impl Component for Notification {
     type Style = StyleState;
 
     fn get_context(&self) -> &components::Context {
@@ -482,47 +372,14 @@ impl Component for Notification<Ready> {
     }
 }
 
-pub struct Empty;
-pub struct Ready;
-
-impl<State> Notification<State> {
-    #[must_use]
-    pub fn empty(
-        config: Arc<Config>,
-        data: NewNotification,
-        ui_state: UiState,
-    ) -> Notification<Empty> {
-        let context = components::Context {
-            id: data.id,
-            app_name: data.app_name.clone(),
-            config,
-            ui_state,
-        };
-
-        Notification {
-            uuid: data.uuid.clone(),
-            context,
-            summary: None,
-            progress: None,
-            y: 0.,
-            x: 0.,
-            icons: None,
-            buttons: None,
-            data,
-            hovered: false,
-            registration_token: None,
-            body: None,
-            _state: std::marker::PhantomData,
-        }
-    }
-
+impl Notification {
     #[must_use]
     pub fn counter(
         config: Arc<Config>,
         font_system: &mut FontSystem,
         data: NewNotification,
         ui_state: UiState,
-    ) -> Notification<Ready> {
+    ) -> Notification {
         let context = components::Context {
             id: data.id,
             app_name: data.app_name.clone(),
@@ -543,7 +400,6 @@ impl<State> Notification<State> {
             summary: Some(Summary::new(context.clone(), font_system)),
             body: None,
             context,
-            _state: std::marker::PhantomData,
         }
     }
 
@@ -554,7 +410,7 @@ impl<State> Notification<State> {
         data: NewNotification,
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
-    ) -> Notification<Ready> {
+    ) -> Notification {
         let context = components::Context {
             id: data.id,
             app_name: data.app_name.clone(),
@@ -648,7 +504,6 @@ impl<State> Notification<State> {
             hovered: false,
             registration_token: None,
             body,
-            _state: std::marker::PhantomData,
         }
     }
 
@@ -809,111 +664,28 @@ impl<State> Notification<State> {
     pub fn id(&self) -> NotificationId {
         self.data.id
     }
-}
 
-impl Notification<Empty> {
     #[must_use]
-    pub fn promote(
-        self,
-        font_system: &mut FontSystem,
-        sender: Option<calloop::channel::Sender<crate::Event>>,
-    ) -> Notification<Ready> {
-        let icons = match (
-            self.data.hints.as_ref().unwrap().image.as_ref(),
-            self.data.app_icon.as_deref(),
-        ) {
-            (None, None) => None,
-            (image, app_icon) => Some(Icons::new(self.context.clone(), image, app_icon)),
-        };
-
-        let mut buttons = ButtonManager::new(self.context.clone(), self.urgency(), sender)
-            .add_dismiss(font_system)
-            .add_actions(&self.data.actions, font_system, self.uuid.clone());
-
-        let dismiss_button = buttons
-            .buttons()
-            .iter()
-            .find(|button| button.button_type() == ButtonType::Dismiss)
-            .map_or(0.0, |button| button.get_render_bounds().width);
-
-        let style = self.context.config.find_style(&self.data.app_name, false);
-
-        let body = if self.data.body.is_empty() {
-            None
-        } else {
-            let mut body = Body::new(self.context.clone(), font_system);
-            body.set_text(font_system, &self.data.body);
-            body.set_size(
-                font_system,
-                Some(
-                    style.width
-                        - icons
-                            .as_ref()
-                            .map(|icons| icons.get_bounds().width)
-                            .unwrap_or_default()
-                        - dismiss_button,
-                ),
-                None,
-            );
-
-            buttons = buttons.add_anchors(&body.anchors, font_system);
-
-            Some(body)
-        };
-
-        let summary = if self.data.summary.is_empty() {
-            None
-        } else {
-            let mut summary = Summary::new(self.context.clone(), font_system);
-            summary.set_text(font_system, &self.data.summary);
-            summary.set_size(
-                font_system,
-                Some(
-                    style.width
-                        - icons
-                            .as_ref()
-                            .map(|icons| icons.get_bounds().width)
-                            .unwrap_or_default()
-                        - dismiss_button,
-                ),
-                None,
-            );
-
-            Some(summary)
-        };
-
-        log::debug!("Notification id: {} loaded", self.id());
-
-        Notification {
-            summary,
-            uuid: self.uuid,
-            progress: self
-                .data
-                .hints
-                .as_ref()
-                .unwrap()
-                .value
-                .map(|value| Progress::new(self.context.clone(), value)),
-            y: 0.,
-            x: 0.,
-            icons,
-            buttons: Some(buttons.finish(font_system)),
-            data: self.data,
-            hovered: false,
-            registration_token: self.registration_token,
-            body,
-            context: self.context,
-            _state: std::marker::PhantomData,
-        }
+    pub fn uuid(&self) -> String {
+        self.uuid.clone()
     }
 
     #[must_use]
-    pub fn height(&self) -> f32 {
-        0.
+    pub fn data(&self) -> &NewNotification {
+        &self.data
+    }
+
+    #[must_use]
+    pub fn buttons(&self) -> Option<&ButtonManager<Finished>> {
+        self.buttons.as_ref()
+    }
+
+    pub fn buttons_mut(&mut self) -> Option<&mut ButtonManager<Finished>> {
+        self.buttons.as_mut()
     }
 }
 
-impl Notification<Ready> {
+impl Notification {
     #[must_use]
     pub fn height(&self) -> f32 {
         let style = self.get_style();

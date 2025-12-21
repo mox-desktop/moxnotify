@@ -91,7 +91,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                 let hovered_id = state
                     .notifications
                     .get_by_coordinates(surface_x, surface_y)
-                    .map(notification::NotificationState::id);
+                    .map(notification::Notification::id);
 
                 let pointer = &mut state.seat.pointer;
                 pointer.x = surface_x;
