@@ -43,10 +43,7 @@ in
     enable = lib.mkEnableOption "moxnotify";
     package = lib.mkPackageOption pkgs "moxnotify" { };
 
-    webui.enable = lib.mkOption {
-      default = true;
-      type = types.bool;
-    };
+    webui.enable = lib.mkEnableOption "moxnotify webui";
 
     redis = {
       address = lib.mkOption {
@@ -99,6 +96,7 @@ in
         Unit = {
           Description = "Moxnotify Control Plane - gRPC coordination service";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [
             "graphical-session.target"
           ]
@@ -122,6 +120,7 @@ in
         Unit = {
           Description = "Moxnotify Collector - D-Bus notification service";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [
             "graphical-session.target"
             "moxnotify-control-plane.service"
@@ -141,6 +140,7 @@ in
         Unit = {
           Description = "Moxnotify Scheduler - Notification scheduling service";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [
             "graphical-session.target"
           ]
@@ -164,6 +164,7 @@ in
         Unit = {
           Description = "Moxnotify Client - Wayland notification display client";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [
             "graphical-session.target"
             "moxnotify-scheduler.service"
@@ -183,6 +184,7 @@ in
         Unit = {
           Description = "Moxnotify Indexer - Notification indexing service";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [
             "graphical-session.target"
           ]
@@ -206,6 +208,7 @@ in
         Unit = {
           Description = "Moxnotify Searcher - Notification search service";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
         };
         Service = {
@@ -220,6 +223,7 @@ in
         Unit = {
           Description = "Moxnotify Redis";
           PartOf = [ "graphical-session.target" ];
+          Wants = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
         };
         Service = {
@@ -233,6 +237,7 @@ in
       moxnotify-webui = lib.mkIf cfg.webui.enable {
         Unit = {
           Description = "Run moxnotify webui";
+          Wants = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
         };
 
