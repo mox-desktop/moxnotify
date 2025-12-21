@@ -12,9 +12,11 @@ pub mod moxnotify {
 
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use crate::moxnotify::client::{
-    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
+    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientCloseNotificationRequest,
+    ClientCloseNotificationResponse, ClientNotificationClosedRequest,
     ClientNotificationClosedResponse, ClientNotifyRequest,
 };
+use crate::moxnotify::types::CloseNotification;
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::types::{NewNotification, NotificationMessage};
@@ -30,14 +32,17 @@ use tonic::{Request, Response, Status, transport::Server};
 #[derive(Clone)]
 struct Scheduler {
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
+    close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
 }
 
 impl Scheduler {
     fn new(redis_con: redis::Connection) -> Self {
         let (tx, _) = broadcast::channel(128);
+        let (close_tx, _) = broadcast::channel(128);
         Self {
             notification_broadcast: Arc::new(tx),
+            close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
         }
     }
@@ -60,15 +65,49 @@ impl ClientService for Scheduler {
         let remote_addr = request.remote_addr().unwrap();
         log::info!("New client connection from: {:?}", remote_addr);
 
-        let mut rx = self.notification_broadcast.subscribe();
+        let mut notification_rx = self.notification_broadcast.subscribe();
+        let mut close_notification_rx = self.close_notification_broadcast.subscribe();
         let (tx, stream_rx) = mpsc::channel(128);
 
+        let tx_clone = tx.clone();
         tokio::spawn(async move {
             loop {
-                match rx.recv().await {
+                match notification_rx.recv().await {
                     Ok(notification) => {
                         let message = NotificationMessage {
                             notification: Some(notification),
+                            close_notification: None,
+                        };
+                        if tx_clone.send(Ok(message)).await.is_err() {
+                            log::info!("Client disconnected: {:?}", remote_addr);
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                        log::warn!(
+                            "Client {:?} lagged, skipped {} notification messages",
+                            remote_addr,
+                            skipped
+                        );
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        log::error!(
+                            "Notification broadcast channel closed for client: {:?}",
+                            remote_addr
+                        );
+                        break;
+                    }
+                }
+            }
+        });
+
+        tokio::spawn(async move {
+            loop {
+                match close_notification_rx.recv().await {
+                    Ok(close_notification) => {
+                        let message = NotificationMessage {
+                            notification: None,
+                            close_notification: Some(close_notification),
                         };
                         if tx.send(Ok(message)).await.is_err() {
                             log::info!("Client disconnected: {:?}", remote_addr);
@@ -77,13 +116,16 @@ impl ClientService for Scheduler {
                     }
                     Err(broadcast::error::RecvError::Lagged(skipped)) => {
                         log::warn!(
-                            "Client {:?} lagged, skipped {} messages",
+                            "Client {:?} lagged, skipped {} close_notification messages",
                             remote_addr,
                             skipped
                         );
                     }
                     Err(broadcast::error::RecvError::Closed) => {
-                        log::error!("Broadcast channel closed for client: {:?}", remote_addr);
+                        log::error!(
+                            "CloseNotification broadcast channel closed for client: {:?}",
+                            remote_addr
+                        );
                         break;
                     }
                 }
@@ -158,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
     let read_con = client.get_connection()?;
     let scheduler = Scheduler::new(write_con);
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
+    let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
 
     let scheduler_clone = scheduler.clone();
     let server_addr = scheduler_addr.parse()?;
@@ -175,33 +218,70 @@ async fn main() -> anyhow::Result<()> {
     let mut con = read_con;
     loop {
         if let Some(streams) = con.xread_options(
-            &["moxnotify:notify"],
-            &[">"],
+            &["moxnotify:notify", "moxnotify:close_notification"],
+            &[">", ">"],
             &StreamReadOptions::default()
                 .group("scheduler-group", "scheduler-1")
                 .block(0),
-        )? && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify")
-        {
-            for stream_id in &stream_key.ids {
-                if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification") {
-                    let json = std::str::from_utf8(json).unwrap();
-                    let notification: NewNotification = serde_json::from_str(json).unwrap();
+        )? {
+            for stream_key in &streams.keys {
+                match stream_key.key.as_str() {
+                    "moxnotify:notify" => {
+                        for stream_id in &stream_key.ids {
+                            if let Some(redis::Value::BulkString(json)) =
+                                stream_id.map.get("notification")
+                            {
+                                let json = std::str::from_utf8(json).unwrap();
+                                let notification: NewNotification =
+                                    serde_json::from_str(json).unwrap();
 
-                    log::info!(
-                        "Scheduling notification: id={}, app_name='{}', summary='{}'",
-                        notification.id,
-                        notification.app_name,
-                        notification.summary
-                    );
+                                log::info!(
+                                    "Scheduling notification: id={}, app_name='{}', summary='{}'",
+                                    notification.id,
+                                    notification.app_name,
+                                    notification.summary
+                                );
 
-                    notification_broadcast.send(notification);
+                                notification_broadcast.send(notification);
 
-                    if let Err(e) = con.xack(
-                        "moxnotify:notify",
-                        "scheduler-group",
-                        &[stream_id.id.as_str()],
-                    ) {
-                        log::error!("Failed to ACK message: {}", e);
+                                if let Err(e) = con.xack(
+                                    "moxnotify:notify",
+                                    "scheduler-group",
+                                    &[stream_id.id.as_str()],
+                                ) {
+                                    log::error!("Failed to ACK message: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    "moxnotify:close_notification" => {
+                        for stream_id in &stream_key.ids {
+                            if let Some(redis::Value::BulkString(json)) =
+                                stream_id.map.get("close_notification")
+                            {
+                                let json = std::str::from_utf8(json).unwrap();
+                                let close_notification: CloseNotification =
+                                    serde_json::from_str(json).unwrap();
+
+                                log::info!(
+                                    "Broadcasting close_notification to clients: id={}",
+                                    close_notification.id
+                                );
+
+                                close_notification_broadcast.send(close_notification);
+
+                                if let Err(e) = con.xack(
+                                    "moxnotify:close_notification",
+                                    "scheduler-group",
+                                    &[stream_id.id.as_str()],
+                                ) {
+                                    log::error!("Failed to ACK message: {}", e);
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        log::warn!("Received message from unknown stream: {}", stream_key.key);
                     }
                 }
             }

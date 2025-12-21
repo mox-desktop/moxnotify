@@ -42,17 +42,8 @@ message NotificationHints {
   optional Image image = 13;
 }
 
-message NewNotification {
+message CloseNotification {
   uint32 id = 1;
-  string app_name = 2;
-  optional string app_icon = 3;
-  string summary = 4;
-  string body = 5;
-  int32 timeout = 6;
-  repeated Action actions = 7;
-  NotificationHints hints = 8;
-  int64 timestamp = 9;
-  string uuid = 10;
 }
 
 message NotificationClosed {
@@ -70,4 +61,18 @@ message ActionInvoked {
 
 message NotificationMessage {
   NewNotification notification = 1;
+  CloseNotification close_notification = 2;
+}
+
+message NewNotification {
+  uint32 id = 1;
+  string app_name = 2;
+  optional string app_icon = 3;
+  string summary = 4;
+  string body = 5;
+  int32 timeout = 6;
+  repeated Action actions = 7;
+  NotificationHints hints = 8;
+  int64 timestamp = 9;
+  string uuid = 10;
 }

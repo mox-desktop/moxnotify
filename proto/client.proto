@@ -22,3 +22,9 @@ message ClientActionInvokedRequest {
 }
 
 message ClientActionInvokedResponse {}
+
+message ClientCloseNotificationRequest {
+    moxnotify.types.CloseNotification close_notification = 1;
+}
+
+message ClientCloseNotificationResponse {}

@@ -19,11 +19,13 @@ use log::LevelFilter;
 use moxnotify::collector::CollectorMessage;
 use moxnotify::collector::collector_message::Message;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
-use moxnotify::types::{ActionInvoked, NewNotification, NotificationClosed};
+use moxnotify::types::{ActionInvoked, CloseNotification, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
+
+use crate::moxnotify::collector::{collector_message, collector_response};
 
 type NotificationId = u32;
 
@@ -71,16 +73,34 @@ async fn main() -> anyhow::Result<()> {
                 Ok(response) => {
                     if let Some(msg) = response.message {
                         match msg {
-                            moxnotify::collector::collector_response::Message::ActionInvoked(action) => {
-                                log::info!("Received action invoked: id={}, action_key='{}'", action.id, action.action_key);
-                                if let Err(e) = emit_sender_clone.send(EmitEvent::ActionInvoked(action)) {
-                                    log::warn!("Failed to forward action invoked to DBus emitter: {}", e);                                    
+                            collector_response::Message::ActionInvoked(action) => {
+                                log::info!(
+                                    "Received action invoked: id={}, action_key='{}'",
+                                    action.id,
+                                    action.action_key
+                                );
+                                if let Err(e) =
+                                    emit_sender_clone.send(EmitEvent::ActionInvoked(action))
+                                {
+                                    log::warn!(
+                                        "Failed to forward action invoked to DBus emitter: {}",
+                                        e
+                                    );
                                 }
                             }
-                            moxnotify::collector::collector_response::Message::NotificationClosed(closed) => {
-                                log::info!("Received notification closed from control plane: id={}, reason={:?}, forwarding to DBus", closed.id, closed.reason());
-                                if let Err(e) = emit_sender_clone.send(EmitEvent::NotificationClosed(closed)) {
-                                    log::warn!("Failed to forward notification closed to DBus emitter: {}", e);
+                            collector_response::Message::NotificationClosed(closed) => {
+                                log::info!(
+                                    "Received notification closed from control plane: id={}, reason={:?}, forwarding to DBus",
+                                    closed.id,
+                                    closed.reason()
+                                );
+                                if let Err(e) =
+                                    emit_sender_clone.send(EmitEvent::NotificationClosed(closed))
+                                {
+                                    log::warn!(
+                                        "Failed to forward notification closed to DBus emitter: {}",
+                                        e
+                                    );
                                 }
                             }
                         }
@@ -110,11 +130,17 @@ async fn main() -> anyhow::Result<()> {
                 );
 
                 CollectorMessage {
-                    message: Some(Message::NewNotification(*data)),
+                    message: Some(collector_message::Message::NewNotification(*data)),
                 }
             }
-            Event::CloseNotification(_id) => {
-                continue;
+            Event::CloseNotification(id) => {
+                log::info!("Collected close notification request: id={}", id);
+
+                CollectorMessage {
+                    message: Some(collector_message::Message::CloseNotification(
+                        CloseNotification { id },
+                    )),
+                }
             }
         };
 

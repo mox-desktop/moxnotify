@@ -10,7 +10,8 @@ pub mod moxnotify {
     }
 }
 
-use crate::moxnotify::types::{ActionInvoked, NotificationClosed};
+use crate::moxnotify::collector::{collector_message, collector_response};
+use crate::moxnotify::types::{ActionInvoked, CloseNotification, NotificationClosed};
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
@@ -54,6 +55,11 @@ impl ControlPlaneService {
             "control-plane-group",
             "$",
         );
+        _ = redis_con.xgroup_create_mkstream(
+            "moxnotify:close_notification",
+            "scheduler-group",
+            "$",
+        );
 
         Ok(Self {
             con: Arc::new(Mutex::new(redis_con)),
@@ -94,42 +100,40 @@ impl CollectorService for ControlPlaneService {
         tokio::spawn(async move {
             while let Some(msg_result) = stream.next().await {
                 match msg_result {
-                    Ok(msg) => {
-                        match msg.message {
-                            Some(moxnotify::collector::collector_message::Message::NewNotification(
-                                notification,
-                            )) => {
-                                log::info!(
-                                    "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                                    notification.id,
-                                    notification.app_name,
-                                    notification.summary,
-                                    notification.body,
-                                    notification.hints.as_ref().unwrap().urgency
-                                );
+                    Ok(msg) => match msg.message {
+                        Some(collector_message::Message::NewNotification(notification)) => {
+                            log::info!(
+                                "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
+                                notification.id,
+                                notification.app_name,
+                                notification.summary,
+                                notification.body,
+                                notification.hints.as_ref().unwrap().urgency
+                            );
 
-                                let mut con = con.lock().await;
-                                let json = serde_json::to_string(&notification).unwrap();
-                                con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
-                                    .unwrap();
+                            let mut con = con.lock().await;
+                            let json = serde_json::to_string(&notification).unwrap();
+                            con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
+                                .unwrap();
 
-                                let _ = notification_broadcast.send(notification.clone());
-                            }
-                            Some(moxnotify::collector::collector_message::Message::NotificationClosed(
-                                closed,
-                            )) => {
-                                log::info!(
-                                    "Notification closed: id={}, reason={:?}",
-                                    closed.id,
-                                    closed.reason()
-                                );
-                                // TODO: Notify frontend
-                            }
-                            None => {
-                                log::warn!("Received empty CollectorMessage");
-                            }
+                            let _ = notification_broadcast.send(notification.clone());
                         }
-                    }
+                        Some(collector_message::Message::CloseNotification(close)) => {
+                            log::info!("Received close notification request: id={}", close.id);
+
+                            let mut con = con.lock().await;
+                            let json = serde_json::to_string(&close).unwrap();
+                            con.xadd(
+                                "moxnotify:close_notification",
+                                "*",
+                                &[("close_notification", json.as_str())],
+                            )
+                            .unwrap();
+                        }
+                        None => {
+                            log::warn!("Received empty CollectorMessage");
+                        }
+                    },
                     Err(e) => {
                         log::error!("Error receiving message from collector: {}", e);
                         break;
@@ -160,11 +164,7 @@ impl CollectorService for ControlPlaneService {
                             closed.reason()
                         );
                         let response = CollectorResponse {
-                            message: Some(
-                                moxnotify::collector::collector_response::Message::NotificationClosed(
-                                    closed,
-                                ),
-                            ),
+                            message: Some(collector_response::Message::NotificationClosed(closed)),
                         };
                         if response_tx.send(Ok(response)).await.is_err() {
                             log::info!(
@@ -346,8 +346,7 @@ async fn main() -> anyhow::Result<()> {
                     .find(|sk| sk.key == "moxnotify:action_invoked")
             {
                 for stream_id in &stream_key.ids {
-                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action")
-                    {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action") {
                         if let Ok(json_str) = std::str::from_utf8(json) {
                             if let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str) {
                                 log::info!(

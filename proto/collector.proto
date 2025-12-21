@@ -10,7 +10,7 @@ service CollectorService {
 message CollectorMessage {
   oneof message {
     moxnotify.types.NewNotification new_notification = 1;
-    moxnotify.types.NotificationClosed notification_closed = 2;
+    moxnotify.types.CloseNotification close_notification = 2;
   }
 }
 
