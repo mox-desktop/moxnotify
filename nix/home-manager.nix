@@ -43,6 +43,18 @@ in
     enable = lib.mkEnableOption "moxnotify";
     package = lib.mkPackageOption pkgs "moxnotify" { };
 
+    webui.enable = lib.mkOption {
+      default = true;
+      type = types.bool;
+    };
+
+    redis = {
+      address = lib.mkOption {
+        default = null;
+        type = types.nullOr types.str;
+      };
+    };
+
     settings = lib.mkOption {
       type =
         let
@@ -74,11 +86,160 @@ in
           return ${toLua cfg.settings}
         '';
       };
-      "systemd/user/moxnotify.service.d/override.conf".text = ''
-        [Service]
-        ExecStart=
-        ExecStart=${cfg.package}/bin/moxnotifyd
-      '';
+    };
+
+    systemd.user.services = {
+      moxnotify-control-plane = {
+        Unit = {
+          Description = "Moxnotify Control Plane - gRPC coordination service";
+          PartOf = [ "graphical-session.target" ];
+          After = [
+            "graphical-session.target"
+          ]
+          ++ lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+          Requires = lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-control-plane";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-collector = {
+        Unit = {
+          Description = "Moxnotify Collector - D-Bus notification service";
+          PartOf = [ "graphical-session.target" ];
+          After = [
+            "graphical-session.target"
+            "moxnotify-control-plane.service"
+          ];
+          Requires = [ "moxnotify-control-plane.service" ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-collector";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-scheduler = {
+        Unit = {
+          Description = "Moxnotify Scheduler - Notification scheduling service";
+          PartOf = [ "graphical-session.target" ];
+          After = [
+            "graphical-session.target"
+          ]
+          ++ lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+          Requires = lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-scheduler";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-client = {
+        Unit = {
+          Description = "Moxnotify Client - Wayland notification display client";
+          PartOf = [ "graphical-session.target" ];
+          After = [
+            "graphical-session.target"
+            "moxnotify-scheduler.service"
+          ];
+          Requires = [ "moxnotify-scheduler.service" ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-client";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-indexer = {
+        Unit = {
+          Description = "Moxnotify Indexer - Notification indexing service";
+          PartOf = [ "graphical-session.target" ];
+          After = [
+            "graphical-session.target"
+          ]
+          ++ lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+          Requires = lib.optionals (cfg.redis.address == null) [
+            "moxnotify-valkey.service"
+          ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-indexer";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-searcher = {
+        Unit = {
+          Description = "Moxnotify Searcher - Notification search service";
+          PartOf = [ "graphical-session.target" ];
+          After = [ "graphical-session.target" ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-searcher";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-valkey = lib.mkIf (cfg.redis.address == null) {
+        Unit = {
+          Description = "Moxnotify Redis";
+          PartOf = [ "graphical-session.target" ];
+          After = [ "graphical-session.target" ];
+        };
+        Service = {
+          Type = "simple";
+          ExecStart = "${pkgs.valkey}/bin/valkey-server";
+          Restart = "on-failure";
+        };
+        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-webui = lib.mkIf cfg.webui.enable {
+        Unit = {
+          Description = "Run moxnotify webui";
+          After = [ "graphical-session.target" ];
+        };
+
+        Install.WantedBy = [ "default.target" ];
+
+        Service = {
+          Type = "simple";
+          Restart = "on-failure";
+
+          ExecStart =
+            let
+              path = lib.makeBinPath [ pkgs.nodejs ];
+            in
+            "${pkgs.writeShellScriptBin "run-moxnotify-webui" ''
+              PATH="$PATH:${path}" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
+            ''}/bin/run-moxnotify-webui";
+        };
+      };
     };
 
     home.packages = [ cfg.package ];

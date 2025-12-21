@@ -12,8 +12,7 @@ pub mod moxnotify {
 
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use crate::moxnotify::client::{
-    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientCloseNotificationRequest,
-    ClientCloseNotificationResponse, ClientNotificationClosedRequest,
+    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
     ClientNotificationClosedResponse, ClientNotifyRequest,
 };
 use crate::moxnotify::types::CloseNotification;

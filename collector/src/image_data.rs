@@ -1,10 +1,6 @@
-#[cfg(not(debug_assertions))]
-use futures_lite::stream::StreamExt;
 use image::DynamicImage;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-#[cfg(not(debug_assertions))]
-use zbus::fdo::DBusProxy;
 use zbus::zvariant::{Signature, Structure};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

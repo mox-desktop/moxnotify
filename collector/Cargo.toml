@@ -29,7 +29,8 @@ image = { version = "0.25.6", default-features = false, features = [
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 chrono = "0.4.42"
-uuid = "1.19.0"
+uuid = { version = "1.19.0", features = ["v4"] }
+futures-lite = "2.6.1"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

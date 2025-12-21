@@ -687,6 +687,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "env_logger",
+ "futures-lite",
  "image",
  "log",
  "prost",

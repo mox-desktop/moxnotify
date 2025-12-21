@@ -25,7 +25,7 @@
                 libclang
                 libGL
                 egl-wayland
-                protobuf_30
+                protobuf
                 pnpm
                 nodejs_25
                 tilt
@@ -45,6 +45,7 @@
             rustc = pkgs.rustToolchain;
           };
         };
+        webui = pkgs.callPackage ./nix/webui.nix { };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });
 

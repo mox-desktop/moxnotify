@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Loader2 } from "lucide-react"
 
-const API_BASE_URL = "http://localhost:3029"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3029"
 
 export function NotificationDashboard() {
   const searchParams = useSearchParams()

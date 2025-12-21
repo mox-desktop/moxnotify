@@ -12,12 +12,9 @@ pub mod moxnotify {
     }
 }
 
-use std::sync::Arc;
-
 use env_logger::Builder;
 use log::LevelFilter;
 use moxnotify::collector::CollectorMessage;
-use moxnotify::collector::collector_message::Message;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
 use moxnotify::types::{ActionInvoked, CloseNotification, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};

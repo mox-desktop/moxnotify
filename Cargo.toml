@@ -27,7 +27,7 @@ categories = [
 ]
 edition = "2024"
 homepage = "https://pipewire.org"
-license = "MIT"
+license = "GPLv3"
 repository = "https://github.com/mox-desktop/moxnotify"
 version = "0.1.0"
 description = "Feature-rich hardware-accelerated keyboard driven Wayland notification daemon."
