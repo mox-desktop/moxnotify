@@ -35,10 +35,8 @@ use calloop_wayland_source::WaylandSource;
 use clap::Parser;
 use components::notification::NotificationId;
 use config::Config;
-use env_logger::Builder;
 use glyphon::FontSystem;
 use input::Seat;
-use log::LevelFilter;
 use manager::NotificationManager;
 use rendering::{
     surface::{FocusReason, Surface},
@@ -505,43 +503,17 @@ delegate_noop!(Moxnotify: zwlr_layer_shell_v1::ZwlrLayerShellV1);
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    verbose: u8,
-
-    #[arg(short, long, action = clap::ArgAction::Count)]
-    quiet: u8,
-
     #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
     config: Option<Box<Path>>,
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
+        .filter_level(log::LevelFilter::Off)
+        .filter_module("client", log::LevelFilter::max())
+        .init();
     let cli = Cli::parse();
-
-    let mut log_level = LevelFilter::Info;
-
-    (0..cli.verbose).for_each(|_| {
-        log_level = match log_level {
-            LevelFilter::Error => LevelFilter::Warn,
-            LevelFilter::Warn => LevelFilter::Info,
-            LevelFilter::Info => LevelFilter::Debug,
-            LevelFilter::Debug => LevelFilter::Trace,
-            _ => log_level,
-        };
-    });
-
-    (0..cli.quiet).for_each(|_| {
-        log_level = match log_level {
-            LevelFilter::Warn => LevelFilter::Error,
-            LevelFilter::Info => LevelFilter::Warn,
-            LevelFilter::Debug => LevelFilter::Info,
-            LevelFilter::Trace => LevelFilter::Debug,
-            _ => log_level,
-        };
-    });
-
-    Builder::new().filter(Some("client"), log_level).init();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to Wayland");
     let (globals, event_queue) = registry_queue_init(&conn)?;

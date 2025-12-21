@@ -55,6 +55,12 @@ in
       };
     };
 
+    logLevel = lib.mkOption {
+      default = "info";
+      type = types.str;
+      description = "MOXNOTIFY_LOG value for moxnotify services";
+    };
+
     settings = lib.mkOption {
       type =
         let
@@ -107,6 +113,7 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-control-plane";
           Restart = "on-failure";
+          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
         Install.WantedBy = [ "default.target" ];
       };
@@ -125,6 +132,7 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-collector";
           Restart = "on-failure";
+          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
         Install.WantedBy = [ "default.target" ];
       };
@@ -147,6 +155,7 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-scheduler";
           Restart = "on-failure";
+          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
         Install.WantedBy = [ "default.target" ];
       };
@@ -165,6 +174,7 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-client";
           Restart = "on-failure";
+          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
         Install.WantedBy = [ "default.target" ];
       };
@@ -187,6 +197,7 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-indexer";
           Restart = "on-failure";
+          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
         Install.WantedBy = [ "default.target" ];
       };

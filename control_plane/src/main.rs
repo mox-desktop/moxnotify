@@ -12,8 +12,6 @@ pub mod moxnotify {
 
 use crate::moxnotify::collector::{collector_message, collector_response};
 use crate::moxnotify::types::{ActionInvoked, CloseNotification, NotificationClosed};
-use env_logger::Builder;
-use log::LevelFilter;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
 use moxnotify::types::NewNotification;
@@ -226,9 +224,9 @@ impl CollectorService for ControlPlaneService {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log_level = LevelFilter::Info;
-    Builder::new()
-        .filter(Some("control_plane"), log_level)
+    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
+        .filter_level(log::LevelFilter::Off)
+        .filter_module("control_plane", log::LevelFilter::max())
         .init();
 
     let client = redis::Client::open("redis://127.0.0.1/").unwrap();

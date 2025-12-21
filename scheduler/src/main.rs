@@ -16,8 +16,6 @@ use crate::moxnotify::client::{
     ClientNotificationClosedResponse, ClientNotifyRequest,
 };
 use crate::moxnotify::types::CloseNotification;
-use env_logger::Builder;
-use log::LevelFilter;
 use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
@@ -186,8 +184,10 @@ impl ClientService for Scheduler {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log_level = LevelFilter::Info;
-    Builder::new().filter(Some("scheduler"), log_level).init();
+    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
+        .filter_level(log::LevelFilter::Off)
+        .filter_module("scheduler", log::LevelFilter::max())
+        .init();
 
     let scheduler_addr =
         std::env::var("MOXNOTIFY_SCHEDULER_ADDR").unwrap_or_else(|_| "[::1]:50052".to_string());

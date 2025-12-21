@@ -7,8 +7,6 @@ pub mod moxnotify {
     }
 }
 
-use env_logger::Builder;
-use log::LevelFilter;
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
 use std::path::PathBuf;
@@ -34,8 +32,10 @@ fn path() -> PathBuf {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log_level = LevelFilter::Info;
-    Builder::new().filter(Some("indexer"), log_level).init();
+    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
+        .filter_level(log::LevelFilter::Off)
+        .filter_module("indexer", log::LevelFilter::max())
+        .init();
 
     let mut schema_builder = Schema::builder();
 

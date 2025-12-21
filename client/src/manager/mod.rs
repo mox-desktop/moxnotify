@@ -414,9 +414,9 @@ impl NotificationManager {
         self.update_size();
     }
 
-    pub fn dismiss_by_id(&mut self, id: NotificationId) {
+    pub fn dismiss_by_id(&mut self, id: NotificationId) -> Option<NotificationState> {
         let Some(index) = self.notifications.iter().position(|n| n.id() == id) else {
-            return;
+            return None;
         };
 
         if self.selected_id().is_some() {
@@ -439,12 +439,14 @@ impl NotificationManager {
             }
         }
 
-        self.notifications.remove(index);
+        let notification = self.notifications.remove(index);
         self.promote_notifications();
 
         if self.notifications.is_empty() {
             self.deselect();
         }
+
+        return notification;
     }
 
     /// Returns an iterator over notifications in view
@@ -576,7 +578,7 @@ impl Moxnotify {
         }
 
         ids.iter()
-            .for_each(|id| self.notifications.dismiss_by_id(*id));
+            .for_each(|id| _ = self.notifications.dismiss_by_id(*id));
     }
 
     pub fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
@@ -587,34 +589,31 @@ impl Moxnotify {
                 .store(keymaps::Mode::Normal, Ordering::Relaxed);
         }
 
-        let uuid = self.notifications.iter_viewed().find_map(|notification| {
-            if notification.id() == id {
-                Some(notification.uuid())
-            } else {
-                None
+        if let Some(notification) = self.notifications.dismiss_by_id(id) {
+            let uuid = notification.uuid();
+
+            _ = self
+                .emit_sender
+                .send(EmitEvent::NotificationClosed { id, reason, uuid });
+
+            self.update_surface_size();
+            if let Some(surface) = self.surface.as_mut()
+                && let Err(e) = surface.render(
+                    &self.wgpu_state.device,
+                    &self.wgpu_state.queue,
+                    &self.notifications,
+                )
+            {
+                log::error!("Render error: {e}");
             }
-        });
 
-        self.notifications.dismiss_by_id(id);
-        _ = self.emit_sender.send(EmitEvent::NotificationClosed {
-            id,
-            reason,
-            uuid: uuid.unwrap(),
-        });
+            if self.notifications.notifications().is_empty() {
+                self.seat.keyboard.repeat.key = None;
+            }
 
-        self.update_surface_size();
-        if let Some(surface) = self.surface.as_mut()
-            && let Err(e) = surface.render(
-                &self.wgpu_state.device,
-                &self.wgpu_state.queue,
-                &self.notifications,
-            )
-        {
-            log::error!("Render error: {e}");
-        }
-
-        if self.notifications.notifications().is_empty() {
-            self.seat.keyboard.repeat.key = None;
+            log::debug!("Successfully dismissed notification, id: {id}");
+        } else {
+            log::debug!("Can't dismiss, notification not found, id: {id}");
         }
     }
 }

@@ -12,8 +12,6 @@ pub mod moxnotify {
     }
 }
 
-use env_logger::Builder;
-use log::LevelFilter;
 use moxnotify::collector::CollectorMessage;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
 use moxnotify::types::{ActionInvoked, CloseNotification, NewNotification, NotificationClosed};
@@ -40,8 +38,10 @@ pub enum EmitEvent {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log_level = LevelFilter::Info;
-    Builder::new().filter(Some("collector"), log_level).init();
+    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
+        .filter_level(log::LevelFilter::Off)
+        .filter_module("collector", log::LevelFilter::max())
+        .init();
 
     let (event_sender, mut event_receiver) = mpsc::channel(128);
     let (emit_sender, emit_receiver) = broadcast::channel(128);
