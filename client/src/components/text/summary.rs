@@ -72,10 +72,6 @@ impl Component for Summary {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        if bounds.width == 0. {
-            return Vec::new();
-        }
-
         let content_width = bounds.width
             - style.border.size.left
             - style.border.size.right

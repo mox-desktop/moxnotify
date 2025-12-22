@@ -25,7 +25,7 @@ mod wayland;
 use crate::{
     config::keymaps,
     moxnotify::{
-        client::ClientActionInvokedRequest,
+        client::{ClientActionInvokedRequest, GetViewportRequest},
         common::{CloseReason, Urgency},
         types::{ActionInvoked, NewNotification},
     },
@@ -284,6 +284,30 @@ impl Moxnotify {
 
                 self.notifications.add(*data).await;
 
+                let response = self
+                    .notifications
+                    .grpc_client
+                    .get_viewport(tonic::Request::new(GetViewportRequest {
+                        max_visible: self.config.general.max_visible as u32,
+                    }))
+                    .await
+                    .unwrap()
+                    .into_inner();
+
+                self.notifications
+                    .notification_view
+                    .set_visible(response.focused_ids);
+                self.notifications
+                    .notification_view
+                    .set_prev(response.before_count);
+                self.notifications
+                    .notification_view
+                    .set_next(response.after_count);
+
+                if let Some(selected_id) = response.selected_id {
+                    self.notifications.select(selected_id);
+                }
+
                 if self.notifications.inhibited() || suppress_sound {
                     log::debug!("Sound suppressed for notification");
                 } else if let Some(path) = path {
@@ -320,7 +344,7 @@ impl Moxnotify {
                             .load(Ordering::Relaxed);
                         self.notifications.select(last_id);
                     } else {
-                        self.notifications.next();
+                        self.notifications.next().await;
                     }
                 }
             }
@@ -438,17 +462,6 @@ impl Moxnotify {
 #[derive(Clone)]
 pub enum EmitEvent {
     Waiting(usize),
-    ActionInvoked {
-        id: NotificationId,
-        key: String,
-        token: Arc<str>,
-        uuid: String,
-    },
-    NotificationClosed {
-        id: NotificationId,
-        reason: CloseReason,
-        uuid: String,
-    },
     Open {
         uri: Arc<str>,
         token: Option<Arc<str>>,

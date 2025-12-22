@@ -242,7 +242,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                         >= state.config.general.scroll_sensitivity
                     {
                         if state.seat.pointer.scroll_accumulator.is_sign_positive() {
-                            state.notifications.next();
+                            pollster::block_on(state.notifications.next());
                             state.update_surface_size();
                             if let Some(surface) = state.surface.as_mut() {
                                 _ = surface.render(
@@ -252,7 +252,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                                 );
                             }
                         } else {
-                            state.notifications.prev();
+                            pollster::block_on(state.notifications.prev());
                             state.update_surface_size();
                             if let Some(surface) = state.surface.as_mut() {
                                 _ = surface.render(

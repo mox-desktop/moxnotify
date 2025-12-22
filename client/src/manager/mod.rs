@@ -8,7 +8,10 @@ use crate::{
     },
     config::{Config, keymaps},
     moxnotify::{
-        client::{ClientNotificationClosedRequest, client_service_client::ClientServiceClient},
+        client::{
+            ClientNotificationClosedRequest, GetViewportRequest, ViewportNavigationRequest,
+            client_service_client::ClientServiceClient, viewport_navigation_request::Direction,
+        },
         common::CloseReason,
         types::{NewNotification, NotificationClosed},
     },
@@ -237,46 +240,10 @@ impl NotificationManager {
             .find(|notification| Some(notification.id()) == id)
     }
 
-    /// Selects a notification by its ID, updating the selection state and visible range.
-    ///
-    /// If the selected notification is outside the current visible range, it handles
-    /// the viewport to bring it into view. Also promotes unloaded notifications.
     pub fn select(&mut self, id: NotificationId) {
         let Some(new_index) = self.notifications.iter().position(|n| n.id() == id) else {
             return;
         };
-
-        let current_selected = self
-            .selected_id()
-            .and_then(|current_id| self.notifications.iter().position(|n| n.id() == current_id));
-
-        let current_view_start = self.notification_view.visible.start;
-        let current_view_end = self.notification_view.visible.end;
-        let max_visible = self.config.general.max_visible;
-
-        if new_index < current_view_start || new_index >= current_view_end {
-            match current_selected {
-                // Moving up
-                Some(old_index) if new_index > old_index => {
-                    self.deselect();
-                    let new_start = new_index.saturating_sub(max_visible.saturating_sub(1));
-                    self.notification_view.visible =
-                        new_start..new_start.saturating_add(max_visible);
-                }
-                // Moving down
-                Some(old_index) if new_index < old_index => {
-                    self.deselect();
-                    self.notification_view.visible =
-                        new_index..new_index.saturating_add(max_visible);
-                }
-                None => {
-                    let new_start = new_index.saturating_sub(max_visible / 2);
-                    self.notification_view.visible =
-                        new_start..new_start.saturating_add(max_visible);
-                }
-                _ => {}
-            }
-        }
 
         let Some(notification) = self.notifications.get_mut(new_index) else {
             return;
@@ -291,6 +258,7 @@ impl NotificationManager {
         let loop_handle = self.loop_handle.clone();
         self.iter_viewed_mut()
             .for_each(|notification| notification.stop_timer(&loop_handle));
+
         self.update_size();
     }
 
@@ -313,45 +281,41 @@ impl NotificationManager {
     }
 
     /// Select next notification
-    pub fn next(&mut self) {
-        let next_notification_index = {
-            let id = self.ui_state.selected_id.load(Ordering::Relaxed);
-            self.notifications
-                .iter()
-                .position(|n| n.id() == id)
-                .map_or(0, |index| {
-                    if index + 1 < self.notifications.len() {
-                        index + 1
-                    } else {
-                        0
-                    }
-                })
-        };
+    pub async fn next(&mut self) {
+        let response =
+            self.grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::Next as i32,
+                    max_visible: self.config.general.max_visible as u32,
+                }));
+        let response = response.await.unwrap().into_inner();
 
-        if let Some(notification) = self.notifications.get(next_notification_index) {
-            self.select(notification.id());
+        if let Some(selected_id) = response.selected_id {
+            self.select(selected_id);
         }
+
+        self.notification_view.set_prev(response.after_count);
+        self.notification_view.set_next(response.before_count);
+        self.notification_view.set_visible(response.focused_ids);
     }
 
     /// Select previous notification
-    pub fn prev(&mut self) {
-        let notification_index = {
-            let id = self.ui_state.selected_id.load(Ordering::Relaxed);
-            self.notifications.iter().position(|n| n.id() == id).map_or(
-                self.notifications.len().saturating_sub(1),
-                |index| {
-                    if index > 0 {
-                        index - 1
-                    } else {
-                        self.notifications.len().saturating_sub(1)
-                    }
-                },
-            )
-        };
+    pub async fn prev(&mut self) {
+        let response =
+            self.grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::Prev as i32,
+                    max_visible: self.config.general.max_visible as u32,
+                }));
+        let response = response.await.unwrap().into_inner();
 
-        if let Some(notification) = self.notifications.get(notification_index) {
-            self.select(notification.id());
+        if let Some(selected_id) = response.selected_id {
+            self.select(selected_id);
         }
+
+        self.notification_view.set_prev(response.after_count);
+        self.notification_view.set_next(response.before_count);
+        self.notification_view.set_visible(response.focused_ids);
     }
 
     pub fn waiting(&self) -> usize {
@@ -389,19 +353,14 @@ impl NotificationManager {
             return;
         }
 
-        if let Some((i, notification)) = self
-            .notifications
-            .iter_mut()
-            .enumerate()
-            .find(|(_, n)| n.id() == data.id)
-        {
+        if let Some(notification) = self.notifications.iter_mut().find(|n| n.id() == data.id) {
             notification.replace(
                 &mut self.font_system.borrow_mut(),
                 data,
                 Some(self.sender.clone()),
             );
 
-            if self.notification_view.visible.contains(&i) {
+            if self.notification_view.visible.contains(&notification.id()) {
                 notification.start_timer(&self.loop_handle).await;
             }
         } else {
@@ -413,11 +372,7 @@ impl NotificationManager {
                 Some(self.sender.clone()),
             );
 
-            if self
-                .notification_view
-                .visible
-                .contains(&self.notifications.len())
-            {
+            if self.notification_view.visible.contains(&notification.id()) {
                 notification.start_timer(&self.loop_handle).await;
             }
 
@@ -432,26 +387,6 @@ impl NotificationManager {
             return None;
         };
 
-        if self.selected_id().is_some() {
-            let next_notification = self.notifications.get(index + 1);
-
-            match next_notification {
-                Some(notification) if self.notification_view.visible.contains(&(index + 1)) => {
-                    self.select(notification.id());
-                }
-                Some(notification) => {
-                    self.select(notification.id());
-                    self.notification_view.visible =
-                        self.notification_view.visible.start.saturating_sub(1)
-                            ..self.notification_view.visible.end.saturating_sub(1);
-                    self.update_size();
-                }
-                None => {
-                    self.prev();
-                }
-            }
-        }
-
         let notification = self.notifications.remove(index);
 
         if self.notifications.is_empty() {
@@ -463,24 +398,24 @@ impl NotificationManager {
 
     /// Returns an iterator over notifications in view
     pub fn iter_viewed(&self) -> impl Iterator<Item = &Notification> {
-        self.notification_view
-            .visible
-            .clone()
-            .filter_map(|idx| self.notifications.get(idx))
+        self.notifications.iter().filter_map(|notification| {
+            if self.notification_view.visible.contains(&notification.id()) {
+                Some(notification)
+            } else {
+                None
+            }
+        })
     }
 
     /// Returns an iterator over notifications in view that returns mutable references
     pub fn iter_viewed_mut(&mut self) -> impl Iterator<Item = &mut Notification> {
-        self.notifications
-            .iter_mut()
-            .enumerate()
-            .filter_map(|(i, notification)| {
-                if self.notification_view.visible.contains(&i) {
-                    Some(notification)
-                } else {
-                    None
-                }
-            })
+        self.notifications.iter_mut().filter_map(|notification| {
+            if self.notification_view.visible.contains(&notification.id()) {
+                Some(notification)
+            } else {
+                None
+            }
+        })
     }
 
     pub fn update_size(&mut self) {
@@ -510,9 +445,6 @@ impl NotificationManager {
         if let Some(next) = self.notification_view.next.as_mut() {
             next.set_position(0., start);
         }
-
-        self.notification_view
-            .update_notification_count(self.notifications.len());
     }
 }
 
@@ -598,6 +530,26 @@ impl Moxnotify {
                 .await
                 .unwrap();
 
+            let response = self
+                .notifications
+                .grpc_client
+                .get_viewport(tonic::Request::new(GetViewportRequest {
+                    max_visible: self.config.general.max_visible as u32,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            if let Some(selected_id) = response.selected_id.as_ref() {
+                self.notifications.select(*selected_id);
+                self.notifications
+                    .notification_view
+                    .set_prev(response.after_count);
+                self.notifications
+                    .notification_view
+                    .set_next(response.before_count);
+            }
+
             self.update_surface_size();
             if let Some(surface) = self.surface.as_mut()
                 && let Err(e) = surface.render(
@@ -612,6 +564,10 @@ impl Moxnotify {
             if self.notifications.notifications().is_empty() {
                 self.seat.keyboard.repeat.key = None;
             }
+
+            self.notifications
+                .notification_view
+                .set_visible(response.focused_ids);
 
             log::debug!("Successfully dismissed notification, id: {id}");
         } else {

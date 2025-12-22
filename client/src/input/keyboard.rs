@@ -242,8 +242,8 @@ impl Moxnotify {
             self.seat.keyboard.key_combination.clear();
             match key_combination.action {
                 KeyAction::Noop => {}
-                KeyAction::NextNotification => self.notifications.next(),
-                KeyAction::PreviousNotification => self.notifications.prev(),
+                KeyAction::NextNotification => self.notifications.next().await,
+                KeyAction::PreviousNotification => self.notifications.prev().await,
                 KeyAction::FirstNotification => {
                     if let Some(notification) = self.notifications.notifications().front() {
                         self.notifications.select(notification.id());

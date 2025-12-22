@@ -1,12 +1,11 @@
 use super::UiState;
 use crate::{
-    components::{
-        Component,
-        notification::Notification,
-        text::Text,
-    },
+    components::{Component, notification::Notification, text::Text},
     config::Config,
-    moxnotify::{common::Urgency, types::{NewNotification, NotificationHints}},
+    moxnotify::{
+        common::Urgency,
+        types::{NewNotification, NotificationHints},
+    },
 };
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
@@ -18,7 +17,7 @@ use std::{
 };
 
 pub struct NotificationView {
-    pub visible: Range<usize>,
+    pub visible: Vec<u32>,
     pub prev: Option<Notification>,
     pub next: Option<Notification>,
     font_system: Rc<RefCell<FontSystem>>,
@@ -33,7 +32,7 @@ impl NotificationView {
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
         Self {
-            visible: 0..config.general.max_visible,
+            visible: Vec::new(),
             config,
             font_system,
             prev: None,
@@ -42,14 +41,18 @@ impl NotificationView {
         }
     }
 
-    pub fn update_notification_count(&mut self, notification_count: usize) {
-        if self.visible.start > 0 {
+    pub fn set_visible(&mut self, visible: Vec<u32>) {
+        self.visible = visible;
+    }
+
+    pub fn set_prev(&mut self, count: u32) {
+        if count > 0 {
             let summary = self
                 .config
                 .styles
                 .next
                 .format
-                .replace("{}", &self.visible.start.to_string());
+                .replace("{}", &count.to_string());
             if let Some(notification) = self.prev.as_mut() {
                 let mut font_system = self.font_system.borrow_mut();
                 notification
@@ -72,14 +75,16 @@ impl NotificationView {
         } else {
             self.prev = None;
         }
+    }
 
-        if notification_count > self.visible.end {
-            let summary = self.config.styles.prev.format.replace(
-                "{}",
-                &notification_count
-                    .saturating_sub(self.visible.end)
-                    .to_string(),
-            );
+    pub fn set_next(&mut self, count: u32) {
+        if count > 0 {
+            let summary = self
+                .config
+                .styles
+                .prev
+                .format
+                .replace("{}", &count.to_string());
             if let Some(notification) = &mut self.next {
                 let mut font_system = self.font_system.borrow_mut();
                 notification

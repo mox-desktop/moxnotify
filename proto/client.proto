@@ -8,6 +8,7 @@ service ClientService {
     rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
     rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
     rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
+    rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
 }
 
 message ClientNotifyRequest {}
@@ -37,6 +38,10 @@ message ViewportNavigationRequest {
     }
     Direction direction = 1;
     uint32 max_visible = 2;
+}
+
+message GetViewportRequest {
+    uint32 max_visible = 1;
 }
 
 message ViewportNavigationResponse {
