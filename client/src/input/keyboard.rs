@@ -194,7 +194,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                             return TimeoutAction::Drop;
                                         }
 
-                                        if moxnotify.handle_key().is_err() {
+                                        if pollster::block_on(moxnotify.handle_key()).is_err() {
                                             return TimeoutAction::Drop;
                                         }
                                         TimeoutAction::ToDuration(Duration::from_millis(rate))
@@ -207,7 +207,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                             }
                         }
 
-                        _ = state.handle_key();
+                        _ = pollster::block_on(state.handle_key());
                     }
                     _ => unreachable!(),
                 }
@@ -222,7 +222,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
 }
 
 impl Moxnotify {
-    fn handle_key(&mut self) -> anyhow::Result<()> {
+    async fn handle_key(&mut self) -> anyhow::Result<()> {
         if !self
             .config
             .keymaps
@@ -258,7 +258,8 @@ impl Moxnotify {
                 }
                 KeyAction::DismissNotification => {
                     if let Some(id) = self.notifications.selected_id() {
-                        self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
+                        self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser)
+                            .await;
                         return Ok(());
                     }
                 }

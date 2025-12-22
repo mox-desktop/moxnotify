@@ -13,12 +13,14 @@ pub mod moxnotify {
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use crate::moxnotify::client::{
     ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
-    ClientNotificationClosedResponse, ClientNotifyRequest,
+    ClientNotificationClosedResponse, ClientNotifyRequest, ViewportNavigationRequest,
+    ViewportNavigationResponse,
 };
 use crate::moxnotify::types::CloseNotification;
 use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -31,6 +33,7 @@ struct Scheduler {
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
     close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
+    selected_id: Arc<Mutex<Option<u32>>>,
 }
 
 impl Scheduler {
@@ -41,7 +44,33 @@ impl Scheduler {
             notification_broadcast: Arc::new(tx),
             close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
+            selected_id: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn get_active_notifications(&self) -> Result<HashMap<u32, NewNotification>, redis::RedisError> {
+        let mut con = self.redis_con.lock().unwrap();
+
+        let hash_data: HashMap<String, String> = con.hgetall("moxnotify:active")?;
+
+        let mut active_notifications = HashMap::new();
+        for (id_str, json) in hash_data {
+            if let Ok(id) = id_str.parse::<u32>() {
+                if let Ok(notification) = serde_json::from_str::<NewNotification>(&json) {
+                    active_notifications.insert(id, notification);
+                } else {
+                    log::warn!(
+                        "Failed to parse notification JSON for id {}: {}",
+                        id_str,
+                        json
+                    );
+                }
+            } else {
+                log::warn!("Failed to parse notification ID: {}", id_str);
+            }
+        }
+
+        Ok(active_notifications)
     }
 }
 
@@ -154,6 +183,16 @@ impl ClientService for Scheduler {
             log::error!("Failed to write notification_closed to Redis: {}", e);
         }
 
+        let id_str = closed.id.to_string();
+        if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+            log::warn!("Failed to remove notification from active HASH: {}", e);
+        }
+
+        {
+            let _selected = self.selected_id.lock().unwrap();
+            // TODO: Handle selection update if closed notification was selected
+        }
+
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
 
@@ -179,6 +218,39 @@ impl ClientService for Scheduler {
         }
 
         Ok(Response::new(ClientActionInvokedResponse {}))
+    }
+
+    async fn navigate_viewport(
+        &self,
+        request: Request<ViewportNavigationRequest>,
+    ) -> Result<Response<ViewportNavigationResponse>, Status> {
+        let _req = request.into_inner();
+        let active_notifications = self.get_active_notifications().map_err(|e| {
+            Status::internal(format!(
+                "Failed to read active notifications from Redis: {}",
+                e
+            ))
+        })?;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let focused_ids: Vec<u32> = notifications.iter().map(|n| n.id).collect();
+
+        let selected_id = {
+            let selected = self.selected_id.lock().unwrap();
+            *selected
+        };
+
+        let before_count = 0;
+        let after_count = 0;
+
+        Ok(Response::new(ViewportNavigationResponse {
+            focused_ids,
+            before_count,
+            after_count,
+            selected_id,
+        }))
     }
 }
 
@@ -241,6 +313,14 @@ async fn main() -> anyhow::Result<()> {
                                     notification.summary
                                 );
 
+                                let json = serde_json::to_string(&notification).unwrap();
+                                let id_str = notification.id.to_string();
+                                if let Err(e) =
+                                    con.hset("moxnotify:active", id_str.as_str(), json.as_str())
+                                {
+                                    log::warn!("Failed to add notification to active HASH: {}", e);
+                                }
+
                                 notification_broadcast.send(notification);
 
                                 if let Err(e) = con.xack(
@@ -266,6 +346,14 @@ async fn main() -> anyhow::Result<()> {
                                     "Broadcasting close_notification to clients: id={}",
                                     close_notification.id
                                 );
+
+                                let id_str = close_notification.id.to_string();
+                                if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+                                    log::warn!(
+                                        "Failed to remove notification from active HASH: {}",
+                                        e
+                                    );
+                                }
 
                                 close_notification_broadcast.send(close_notification);
 

@@ -25,8 +25,9 @@ mod wayland;
 use crate::{
     config::keymaps,
     moxnotify::{
+        client::ClientActionInvokedRequest,
         common::{CloseReason, Urgency},
-        types::NewNotification,
+        types::{ActionInvoked, NewNotification},
     },
 };
 use audio::Audio;
@@ -143,7 +144,8 @@ impl Moxnotify {
                 loop_handle.clone(),
                 event_sender.clone(),
                 Rc::clone(&font_system),
-            ),
+            )
+            .await,
             font_system,
             config,
             wgpu_state,
@@ -157,36 +159,48 @@ impl Moxnotify {
         })
     }
 
-    fn handle_app_event(&mut self, event: Event) -> anyhow::Result<()> {
+    async fn handle_app_event(&mut self, event: Event) -> anyhow::Result<()> {
         match event {
             Event::Dismiss { all, id } => {
                 if all {
                     log::info!("Dismissing all notifications");
-                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser));
+                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser))
+                        .await;
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
                         self.dismiss_with_reason(
                             notification.id(),
                             CloseReason::ReasonDismissedByUser,
-                        );
+                        )
+                        .await;
                     } else {
                         log::debug!("No notifications to dismiss");
                     }
                 } else {
                     log::info!("Dismissing notification with id={id}");
-                    self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
+                    self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser)
+                        .await;
                 }
             }
             Event::InvokeAction { id, key, uuid } => {
                 if let Some(surface) = self.surface.as_ref() {
                     let token = surface.token.as_ref().map(Arc::clone);
-                    _ = self.emit_sender.send(crate::EmitEvent::ActionInvoked {
-                        id,
-                        key,
-                        token: token.unwrap_or_default(),
-                        uuid,
-                    });
+
+                    log::info!("Action invoked: id: {}, key: {}", id, key);
+
+                    self.notifications
+                        .grpc_client
+                        .action_invoked(tonic::Request::new(ClientActionInvokedRequest {
+                            action_invoked: Some(ActionInvoked {
+                                id,
+                                action_key: key,
+                                token: token.unwrap_or_default().to_string(),
+                                uuid,
+                            }),
+                        }))
+                        .await
+                        .unwrap();
                 }
 
                 if !self
@@ -196,7 +210,8 @@ impl Moxnotify {
                     .find(|notification| notification.id() == id)
                     .is_some_and(|n| n.data().hints.as_ref().unwrap().resident)
                 {
-                    self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
+                    self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall)
+                        .await;
                 }
             }
             Event::InvokeAnchor(uri) => {
@@ -267,7 +282,7 @@ impl Moxnotify {
 
                 let suppress_sound = data.hints.as_ref().unwrap().suppress_sound;
 
-                self.notifications.add(*data);
+                self.notifications.add(*data).await;
 
                 if self.notifications.inhibited() || suppress_sound {
                     log::debug!("Sound suppressed for notification");
@@ -278,7 +293,8 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
+                self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall)
+                    .await;
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
@@ -556,9 +572,9 @@ async fn main() -> anyhow::Result<()> {
 
     {
         let event_sender = event_sender.clone();
-        let emit_receiver = emit_sender.subscribe();
+        let client = moxnotify.notifications.grpc_client.clone();
         scheduler.schedule(async move {
-            if let Err(e) = grpc::serve(event_sender, emit_receiver).await {
+            if let Err(e) = grpc::serve(client, event_sender).await {
                 log::error!("{:?}", e);
             }
         })?;
@@ -587,7 +603,7 @@ async fn main() -> anyhow::Result<()> {
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
             if let calloop::channel::Event::Msg(event) = event
-                && let Err(e) = moxnotify.handle_app_event(event)
+                && let Err(e) = pollster::block_on(moxnotify.handle_app_event(event))
             {
                 log::error!("Failed to handle event: {e}");
             }

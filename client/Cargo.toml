@@ -63,6 +63,7 @@ tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 wayland-backend = { version = "0.3.7", features = ["client_system"] }
+pollster = "0.4.0"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

@@ -7,6 +7,7 @@ service ClientService {
     rpc Notify (ClientNotifyRequest) returns (stream moxnotify.types.NotificationMessage);
     rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
     rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
+    rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
 }
 
 message ClientNotifyRequest {}
@@ -28,3 +29,19 @@ message ClientCloseNotificationRequest {
 }
 
 message ClientCloseNotificationResponse {}
+
+message ViewportNavigationRequest {
+    enum Direction {
+        NEXT = 0;
+        PREV = 1;
+    }
+    Direction direction = 1;
+    uint32 max_visible = 2;
+}
+
+message ViewportNavigationResponse {
+    repeated uint32 focused_ids = 1;
+    uint32 before_count = 2;
+    uint32 after_count = 3;
+    optional uint32 selected_id = 4;
+}

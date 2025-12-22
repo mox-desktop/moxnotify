@@ -20,11 +20,15 @@ impl Dispatch<ext_idle_notification_v1::ExtIdleNotificationV1, ()> for Moxnotify
                 ext_idle_notification_v1::Event::Idled => state
                     .notifications
                     .iter_viewed_mut()
-                    .for_each(|notification| notification.start_timer(&state.loop_handle)),
+                    .for_each(|notification| {
+                        pollster::block_on(notification.start_timer(&state.loop_handle))
+                    }),
                 ext_idle_notification_v1::Event::Resumed => state
                     .notifications
                     .iter_viewed_mut()
-                    .for_each(|notification| notification.start_timer(&state.loop_handle)),
+                    .for_each(|notification| {
+                        pollster::block_on(notification.start_timer(&state.loop_handle))
+                    }),
                 _ => (),
             }
         };

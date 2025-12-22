@@ -1,13 +1,17 @@
 mod view;
 
 use crate::{
-    EmitEvent, Moxnotify,
+    Moxnotify,
     components::{
         Component, Data,
         notification::{self, Notification, NotificationId},
     },
     config::{Config, keymaps},
-    moxnotify::{common::CloseReason, types::NewNotification},
+    moxnotify::{
+        client::{ClientNotificationClosedRequest, client_service_client::ClientServiceClient},
+        common::CloseReason,
+        types::{NewNotification, NotificationClosed},
+    },
 };
 use atomic_float::AtomicF32;
 use calloop::LoopHandle;
@@ -24,6 +28,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
+use tonic::transport::Channel;
 use view::NotificationView;
 
 #[derive(Clone)]
@@ -53,20 +58,29 @@ pub struct NotificationManager {
     sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     font_system: Rc<RefCell<FontSystem>>,
+    pub grpc_client: ClientServiceClient<Channel>,
     pub notification_view: NotificationView,
     pub ui_state: UiState,
 }
 
 impl NotificationManager {
-    pub fn new(
+    pub async fn new(
         config: Arc<Config>,
         loop_handle: LoopHandle<'static, Moxnotify>,
         sender: calloop::channel::Sender<crate::Event>,
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
+        let scheduler_addr = std::env::var("MOXNOTIFY_SCHEDULER_ADDR")
+            .unwrap_or_else(|_| "http://[::1]:50052".to_string());
+
+        log::info!("Connecting to scheduler at: {}", scheduler_addr);
+
+        let client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
+
         let ui_state = UiState::default();
 
         Self {
+            grpc_client: client,
             sender,
             inhibited: false,
             waiting: Vec::new(),
@@ -294,7 +308,7 @@ impl NotificationManager {
 
         let loop_handle = self.loop_handle.clone();
         self.iter_viewed_mut().for_each(|notification| {
-            notification.start_timer(&loop_handle);
+            pollster::block_on(notification.start_timer(&loop_handle));
         });
     }
 
@@ -361,15 +375,15 @@ impl NotificationManager {
         };
 
         self.notifications.extend(new_notifications);
-        
+
         let loop_handle = self.loop_handle.clone();
         self.iter_viewed_mut()
-            .for_each(|notification| notification.start_timer(&loop_handle));
-        
+            .for_each(|notification| pollster::block_on(notification.start_timer(&loop_handle)));
+
         self.update_size();
     }
 
-    pub fn add(&mut self, data: NewNotification) {
+    pub async fn add(&mut self, data: NewNotification) {
         if self.inhibited() {
             self.waiting.push(data);
             return;
@@ -388,7 +402,7 @@ impl NotificationManager {
             );
 
             if self.notification_view.visible.contains(&i) {
-                notification.start_timer(&self.loop_handle);
+                notification.start_timer(&self.loop_handle).await;
             }
         } else {
             let mut notification = Notification::new(
@@ -404,7 +418,7 @@ impl NotificationManager {
                 .visible
                 .contains(&self.notifications.len())
             {
-                notification.start_timer(&self.loop_handle);
+                notification.start_timer(&self.loop_handle).await;
             }
 
             self.notifications.push_back(notification);
@@ -444,7 +458,7 @@ impl NotificationManager {
             self.deselect();
         }
 
-        return notification;
+        notification
     }
 
     /// Returns an iterator over notifications in view
@@ -515,7 +529,7 @@ impl fmt::Display for CloseReason {
 }
 
 impl Moxnotify {
-    pub fn dismiss_range<T>(&mut self, range: T, reason: Option<CloseReason>)
+    pub async fn dismiss_range<T>(&mut self, range: T, reason: Option<CloseReason>)
     where
         T: RangeBounds<usize>,
     {
@@ -536,11 +550,18 @@ impl Moxnotify {
                     }
                 });
 
-                _ = self.emit_sender.send(EmitEvent::NotificationClosed {
-                    id: *id,
-                    reason,
-                    uuid: uuid.unwrap(),
-                });
+                log::info!("Notification dismissed: id: {}, reason: {}", id, reason);
+                self.notifications
+                    .grpc_client
+                    .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
+                        notification_closed: Some(NotificationClosed {
+                            id: *id,
+                            reason: reason as i32,
+                            uuid: uuid.unwrap(),
+                        }),
+                    }))
+                    .await
+                    .unwrap();
             }
         }
 
@@ -554,7 +575,7 @@ impl Moxnotify {
             .for_each(|id| _ = self.notifications.dismiss_by_id(*id));
     }
 
-    pub fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
+    pub async fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
         if self.notifications.selected_id() == Some(id) {
             self.notifications
                 .ui_state
@@ -565,9 +586,17 @@ impl Moxnotify {
         if let Some(notification) = self.notifications.dismiss_by_id(id) {
             let uuid = notification.uuid();
 
-            _ = self
-                .emit_sender
-                .send(EmitEvent::NotificationClosed { id, reason, uuid });
+            self.notifications
+                .grpc_client
+                .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
+                    notification_closed: Some(NotificationClosed {
+                        id,
+                        reason: reason as i32,
+                        uuid,
+                    }),
+                }))
+                .await
+                .unwrap();
 
             self.update_surface_size();
             if let Some(surface) = self.surface.as_mut()

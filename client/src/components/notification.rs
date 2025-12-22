@@ -556,7 +556,7 @@ impl Notification {
         self.data = data;
     }
 
-    pub fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
+    pub async fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
         if let Some(timeout) = self.timeout()
             && self.registration_token.is_none()
         {
@@ -570,13 +570,17 @@ impl Notification {
             let id = self.id();
             self.registration_token = loop_handle
                 .insert_source(timer, move |_, (), moxnotify| {
-                    moxnotify.dismiss_with_reason(id, CloseReason::ReasonExpired);
+                    pollster::block_on(
+                        moxnotify.dismiss_with_reason(id, CloseReason::ReasonExpired),
+                    );
 
                     let loop_handle = moxnotify.loop_handle.clone();
                     moxnotify
                         .notifications
                         .iter_viewed_mut()
-                        .for_each(|notification| notification.start_timer(&loop_handle));
+                        .for_each(|notification| {
+                            pollster::block_on(notification.start_timer(&loop_handle))
+                        });
 
                     TimeoutAction::Drop
                 })

@@ -11,7 +11,7 @@ pub mod moxnotify {
 }
 
 use crate::moxnotify::collector::{collector_message, collector_response};
-use crate::moxnotify::types::{ActionInvoked, CloseNotification, NotificationClosed};
+use crate::moxnotify::types::{ActionInvoked, NotificationClosed};
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
 use moxnotify::types::NewNotification;
@@ -113,6 +113,11 @@ impl CollectorService for ControlPlaneService {
                             let json = serde_json::to_string(&notification).unwrap();
                             con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
                                 .unwrap();
+                            
+                            let id_str = notification.id.to_string();
+                            if let Err(e) = con.hset("moxnotify:active", id_str.as_str(), json.as_str()) {
+                                log::warn!("Failed to add notification to active HASH: {}", e);
+                            }
 
                             let _ = notification_broadcast.send(notification.clone());
                         }
@@ -127,6 +132,11 @@ impl CollectorService for ControlPlaneService {
                                 &[("close_notification", json.as_str())],
                             )
                             .unwrap();
+                            
+                            let id_str = close.id.to_string();
+                            if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+                                log::warn!("Failed to remove notification from active HASH: {}", e);
+                            }
                         }
                         None => {
                             log::warn!("Received empty CollectorMessage");
@@ -344,9 +354,9 @@ async fn main() -> anyhow::Result<()> {
                     .find(|sk| sk.key == "moxnotify:action_invoked")
             {
                 for stream_id in &stream_key.ids {
-                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action") {
-                        if let Ok(json_str) = std::str::from_utf8(json) {
-                            if let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str) {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action")
+                        && let Ok(json_str) = std::str::from_utf8(json)
+                            && let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str) {
                                 log::info!(
                                     "Received action_invoked from Redis: id: {}, action_key: {}",
                                     action.id,
@@ -357,15 +367,12 @@ async fn main() -> anyhow::Result<()> {
                                     action.id,
                                     action.action_key
                                 );
-                                match action_invoked_broadcast.send(action.clone()) {
-                                    Ok(count) => {
-                                        log::info!(
-                                            "Broadcast sent successfully to {} collector(s)",
-                                            count
-                                        );
-                                        tokio::task::yield_now().await;
-                                    }
-                                    Err(_) => {}
+                                if let Ok(count) = action_invoked_broadcast.send(action.clone()) {
+                                    log::info!(
+                                        "Broadcast sent successfully to {} collector(s)",
+                                        count
+                                    );
+                                    tokio::task::yield_now().await;
                                 }
                                 log::info!("Finished broadcasting for id={}", action.id);
                                 let _ = con.xack(
@@ -374,8 +381,6 @@ async fn main() -> anyhow::Result<()> {
                                     &[stream_id.id.as_str()],
                                 );
                             }
-                        }
-                    }
                 }
             }
         }
