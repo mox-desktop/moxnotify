@@ -56,9 +56,6 @@ use wayland_client::{
     globals::{GlobalList, registry_queue_init},
     protocol::{wl_compositor, wl_output},
 };
-use wayland_protocols::ext::idle_notify::v1::client::{
-    ext_idle_notification_v1, ext_idle_notifier_v1,
-};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
 
 // Urgency enum is now defined in proto/common.proto
@@ -85,7 +82,6 @@ impl Output {
 }
 
 pub struct Moxnotify {
-    idle_notification: Option<ext_idle_notification_v1::ExtIdleNotificationV1>,
     layer_shell: zwlr_layer_shell_v1::ZwlrLayerShellV1,
     seat: Seat,
     surface: Option<Surface>,
@@ -126,16 +122,9 @@ impl Moxnotify {
 
         let font_system = Rc::new(RefCell::new(FontSystem::new()));
 
-        let idle_notifier: Option<ext_idle_notifier_v1::ExtIdleNotifierV1> =
-            globals.bind(&qh, 1..=1, ()).ok();
-        let idle_notification = idle_notifier.as_ref().map(|idle_notifier| {
-            idle_notifier.get_idle_notification(5 * 60 * 1000, &seat.wl_seat, &qh, ())
-        });
-
         Ok(Self {
             // TODO: figure out a better way to handle it, Box clone is expensive
             output: config.general.output.clone(),
-            idle_notification,
             audio: Audio::try_new().unwrap(),
             globals,
             qh,
@@ -282,7 +271,7 @@ impl Moxnotify {
 
                 let suppress_sound = data.hints.as_ref().unwrap().suppress_sound;
 
-                self.notifications.add(*data).await;
+                self.notifications.add(*data);
 
                 let response = self
                     .notifications

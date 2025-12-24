@@ -15,7 +15,7 @@ calloop-wayland-source = "0.4.0"
 env_logger = { version = "0.11.6", default-features = false }
 mlua = { version = "0.10.3", features = ["lua54", "serialize"] }
 serde = { version = "1.0.217", features = ["rc"], default-features = false }
-wayland-client = "0.31.7"
+wayland-client = "0.31.11"
 wayland-protocols = { version = "0.32.5", features = ["staging", "unstable"] }
 futures-lite = { version = "2.6.0", default-features = false }
 zbus = { version = "5.5.0", features = ["tokio"], default-features = false }

@@ -556,49 +556,6 @@ impl Notification {
         self.data = data;
     }
 
-    pub async fn start_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        if let Some(timeout) = self.timeout()
-            && self.registration_token.is_none()
-        {
-            log::debug!(
-                "Expiration timer started for notification, id: {}, timeout: {}",
-                self.id(),
-                timeout
-            );
-
-            let timer = Timer::from_duration(Duration::from_millis(timeout));
-            let id = self.id();
-            self.registration_token = loop_handle
-                .insert_source(timer, move |_, (), moxnotify| {
-                    pollster::block_on(
-                        moxnotify.dismiss_with_reason(id, CloseReason::ReasonExpired),
-                    );
-
-                    let loop_handle = moxnotify.loop_handle.clone();
-                    moxnotify
-                        .notifications
-                        .iter_viewed_mut()
-                        .for_each(|notification| {
-                            pollster::block_on(notification.start_timer(&loop_handle))
-                        });
-
-                    TimeoutAction::Drop
-                })
-                .ok();
-        }
-    }
-
-    pub fn stop_timer(&mut self, loop_handle: &LoopHandle<'static, Moxnotify>) {
-        if let Some(token) = self.registration_token.take() {
-            log::debug!(
-                "Expiration timer paused for notification, id: {}",
-                self.id()
-            );
-
-            loop_handle.remove(token);
-        }
-    }
-
     #[must_use]
     pub fn timeout(&self) -> Option<u64> {
         let notification_style_entry = self

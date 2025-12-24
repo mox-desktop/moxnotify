@@ -95,133 +95,135 @@ impl CollectorService for ControlPlaneService {
 
         let con = Arc::clone(&self.con);
 
-        tokio::spawn(async move {
-            while let Some(msg_result) = stream.next().await {
-                match msg_result {
-                    Ok(msg) => match msg.message {
-                        Some(collector_message::Message::NewNotification(notification)) => {
-                            log::info!(
-                                "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                                notification.id,
-                                notification.app_name,
-                                notification.summary,
-                                notification.body,
-                                notification.hints.as_ref().unwrap().urgency
-                            );
-
-                            let mut con = con.lock().await;
-                            let json = serde_json::to_string(&notification).unwrap();
-                            con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
-                                .unwrap();
-                            
-                            let id_str = notification.id.to_string();
-                            if let Err(e) = con.hset("moxnotify:active", id_str.as_str(), json.as_str()) {
-                                log::warn!("Failed to add notification to active HASH: {}", e);
-                            }
-
-                            let _ = notification_broadcast.send(notification.clone());
-                        }
-                        Some(collector_message::Message::CloseNotification(close)) => {
-                            log::info!("Received close notification request: id={}", close.id);
-
-                            let mut con = con.lock().await;
-                            let json = serde_json::to_string(&close).unwrap();
-                            con.xadd(
-                                "moxnotify:close_notification",
-                                "*",
-                                &[("close_notification", json.as_str())],
-                            )
-                            .unwrap();
-                            
-                            let id_str = close.id.to_string();
-                            if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
-                                log::warn!("Failed to remove notification from active HASH: {}", e);
-                            }
-                        }
-                        None => {
-                            log::warn!("Received empty CollectorMessage");
-                        }
-                    },
-                    Err(e) => {
-                        log::error!("Error receiving message from collector: {}", e);
-                        break;
-                    }
-                }
-            }
-
-            log::info!("Client disconnected, addr: {:?}", remote_addr,);
-        });
-
         let mut closed_rx = notification_closed_broadcast.subscribe();
         log::info!(
             "Subscribed collector {:?} to notification_closed broadcast",
             remote_addr
         );
-        tokio::spawn(async move {
-            log::info!(
-                "Started forward task for collector {:?}, receiver is ready",
-                remote_addr
-            );
-            loop {
-                match closed_rx.recv().await {
-                    Ok(closed) => {
-                        log::info!(
-                            "Forwarding notification_closed to collector {:?}: id={}, reason={:?}",
-                            remote_addr,
-                            closed.id,
-                            closed.reason()
-                        );
-                        let response = CollectorResponse {
-                            message: Some(collector_response::Message::NotificationClosed(closed)),
-                        };
-                        if response_tx.send(Ok(response)).await.is_err() {
-                            log::info!(
-                                "Collector disconnected, stopping forward task: {:?}",
-                                remote_addr
-                            );
-                            break;
-                        }
-                        log::info!(
-                            "Successfully sent notification_closed to collector {:?}",
-                            remote_addr
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                        log::warn!(
-                            "Collector {:?} lagged, skipped {} notification_closed messages",
-                            remote_addr,
-                            skipped
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => {
-                        log::error!("Broadcast channel closed for collector: {:?}", remote_addr);
-                        break;
-                    }
-                }
-            }
-            log::info!("Forward task ended for collector {:?}", remote_addr);
-        });
+        log::info!(
+            "Started forward task for collector {:?}, receiver is ready",
+            remote_addr
+        );
 
         let mut action_rx = action_invoked_broadcast.subscribe();
         let response_tx_action = tx.clone();
+
         tokio::spawn(async move {
             loop {
-                match action_rx.recv().await {
-                    Ok(action) => {
-                        let response = CollectorResponse {
-                            message: Some(
-                                moxnotify::collector::collector_response::Message::ActionInvoked(
-                                    action,
-                                ),
-                            ),
-                        };
-                        if response_tx_action.send(Ok(response)).await.is_err() {
-                            break;
+                tokio::select! {
+                    msg = stream.next() => {
+                        match msg {
+                            Some(Ok(msg)) => match msg.message {
+                                Some(collector_message::Message::NewNotification(notification)) => {
+                                    log::info!(
+                                        "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
+                                        notification.id,
+                                        notification.app_name,
+                                        notification.summary,
+                                        notification.body,
+                                        notification.hints.as_ref().unwrap().urgency
+                                    );
+
+                                    let mut con = con.lock().await;
+                                    let json = serde_json::to_string(&notification).unwrap();
+                                    con.xadd("moxnotify:notify", "*", &[("notification", json.as_str())])
+                                        .unwrap();
+
+                                    let id_str = notification.id.to_string();
+                                    if let Err(e) =
+                                        con.hset("moxnotify:active", id_str.as_str(), json.as_str())
+                                    {
+                                        log::warn!("Failed to add notification to active HASH: {}", e);
+                                    }
+
+                                    let _ = notification_broadcast.send(notification.clone());
+                                }
+                                Some(collector_message::Message::CloseNotification(close)) => {
+                                    log::info!("Received close notification request: id={}", close.id);
+
+                                    let mut con = con.lock().await;
+                                    let json = serde_json::to_string(&close).unwrap();
+                                    con.xadd(
+                                        "moxnotify:close_notification",
+                                        "*",
+                                        &[("close_notification", json.as_str())],
+                                    )
+                                    .unwrap();
+
+                                    let id_str = close.id.to_string();
+                                    if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+                                        log::warn!("Failed to remove notification from active HASH: {}", e);
+                                    }
+                                }
+                                None => {
+                                    log::warn!("Received empty CollectorMessage");
+                                }
+                            },
+                            Some(Err(e)) => {
+                                log::error!("Error receiving message from collector: {}", e);
+                                break;
+                            }
+                            None => {
+                                break;
+                            }
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(broadcast::error::RecvError::Closed) => {
-                        break;
+                    closed = closed_rx.recv() => {
+                        match closed {
+                            Ok(closed) => {
+                                log::info!(
+                                    "Forwarding notification_closed to collector {:?}: id={}, reason={:?}",
+                                    remote_addr,
+                                    closed.id,
+                                    closed.reason()
+                                );
+                                let response = CollectorResponse {
+                                    message: Some(collector_response::Message::NotificationClosed(closed)),
+                                };
+                                if response_tx.send(Ok(response)).await.is_err() {
+                                    log::info!(
+                                        "Collector disconnected, stopping forward task: {:?}",
+                                        remote_addr
+                                    );
+                                    break;
+                                }
+                                log::info!(
+                                    "Successfully sent notification_closed to collector {:?}",
+                                    remote_addr
+                                );
+                            }
+                            Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                                log::warn!(
+                                    "Collector {:?} lagged, skipped {} notification_closed messages",
+                                    remote_addr,
+                                    skipped
+                                );
+                            }
+                            Err(broadcast::error::RecvError::Closed) => {
+                                log::error!("Broadcast channel closed for collector: {:?}", remote_addr);
+                                break;
+                            }
+                        }
+                    }
+                    action = action_rx.recv() => {
+                        match action {
+                            Ok(action) => {
+                                let response = CollectorResponse {
+                                    message: Some(
+                                        moxnotify::collector::collector_response::Message::ActionInvoked(
+                                            action,
+                                        ),
+                                    ),
+                                };
+                                if response_tx_action.send(Ok(response)).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Err(broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(broadcast::error::RecvError::Closed) => {
+                                break;
+                            }
+                        }
                     }
                 }
             }
@@ -356,31 +358,29 @@ async fn main() -> anyhow::Result<()> {
                 for stream_id in &stream_key.ids {
                     if let Some(redis::Value::BulkString(json)) = stream_id.map.get("action")
                         && let Ok(json_str) = std::str::from_utf8(json)
-                            && let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str) {
-                                log::info!(
-                                    "Received action_invoked from Redis: id: {}, action_key: {}",
-                                    action.id,
-                                    action.action_key
-                                );
-                                log::info!(
-                                    "Broadcasting action_invoked to collectors: id={}, action_key={}",
-                                    action.id,
-                                    action.action_key
-                                );
-                                if let Ok(count) = action_invoked_broadcast.send(action.clone()) {
-                                    log::info!(
-                                        "Broadcast sent successfully to {} collector(s)",
-                                        count
-                                    );
-                                    tokio::task::yield_now().await;
-                                }
-                                log::info!("Finished broadcasting for id={}", action.id);
-                                let _ = con.xack(
-                                    "moxnotify:action_invoked",
-                                    "control-plane-group",
-                                    &[stream_id.id.as_str()],
-                                );
-                            }
+                        && let Ok(action) = serde_json::from_str::<ActionInvoked>(json_str)
+                    {
+                        log::info!(
+                            "Received action_invoked from Redis: id: {}, action_key: {}",
+                            action.id,
+                            action.action_key
+                        );
+                        log::info!(
+                            "Broadcasting action_invoked to collectors: id={}, action_key={}",
+                            action.id,
+                            action.action_key
+                        );
+                        if let Ok(count) = action_invoked_broadcast.send(action.clone()) {
+                            log::info!("Broadcast sent successfully to {} collector(s)", count);
+                            tokio::task::yield_now().await;
+                        }
+                        log::info!("Finished broadcasting for id={}", action.id);
+                        let _ = con.xack(
+                            "moxnotify:action_invoked",
+                            "control-plane-group",
+                            &[stream_id.id.as_str()],
+                        );
+                    }
                 }
             }
         }

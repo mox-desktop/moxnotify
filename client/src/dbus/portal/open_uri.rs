@@ -90,34 +90,30 @@ pub async fn serve(mut receiver: broadcast::Receiver<EmitEvent>) -> zbus::Result
     let conn = zbus::Connection::session().await?;
     let open_uri = OpenURIProxy::new(&conn).await?;
 
-    tokio::spawn(async move {
-        loop {
-            if let Ok(EmitEvent::Open { uri, token }) = receiver.recv().await {
-                let mut options = HashMap::new();
-                if let Some(token) = &token {
-                    options.insert("activation_token", zbus::zvariant::Value::new(&**token));
-                }
+    loop {
+        if let Ok(EmitEvent::Open { uri, token }) = receiver.recv().await {
+            let mut options = HashMap::new();
+            if let Some(token) = &token {
+                options.insert("activation_token", zbus::zvariant::Value::new(&**token));
+            }
 
-                if let Some(uri_type) = detect_target_type(&uri) {
-                    match uri_type {
-                        TargetType::Uri => {
-                            let _ = open_uri.open_URI("", &uri, options).await;
+            if let Some(uri_type) = detect_target_type(&uri) {
+                match uri_type {
+                    TargetType::Uri => {
+                        let _ = open_uri.open_URI("", &uri, options).await;
+                    }
+                    TargetType::File => {
+                        if let Ok(fd) = path_to_fd(&uri) {
+                            let _ = open_uri.open_file("", fd, options).await;
                         }
-                        TargetType::File => {
-                            if let Ok(fd) = path_to_fd(&uri) {
-                                let _ = open_uri.open_file("", fd, options).await;
-                            }
-                        }
-                        TargetType::Directory => {
-                            if let Ok(fd) = path_to_fd(&uri) {
-                                let _ = open_uri.open_directory("", fd, options).await;
-                            }
+                    }
+                    TargetType::Directory => {
+                        if let Ok(fd) = path_to_fd(&uri) {
+                            let _ = open_uri.open_directory("", fd, options).await;
                         }
                     }
                 }
             }
         }
-    });
-
-    Ok(())
+    }
 }

@@ -31,6 +31,7 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
+use tokio::sync::Mutex;
 use tonic::transport::Channel;
 use view::NotificationView;
 
@@ -255,9 +256,7 @@ impl NotificationManager {
         self.ui_state.selected_id.store(id, Ordering::Relaxed);
         self.ui_state.selected.store(true, Ordering::Relaxed);
 
-        let loop_handle = self.loop_handle.clone();
-        self.iter_viewed_mut()
-            .for_each(|notification| notification.stop_timer(&loop_handle));
+        // TODO: stop timers
 
         self.update_size();
     }
@@ -274,21 +273,20 @@ impl NotificationManager {
             notification.unhover();
         }
 
-        let loop_handle = self.loop_handle.clone();
-        self.iter_viewed_mut().for_each(|notification| {
-            pollster::block_on(notification.start_timer(&loop_handle));
-        });
+        // TODO: start timers
     }
 
     /// Select next notification
     pub async fn next(&mut self) {
-        let response =
-            self.grpc_client
-                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
-                    direction: Direction::Next as i32,
-                    max_visible: self.config.general.max_visible as u32,
-                }));
-        let response = response.await.unwrap().into_inner();
+        let response = self
+            .grpc_client
+            .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                direction: Direction::Next as i32,
+                max_visible: self.config.general.max_visible as u32,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
@@ -301,13 +299,15 @@ impl NotificationManager {
 
     /// Select previous notification
     pub async fn prev(&mut self) {
-        let response =
-            self.grpc_client
-                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
-                    direction: Direction::Prev as i32,
-                    max_visible: self.config.general.max_visible as u32,
-                }));
-        let response = response.await.unwrap().into_inner();
+        let response = self
+            .grpc_client
+            .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                direction: Direction::Prev as i32,
+                max_visible: self.config.general.max_visible as u32,
+            }))
+            .await
+            .unwrap()
+            .into_inner();
 
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
@@ -340,14 +340,10 @@ impl NotificationManager {
 
         self.notifications.extend(new_notifications);
 
-        let loop_handle = self.loop_handle.clone();
-        self.iter_viewed_mut()
-            .for_each(|notification| pollster::block_on(notification.start_timer(&loop_handle)));
-
         self.update_size();
     }
 
-    pub async fn add(&mut self, data: NewNotification) {
+    pub fn add(&mut self, data: NewNotification) {
         if self.inhibited() {
             self.waiting.push(data);
             return;
@@ -359,10 +355,6 @@ impl NotificationManager {
                 data,
                 Some(self.sender.clone()),
             );
-
-            if self.notification_view.visible.contains(&notification.id()) {
-                notification.start_timer(&self.loop_handle).await;
-            }
         } else {
             let mut notification = Notification::new(
                 Arc::clone(&self.config),
@@ -371,10 +363,6 @@ impl NotificationManager {
                 self.ui_state.clone(),
                 Some(self.sender.clone()),
             );
-
-            if self.notification_view.visible.contains(&notification.id()) {
-                notification.start_timer(&self.loop_handle).await;
-            }
 
             self.notifications.push_back(notification);
         }

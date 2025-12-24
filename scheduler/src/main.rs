@@ -101,64 +101,62 @@ impl ClientService for Scheduler {
             let tx = tx.clone();
             tokio::spawn(async move {
                 loop {
-                    match notification_rx.recv().await {
-                        Ok(notification) => {
-                            let message = NotificationMessage {
-                                notification: Some(notification),
-                                close_notification: None,
-                            };
-                            if tx.send(Ok(message)).await.is_err() {
-                                log::info!("Client disconnected: {:?}", remote_addr);
-                                break;
+                    tokio::select! {
+                        notification = notification_rx.recv() => {
+                            match notification {
+                                Ok(notification) => {
+                                    let message = NotificationMessage {
+                                        notification: Some(notification),
+                                        close_notification: None,
+                                    };
+                                    if tx.send(Ok(message)).await.is_err() {
+                                        log::info!("Client disconnected: {:?}", remote_addr);
+                                        break;
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                                    log::warn!(
+                                        "Client {:?} lagged, skipped {} notification messages",
+                                        remote_addr,
+                                        skipped
+                                    );
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    log::error!(
+                                        "Notification broadcast channel closed for client: {:?}",
+                                        remote_addr
+                                    );
+                                    break;
+                                }
                             }
                         }
-                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                            log::warn!(
-                                "Client {:?} lagged, skipped {} notification messages",
-                                remote_addr,
-                                skipped
-                            );
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            log::error!(
-                                "Notification broadcast channel closed for client: {:?}",
-                                remote_addr
-                            );
-                            break;
-                        }
-                    }
-                }
-            });
-        }
-
-        {
-            let tx = tx.clone();
-            tokio::spawn(async move {
-                loop {
-                    match close_notification_rx.recv().await {
-                        Ok(close_notification) => {
-                            let message = NotificationMessage {
-                                notification: None,
-                                close_notification: Some(close_notification),
-                            };
-                            if tx.send(Ok(message)).await.is_err() {
-                                log::info!("Client disconnected: {:?}", remote_addr);
-                                break;
+                        close_notification = close_notification_rx.recv() => {
+                            match close_notification {
+                                Ok(close_notification) => {
+                                    let message = NotificationMessage {
+                                        notification: None,
+                                        close_notification: Some(close_notification),
+                                    };
+                                    if tx.send(Ok(message)).await.is_err() {
+                                        log::info!("Client disconnected: {:?}", remote_addr);
+                                        break;
+                                    }
+                                }
+                                Err(broadcast::error::RecvError::Lagged(skipped)) => {
+                                    log::warn!(
+                                        "Client {:?} lagged, skipped {} close_notification messages",
+                                        remote_addr,
+                                        skipped
+                                    );
+                                }
+                                Err(broadcast::error::RecvError::Closed) => {
+                                    log::error!(
+                                        "CloseNotification broadcast channel closed for client: {:?}",
+                                        remote_addr
+                                    );
+                                    break;
+                                }
                             }
-                        }
-                        Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                            log::warn!(
-                                "Client {:?} lagged, skipped {} close_notification messages",
-                                remote_addr,
-                                skipped
-                            );
-                        }
-                        Err(broadcast::error::RecvError::Closed) => {
-                            log::error!(
-                                "CloseNotification broadcast channel closed for client: {:?}",
-                                remote_addr
-                            );
-                            break;
                         }
                     }
                 }
@@ -384,12 +382,11 @@ async fn main() -> anyhow::Result<()> {
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
     let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
 
-    let scheduler_clone = scheduler.clone();
     let server_addr = scheduler_addr.parse()?;
     tokio::spawn(async move {
         log::info!("Scheduler server listening on {}", server_addr);
         Server::builder()
-            .add_service(ClientServiceServer::new(scheduler_clone))
+            .add_service(ClientServiceServer::new(scheduler))
             .serve(server_addr)
             .await
             .expect("Server failed to start");
@@ -413,24 +410,9 @@ async fn main() -> anyhow::Result<()> {
                             if let Some(redis::Value::BulkString(json)) =
                                 stream_id.map.get("notification")
                             {
-                                let json = match std::str::from_utf8(json) {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse notification JSON as UTF-8: {}",
-                                            e
-                                        );
-                                        continue;
-                                    }
-                                };
-                                let notification: NewNotification = match serde_json::from_str(json)
-                                {
-                                    Ok(n) => n,
-                                    Err(e) => {
-                                        log::error!("Failed to parse notification JSON: {}", e);
-                                        continue;
-                                    }
-                                };
+                                let json = std::str::from_utf8(json).unwrap();
+                                let notification: NewNotification =
+                                    serde_json::from_str(json).unwrap();
 
                                 log::info!(
                                     "Scheduling notification: id={}, app_name='{}', summary='{}'",
