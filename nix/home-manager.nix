@@ -44,6 +44,30 @@ in
     package = lib.mkPackageOption pkgs "moxnotify" { };
 
     webui.enable = lib.mkEnableOption "moxnotify webui";
+    client.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+    scheduler.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+    controlPlane.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+    indexer.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+    searcher.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+    collector.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
 
     redis = {
       address = lib.mkOption {
@@ -92,7 +116,7 @@ in
     };
 
     systemd.user.services = {
-      moxnotify-control-plane = {
+      moxnotify-control-plane = lib.mkIf cfg.controlPlane.enable {
         Unit = {
           Description = "Moxnotify Control Plane - gRPC coordination service";
           PartOf = [ "graphical-session.target" ];
@@ -116,7 +140,7 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
-      moxnotify-collector = {
+      moxnotify-collector = lib.mkIf cfg.collector.enable {
         Unit = {
           Description = "Moxnotify Collector - D-Bus notification service";
           PartOf = [ "graphical-session.target" ];
@@ -136,7 +160,7 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
-      moxnotify-scheduler = {
+      moxnotify-scheduler = lib.mkIf cfg.scheduler.enable {
         Unit = {
           Description = "Moxnotify Scheduler - Notification scheduling service";
           PartOf = [ "graphical-session.target" ];
@@ -160,7 +184,7 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
-      moxnotify-client = {
+      moxnotify-client = lib.mkIf cfg.client.enable {
         Unit = {
           Description = "Moxnotify Client - Wayland notification display client";
           PartOf = [ "graphical-session.target" ];
@@ -180,7 +204,7 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
-      moxnotify-indexer = {
+      moxnotify-indexer = lib.mkIf cfg.indexer.enable {
         Unit = {
           Description = "Moxnotify Indexer - Notification indexing service";
           PartOf = [ "graphical-session.target" ];
@@ -204,7 +228,7 @@ in
         Install.WantedBy = [ "default.target" ];
       };
 
-      moxnotify-searcher = {
+      moxnotify-searcher = lib.mkIf cfg.searcher.enable {
         Unit = {
           Description = "Moxnotify Searcher - Notification search service";
           PartOf = [ "graphical-session.target" ];
