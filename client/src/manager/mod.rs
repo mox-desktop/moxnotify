@@ -277,7 +277,6 @@ impl NotificationManager {
             .grpc_client
             .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                 direction: Direction::Next as i32,
-                max_visible: self.config.general.max_visible as u32,
             }))
             .await
             .unwrap()
@@ -298,7 +297,6 @@ impl NotificationManager {
             .grpc_client
             .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                 direction: Direction::Prev as i32,
-                max_visible: self.config.general.max_visible as u32,
             }))
             .await
             .unwrap()
@@ -510,9 +508,7 @@ impl Moxnotify {
             let response = self
                 .notifications
                 .grpc_client
-                .get_viewport(tonic::Request::new(GetViewportRequest {
-                    max_visible: self.config.general.max_visible as u32,
-                }))
+                .get_viewport(tonic::Request::new(GetViewportRequest {}))
                 .await
                 .unwrap()
                 .into_inner();

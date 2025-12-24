@@ -19,10 +19,11 @@ use crate::moxnotify::client::{
 };
 use crate::moxnotify::types::CloseNotification;
 use moxnotify::types::{NewNotification, NotificationMessage};
-use redis::streams::StreamReadOptions;
 use redis::TypedCommands;
+use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
@@ -35,6 +36,7 @@ struct Scheduler {
     close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
     selected_id: Arc<Mutex<Option<u32>>>,
+    max_visible: Arc<AtomicU32>,
 }
 
 impl Scheduler {
@@ -46,6 +48,7 @@ impl Scheduler {
             close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
             selected_id: Arc::new(Mutex::new(None)),
+            max_visible: Arc::new(AtomicU32::new(0)),
         }
     }
 
@@ -90,11 +93,15 @@ impl ClientService for Scheduler {
         request: Request<ClientNotifyRequest>,
     ) -> Result<Response<Self::NotifyStream>, Status> {
         let remote_addr = request.remote_addr().unwrap();
+        let req = request.into_inner();
+
         log::info!("New client connection from: {:?}", remote_addr);
 
         let mut notification_rx = self.notification_broadcast.subscribe();
         let mut close_notification_rx = self.close_notification_broadcast.subscribe();
         let (tx, stream_rx) = mpsc::channel(128);
+
+        self.max_visible.store(req.max_visible, Ordering::Relaxed);
 
         {
             let tx = tx.clone();
@@ -311,7 +318,11 @@ impl ClientService for Scheduler {
             }
         }
 
-        let focused_ids: Vec<u32> = notifications.iter().map(|n| n.id).collect();
+        let focused_ids: Vec<u32> = notifications
+            .iter()
+            .take(self.max_visible.load(Ordering::Relaxed) as usize)
+            .map(|n| n.id)
+            .collect();
 
         let before_count = 0;
         let after_count = 0;
@@ -326,9 +337,8 @@ impl ClientService for Scheduler {
 
     async fn get_viewport(
         &self,
-        request: Request<GetViewportRequest>,
+        _: Request<GetViewportRequest>,
     ) -> Result<Response<ViewportNavigationResponse>, Status> {
-        let req = request.into_inner();
         let active_notifications = self.get_active_notifications().map_err(|e| {
             Status::internal(format!(
                 "Failed to read active notifications from Redis: {}",
@@ -342,7 +352,7 @@ impl ClientService for Scheduler {
         let focused_ids: Vec<u32> = notifications
             .iter()
             .map(|n| n.id)
-            .take(req.max_visible as usize)
+            .take(self.max_visible.load(Ordering::Relaxed) as usize)
             .collect();
 
         let selected_id = {

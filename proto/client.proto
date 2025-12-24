@@ -11,7 +11,9 @@ service ClientService {
     rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
 }
 
-message ClientNotifyRequest {}
+message ClientNotifyRequest {
+    uint32 max_visible = 1;
+}
 
 message ClientNotificationClosedRequest {
     moxnotify.types.NotificationClosed notification_closed = 1;
@@ -37,12 +39,9 @@ message ViewportNavigationRequest {
         PREV = 1;
     }
     Direction direction = 1;
-    uint32 max_visible = 2;
 }
 
-message GetViewportRequest {
-    uint32 max_visible = 1;
-}
+message GetViewportRequest {}
 
 message ViewportNavigationResponse {
     repeated uint32 focused_ids = 1;

@@ -276,9 +276,7 @@ impl Moxnotify {
                 let response = self
                     .notifications
                     .grpc_client
-                    .get_viewport(tonic::Request::new(GetViewportRequest {
-                        max_visible: self.config.general.max_visible as u32,
-                    }))
+                    .get_viewport(tonic::Request::new(GetViewportRequest {}))
                     .await
                     .unwrap()
                     .into_inner();
@@ -321,9 +319,7 @@ impl Moxnotify {
                     let response = self
                         .notifications
                         .grpc_client
-                        .get_viewport(tonic::Request::new(GetViewportRequest {
-                            max_visible: self.config.general.max_visible as u32,
-                        }))
+                        .get_viewport(tonic::Request::new(GetViewportRequest {}))
                         .await
                         .unwrap()
                         .into_inner();
@@ -573,8 +569,9 @@ async fn main() -> anyhow::Result<()> {
     {
         let event_sender = event_sender.clone();
         let client = moxnotify.notifications.grpc_client.clone();
+        let max_visible = moxnotify.config.general.max_visible;
         scheduler.schedule(async move {
-            if let Err(e) = grpc::serve(client, event_sender).await {
+            if let Err(e) = grpc::serve(client, event_sender, max_visible as u32).await {
                 log::error!("{:?}", e);
             }
         })?;

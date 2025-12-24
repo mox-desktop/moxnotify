@@ -8,10 +8,11 @@ use tonic::{Request, transport::Channel};
 pub async fn serve(
     mut client: ClientServiceClient<Channel>,
     event_sender: calloop::channel::Sender<Event>,
+    max_visible: u32,
 ) -> anyhow::Result<()> {
     log::info!("Connected to scheduler, subscribing to notifications...");
 
-    let request = Request::new(ClientNotifyRequest {});
+    let request = Request::new(ClientNotifyRequest { max_visible });
     let mut stream = client.notify(request).await.unwrap().into_inner();
 
     log::info!("Subscribed to notifications");
