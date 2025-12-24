@@ -7,6 +7,7 @@ use calloop::{
     RegistrationToken,
     timer::{TimeoutAction, Timer},
 };
+use futures_lite::future;
 use std::{sync::atomic::Ordering, time::Duration};
 use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum,
@@ -194,7 +195,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                             return TimeoutAction::Drop;
                                         }
 
-                                        if pollster::block_on(moxnotify.handle_key()).is_err() {
+                                        if future::block_on(moxnotify.handle_key()).is_err() {
                                             return TimeoutAction::Drop;
                                         }
                                         TimeoutAction::ToDuration(Duration::from_millis(rate))
@@ -207,7 +208,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                             }
                         }
 
-                        _ = pollster::block_on(state.handle_key());
+                        _ = future::block_on(state.handle_key());
                     }
                     _ => unreachable!(),
                 }

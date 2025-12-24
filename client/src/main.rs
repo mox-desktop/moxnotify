@@ -1,3 +1,4 @@
+use futures_lite::future;
 use wayland_backend as _;
 
 pub mod moxnotify {
@@ -292,7 +293,9 @@ impl Moxnotify {
                     .notification_view
                     .set_next(response.after_count);
 
-                if let Some(selected_id) = response.selected_id {
+                if let Some(selected_id) = response.selected_id
+                    && self.notifications.selected_id().is_some()
+                {
                     self.notifications.select(selected_id);
                 }
 
@@ -315,22 +318,18 @@ impl Moxnotify {
                     log::info!("Focusing notification surface");
                     surface.focus(FocusReason::Ctl);
 
-                    let should_select_last = self.notifications.notifications().iter().any(|n| {
-                        n.id()
-                            == self
-                                .notifications
-                                .ui_state
-                                .selected_id
-                                .load(Ordering::Relaxed)
-                    });
+                    let response = self
+                        .notifications
+                        .grpc_client
+                        .get_viewport(tonic::Request::new(GetViewportRequest {
+                            max_visible: self.config.general.max_visible as u32,
+                        }))
+                        .await
+                        .unwrap()
+                        .into_inner();
 
-                    if should_select_last {
-                        let last_id = self
-                            .notifications
-                            .ui_state
-                            .selected_id
-                            .load(Ordering::Relaxed);
-                        self.notifications.select(last_id);
+                    if let Some(selected) = response.selected_id {
+                        self.notifications.select(selected);
                     } else {
                         self.notifications.next().await;
                     }
@@ -604,7 +603,7 @@ async fn main() -> anyhow::Result<()> {
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
             if let calloop::channel::Event::Msg(event) = event
-                && let Err(e) = pollster::block_on(moxnotify.handle_app_event(event))
+                && let Err(e) = future::block_on(moxnotify.handle_app_event(event))
             {
                 log::error!("Failed to handle event: {e}");
             }

@@ -517,15 +517,18 @@ impl Moxnotify {
                 .unwrap()
                 .into_inner();
 
-            if let Some(selected_id) = response.selected_id.as_ref() {
+            if let Some(selected_id) = response.selected_id.as_ref()
+                && self.notifications.selected_id().is_some()
+            {
                 self.notifications.select(*selected_id);
-                self.notifications
-                    .notification_view
-                    .set_prev(response.after_count);
-                self.notifications
-                    .notification_view
-                    .set_next(response.before_count);
             }
+
+            self.notifications
+                .notification_view
+                .set_prev(response.after_count);
+            self.notifications
+                .notification_view
+                .set_next(response.before_count);
 
             self.update_surface_size();
             if let Some(surface) = self.surface.as_mut()

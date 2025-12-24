@@ -6,6 +6,7 @@ use crate::{
     config::keymaps::{self},
     rendering::surface::FocusReason,
 };
+use futures_lite::future;
 use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum, delegate_noop,
     globals::GlobalList,
@@ -242,7 +243,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                         >= state.config.general.scroll_sensitivity
                     {
                         if state.seat.pointer.scroll_accumulator.is_sign_positive() {
-                            pollster::block_on(state.notifications.next());
+                            future::block_on(state.notifications.next());
                             state.update_surface_size();
                             if let Some(surface) = state.surface.as_mut() {
                                 _ = surface.render(
@@ -252,7 +253,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for Moxnotify {
                                 );
                             }
                         } else {
-                            pollster::block_on(state.notifications.prev());
+                            future::block_on(state.notifications.prev());
                             state.update_surface_size();
                             if let Some(surface) = state.surface.as_mut() {
                                 _ = surface.render(
