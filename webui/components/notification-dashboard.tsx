@@ -5,10 +5,10 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { NotificationChart } from "./notification-chart"
 import { NotificationList } from "./notification-list"
 import { SearchBar } from "./search-bar"
+import { TimeRangePicker, type TimeRange, type RelativeTimeRange, type AbsoluteTimeRange } from "./time-range-picker"
 import type { DbusNotification } from "@/lib/types"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Loader2 } from "lucide-react"
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3029"
@@ -27,22 +27,37 @@ export function NotificationDashboard() {
   const [timeInterval, setTimeInterval] = useState(
     Number(searchParams.get("interval")) || 5
   )
-  // Time range filter - how far back to show notifications (in minutes, or "all" for no filter)
-  const predefinedTimeRanges = [15, 30, 60, 120, 240, 360, 720, 1440, 2880, 4320, 10080, 20160, 43200, 129600, 259200, 525600]
-  const initialTimeRange = searchParams.get("timeRange") === "all" 
-    ? "all" 
-    : searchParams.get("timeRange") 
-    ? Number(searchParams.get("timeRange")) 
-    : 30
-  const [timeRange, setTimeRange] = useState<number | "all">(initialTimeRange)
-  const [useCustomTimeRange, setUseCustomTimeRange] = useState(
-    typeof initialTimeRange === "number" && !predefinedTimeRanges.includes(initialTimeRange)
-  )
-  const [customTimeRangeMinutes, setCustomTimeRangeMinutes] = useState(
-    typeof initialTimeRange === "number" && !predefinedTimeRanges.includes(initialTimeRange)
-      ? initialTimeRange.toString()
-      : ""
-  )
+  // Parse time range from URL params
+  const getInitialTimeRange = (): TimeRange => {
+    const relativeParam = searchParams.get("relative")
+    const fromParam = searchParams.get("from")
+    const toParam = searchParams.get("to")
+    
+    // Check for relative range first
+    if (relativeParam) {
+      if (relativeParam === "all") {
+        return { type: "relative", value: "all" }
+      }
+      const minutes = Number(relativeParam)
+      if (!isNaN(minutes) && minutes > 0) {
+        return { type: "relative", value: minutes }
+      }
+    }
+    
+    // Check for absolute range
+    if (fromParam && toParam) {
+      const from = new Date(fromParam)
+      const to = new Date(toParam)
+      if (!isNaN(from.getTime()) && !isNaN(to.getTime()) && from < to) {
+        return { type: "absolute", from, to }
+      }
+    }
+    
+    // Default: last 30 minutes
+    return { type: "relative", value: 30 }
+  }
+  
+  const [timeRange, setTimeRange] = useState<TimeRange>(getInitialTimeRange())
   const [maxHits, setMaxHits] = useState<number>(
     searchParams.get("maxHits") ? Number(searchParams.get("maxHits")) : 100
   )
@@ -58,17 +73,26 @@ export function NotificationDashboard() {
     setError(null)
 
     try {
+      // Build request body with timestamp filters for absolute ranges
+      const requestBody: any = {
+        query: searchQuery || "*",
+        max_hits: maxHits,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      }
+
+      // Add timestamp filters for absolute time ranges
+      if (timeRange.type === "absolute") {
+        requestBody.start_timestamp = timeRange.from.toISOString()
+        requestBody.end_timestamp = timeRange.to.toISOString()
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/search`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          query: searchQuery || "*",
-          max_hits: maxHits,
-          sort_by: sortBy,
-          sort_order: sortOrder,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -223,17 +247,22 @@ export function NotificationDashboard() {
         }
       })
       
-      // Filter notifications by time range if specified
-      const now = Date.now()
-      const filteredNotifications = timeRange === "all" 
-        ? notificationsWithDates
-        : notificationsWithDates.filter((n) => {
+      // Filter notifications by time range if specified (only for relative ranges, absolute is handled by backend)
+      let filteredNotifications = notificationsWithDates
+      
+      if (timeRange.type === "relative") {
+        if (timeRange.value !== "all") {
+          const now = Date.now()
+          const timeRangeMs = timeRange.value * 60 * 1000
+          filteredNotifications = notificationsWithDates.filter((n) => {
             const notificationTime = n.timestamp instanceof Date 
               ? n.timestamp.getTime() 
               : new Date(n.timestamp).getTime()
-            const timeRangeMs = timeRange * 60 * 1000
             return now - notificationTime <= timeRangeMs
           })
+        }
+      }
+      // For absolute ranges, backend handles filtering via start_timestamp/end_timestamp
       
       setNotifications(filteredNotifications)
     } catch (err) {
@@ -263,10 +292,18 @@ export function NotificationDashboard() {
       params.set("interval", timeInterval.toString())
     }
 
-    if (timeRange !== 30 && timeRange !== "all") {
-      params.set("timeRange", timeRange.toString())
-    } else if (timeRange === "all") {
-      params.set("timeRange", "all")
+    // Handle time range URL params
+    if (timeRange.type === "absolute") {
+      params.set("from", timeRange.from.toISOString())
+      params.set("to", timeRange.to.toISOString())
+    } else {
+      // Relative range
+      if (timeRange.value === "all") {
+        params.set("relative", "all")
+      } else if (timeRange.value !== 30) {
+        // Only set if not default (30 minutes)
+        params.set("relative", timeRange.value.toString())
+      }
     }
 
     if (maxHits !== 100) {
@@ -296,37 +333,8 @@ export function NotificationDashboard() {
     setTimeInterval(Number(value))
   }
 
-  const handleTimeRangeChange = (value: string) => {
-    if (value === "custom") {
-      setUseCustomTimeRange(true)
-      if (customTimeRangeMinutes) {
-        const minutes = Number(customTimeRangeMinutes)
-        if (!isNaN(minutes) && minutes > 0) {
-          setTimeRange(minutes)
-        }
-      }
-    } else if (value === "all") {
-      setUseCustomTimeRange(false)
-      setTimeRange("all")
-    } else {
-      setUseCustomTimeRange(false)
-      setTimeRange(Number(value))
-    }
-  }
-
-  const handleCustomTimeRangeChange = (value: string) => {
-    setCustomTimeRangeMinutes(value)
-    const minutes = Number(value)
-    if (!isNaN(minutes) && minutes > 0) {
-      setTimeRange(minutes)
-    }
-  }
-
-  const getTimeRangeSelectValue = (): string => {
-    if (useCustomTimeRange) {
-      return "custom"
-    }
-    return timeRange === "all" ? "all" : timeRange.toString()
+  const handleTimeRangeChange = (range: TimeRange) => {
+    setTimeRange(range)
   }
 
   const handleMaxHitsChange = (value: string) => {
@@ -369,79 +377,13 @@ export function NotificationDashboard() {
             </Select>
           </div>
           <div className="flex items-center gap-3">
-            <Label htmlFor="time-range-select" className="text-sm font-medium text-foreground">
+            <Label htmlFor="time-range-picker" className="text-sm font-medium text-foreground">
               Display Time Range:
             </Label>
-            {useCustomTimeRange ? (
-              <div className="flex items-center gap-2">
-                <Input
-                  id="custom-time-range-input"
-                  type="number"
-                  min="1"
-                  placeholder="Minutes"
-                  value={customTimeRangeMinutes}
-                  onChange={(e) => handleCustomTimeRangeChange(e.target.value)}
-                  className="w-[120px]"
-                />
-                <Select
-                  value={getTimeRangeSelectValue()}
-                  onValueChange={handleTimeRangeChange}
-                >
-                  <SelectTrigger id="time-range-select" className="w-[200px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="custom">Custom (minutes)</SelectItem>
-                    <SelectItem value="15">Last 15 minutes</SelectItem>
-                    <SelectItem value="30">Last 30 minutes</SelectItem>
-                    <SelectItem value="60">Last 1 hour</SelectItem>
-                    <SelectItem value="120">Last 2 hours</SelectItem>
-                    <SelectItem value="240">Last 4 hours</SelectItem>
-                    <SelectItem value="360">Last 6 hours</SelectItem>
-                    <SelectItem value="720">Last 12 hours</SelectItem>
-                    <SelectItem value="1440">Last 1 day</SelectItem>
-                    <SelectItem value="2880">Last 2 days</SelectItem>
-                    <SelectItem value="4320">Last 3 days</SelectItem>
-                    <SelectItem value="10080">Last 1 week</SelectItem>
-                    <SelectItem value="20160">Last 2 weeks</SelectItem>
-                    <SelectItem value="43200">Last 1 month</SelectItem>
-                    <SelectItem value="129600">Last 3 months</SelectItem>
-                    <SelectItem value="259200">Last 6 months</SelectItem>
-                    <SelectItem value="525600">Last 1 year</SelectItem>
-                    <SelectItem value="all">All time</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : (
-              <Select
-                value={getTimeRangeSelectValue()}
-                onValueChange={handleTimeRangeChange}
-              >
-                <SelectTrigger id="time-range-select" className="w-[200px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="15">Last 15 minutes</SelectItem>
-                  <SelectItem value="30">Last 30 minutes</SelectItem>
-                  <SelectItem value="60">Last 1 hour</SelectItem>
-                  <SelectItem value="120">Last 2 hours</SelectItem>
-                  <SelectItem value="240">Last 4 hours</SelectItem>
-                  <SelectItem value="360">Last 6 hours</SelectItem>
-                  <SelectItem value="720">Last 12 hours</SelectItem>
-                  <SelectItem value="1440">Last 1 day</SelectItem>
-                  <SelectItem value="2880">Last 2 days</SelectItem>
-                  <SelectItem value="4320">Last 3 days</SelectItem>
-                  <SelectItem value="10080">Last 1 week</SelectItem>
-                  <SelectItem value="20160">Last 2 weeks</SelectItem>
-                  <SelectItem value="43200">Last 1 month</SelectItem>
-                  <SelectItem value="129600">Last 3 months</SelectItem>
-                  <SelectItem value="259200">Last 6 months</SelectItem>
-                  <SelectItem value="525600">Last 1 year</SelectItem>
-                  <SelectItem value="all">All time</SelectItem>
-                  <SelectItem value="custom">Custom...</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
+            <TimeRangePicker
+              value={timeRange}
+              onChange={handleTimeRangeChange}
+            />
           </div>
           <div className="flex items-center gap-3">
             <Label htmlFor="max-hits-select" className="text-sm font-medium text-foreground">
@@ -499,7 +441,12 @@ export function NotificationDashboard() {
           </div>
         </div>
 
-        <NotificationChart notifications={notifications} timeInterval={timeInterval} timeRange={timeRange} />
+        <NotificationChart 
+          notifications={notifications} 
+          timeInterval={timeInterval} 
+          timeRange={timeRange}
+          onTimeRangeSelect={(range) => setTimeRange(range)}
+        />
         <SearchBar value={searchInput} onChange={setSearchInput} onRun={handleRunSearch} />
         
         {isLoading && (
