@@ -20,9 +20,8 @@ use crate::moxnotify::client::{
 use crate::moxnotify::types::CloseNotification;
 use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::streams::StreamReadOptions;
-use redis::{ToRedisArgs, TypedCommands};
+use redis::TypedCommands;
 use std::collections::HashMap;
-use std::ops::AddAssign;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -294,7 +293,7 @@ impl ClientService for Scheduler {
                         .filter(|&i| i < notifications.len())
                         .unwrap_or(0);
 
-                    *selected_id = notifications.get(idx as usize).map(|n| n.id);
+                    *selected_id = notifications.get(idx).map(|n| n.id);
                 } else if let Some(first) = notifications.first() {
                     *selected_id = Some(first.id);
                 }
@@ -305,7 +304,7 @@ impl ClientService for Scheduler {
                 {
                     let idx = pos.checked_sub(1).unwrap_or(notifications.len() - 1);
 
-                    *selected_id = notifications.get(idx as usize).map(|n| n.id);
+                    *selected_id = notifications.get(idx).map(|n| n.id);
                 } else if let Some(last) = notifications.last() {
                     *selected_id = Some(last.id);
                 }

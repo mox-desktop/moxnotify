@@ -11,7 +11,6 @@ use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
 use std::{
     cell::RefCell,
-    ops::Range,
     rc::Rc,
     sync::{Arc, atomic::Ordering},
 };

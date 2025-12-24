@@ -130,7 +130,6 @@ impl Moxnotify {
             qh,
             notifications: NotificationManager::new(
                 Arc::clone(&config),
-                loop_handle.clone(),
                 event_sender.clone(),
                 Rc::clone(&font_system),
             )

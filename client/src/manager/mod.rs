@@ -17,7 +17,6 @@ use crate::{
     },
 };
 use atomic_float::AtomicF32;
-use calloop::LoopHandle;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer::TextureArea};
 use std::{
@@ -31,7 +30,6 @@ use std::{
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
 };
-use tokio::sync::Mutex;
 use tonic::transport::Channel;
 use view::NotificationView;
 
@@ -58,7 +56,6 @@ pub struct NotificationManager {
     notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
-    loop_handle: LoopHandle<'static, Moxnotify>,
     sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     font_system: Rc<RefCell<FontSystem>>,
@@ -70,7 +67,6 @@ pub struct NotificationManager {
 impl NotificationManager {
     pub async fn new(
         config: Arc<Config>,
-        loop_handle: LoopHandle<'static, Moxnotify>,
         sender: calloop::channel::Sender<crate::Event>,
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
@@ -94,7 +90,6 @@ impl NotificationManager {
                 Rc::clone(&font_system),
             ),
             font_system,
-            loop_handle,
             notifications: VecDeque::new(),
             config,
             ui_state,
@@ -356,7 +351,7 @@ impl NotificationManager {
                 Some(self.sender.clone()),
             );
         } else {
-            let mut notification = Notification::new(
+            let notification = Notification::new(
                 Arc::clone(&self.config),
                 &mut self.font_system.borrow_mut(),
                 data,
@@ -371,9 +366,7 @@ impl NotificationManager {
     }
 
     pub fn dismiss_by_id(&mut self, id: NotificationId) -> Option<Notification> {
-        let Some(index) = self.notifications.iter().position(|n| n.id() == id) else {
-            return None;
-        };
+        let index = self.notifications.iter().position(|n| n.id() == id)?;
 
         let notification = self.notifications.remove(index);
 
@@ -386,13 +379,9 @@ impl NotificationManager {
 
     /// Returns an iterator over notifications in view
     pub fn iter_viewed(&self) -> impl Iterator<Item = &Notification> {
-        self.notifications.iter().filter_map(|notification| {
-            if self.notification_view.visible.contains(&notification.id()) {
-                Some(notification)
-            } else {
-                None
-            }
-        })
+        self.notifications
+            .iter()
+            .filter(|notification| self.notification_view.visible.contains(&notification.id()))
     }
 
     /// Returns an iterator over notifications in view that returns mutable references
