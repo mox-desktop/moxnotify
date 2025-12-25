@@ -15,6 +15,7 @@ use crate::{
         common::CloseReason,
         types::{NewNotification, NotificationClosed},
     },
+    utils::wait,
 };
 use atomic_float::AtomicF32;
 use glyphon::{FontSystem, TextArea};
@@ -186,15 +187,20 @@ impl NotificationManager {
     }
 
     pub fn height(&self) -> f32 {
-        let prev_height = self.notification_view.prev_bounds()
+        let prev_height = self
+            .notification_view
+            .prev_bounds()
             .map(|b| b.height)
             .unwrap_or(0.0);
 
-        let notification_height = self.iter_viewed()
+        let notification_height = self
+            .iter_viewed()
             .map(|notification| notification.get_bounds().height)
             .sum::<f32>();
 
-        let next_height = self.notification_view.next_bounds()
+        let next_height = self
+            .notification_view
+            .next_bounds()
             .map(|b| b.height)
             .unwrap_or(0.0);
 
@@ -276,25 +282,16 @@ impl NotificationManager {
     pub fn next(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
-        // We're spawning asynchronous task and using a channel to force
-        // synchronous behavior and to prevent coloring the function, as
-        // it will eventually end up in a wayland Dispatch callback which
-        // is not async. We also can't use block_on as those can cause
-        // deadlocks if used in async runtime
-        let (tx, rx) = mpsc::channel();
-        tokio::spawn(async move {
-            let response = grpc_client
+        let response = wait(|| async move {
+            grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::Next as i32,
                 }))
                 .await
                 .unwrap()
-                .into_inner();
-
-            tx.send(response);
+                .into_inner()
         });
 
-        let response = rx.recv().unwrap();
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
         }
@@ -310,25 +307,64 @@ impl NotificationManager {
     pub fn prev(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
-        // We're spawning asynchronous task and using a channel to force
-        // synchronous behavior and to prevent coloring the function, as
-        // it will eventually end up in a wayland Dispatch callback which
-        // is not async. We also can't use block_on as those can cause
-        // deadlocks if used in async runtime
-        let (tx, rx) = mpsc::channel();
-        tokio::spawn(async move {
-            let response = grpc_client
+        let response = wait(|| async move {
+            grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::Prev as i32,
                 }))
                 .await
                 .unwrap()
-                .into_inner();
-
-            tx.send(response);
+                .into_inner()
         });
 
-        let response = rx.recv().unwrap();
+        if let Some(selected_id) = response.selected_id {
+            self.select(selected_id);
+        }
+
+        self.notification_view.update(
+            response.focused_ids,
+            response.before_count,
+            response.after_count,
+        );
+    }
+
+    pub fn first(&mut self) {
+        let mut grpc_client = self.grpc_client.clone();
+
+        let response = wait(|| async move {
+            grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::First as i32,
+                }))
+                .await
+                .unwrap()
+                .into_inner()
+        });
+
+        if let Some(selected_id) = response.selected_id {
+            self.select(selected_id);
+        }
+
+        self.notification_view.update(
+            response.focused_ids,
+            response.before_count,
+            response.after_count,
+        );
+    }
+
+    pub fn last(&mut self) {
+        let mut grpc_client = self.grpc_client.clone();
+
+        let response = wait(|| async move {
+            grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::Last as i32,
+                }))
+                .await
+                .unwrap()
+                .into_inner()
+        });
+
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
         }
@@ -430,7 +466,9 @@ impl NotificationManager {
             .unwrap_or_default()
             .abs() as f32;
 
-        let mut start = self.notification_view.prev_bounds()
+        let mut start = self
+            .notification_view
+            .prev_bounds()
             .map(|bounds| bounds.y + bounds.height)
             .unwrap_or(0.0);
 
@@ -456,7 +494,7 @@ impl fmt::Display for CloseReason {
 }
 
 impl Moxnotify {
-    pub async fn dismiss_range<T>(&mut self, range: T, reason: Option<CloseReason>)
+    pub fn dismiss_range<T>(&mut self, range: T, reason: Option<CloseReason>)
     where
         T: RangeBounds<usize>,
     {
@@ -468,7 +506,9 @@ impl Moxnotify {
             .collect();
 
         if let Some(reason) = reason {
-            for id in &ids {
+            // TODO: this probably could be optimized by doing it all in the async closure
+            // and lowering the amount of clones
+            for id in ids.iter() {
                 let uuid = self.notifications.iter_viewed().find_map(|notification| {
                     if notification.id() == *id {
                         Some(notification.uuid())
@@ -478,17 +518,21 @@ impl Moxnotify {
                 });
 
                 log::info!("Notification dismissed: id: {}, reason: {}", id, reason);
-                self.notifications
-                    .grpc_client
-                    .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
-                        notification_closed: Some(NotificationClosed {
-                            id: *id,
-                            reason: reason as i32,
-                            uuid: uuid.unwrap(),
-                        }),
-                    }))
-                    .await
-                    .unwrap();
+                let mut grpc_client = self.notifications.grpc_client.clone();
+
+                let id = *id;
+                wait(move || async move {
+                    grpc_client
+                        .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
+                            notification_closed: Some(NotificationClosed {
+                                id,
+                                reason: reason as i32,
+                                uuid: uuid.unwrap(),
+                            }),
+                        }))
+                        .await
+                        .unwrap()
+                });
             }
         }
 

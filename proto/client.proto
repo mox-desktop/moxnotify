@@ -37,6 +37,8 @@ message ViewportNavigationRequest {
     enum Direction {
         NEXT = 0;
         PREV = 1;
+        FIRST = 2;
+        LAST = 3;
     }
     Direction direction = 1;
 }

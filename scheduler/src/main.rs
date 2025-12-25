@@ -106,6 +106,7 @@ impl ClientService for Scheduler {
 
         {
             let tx = tx.clone();
+            let range = Arc::clone(&self.range);
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
@@ -121,6 +122,15 @@ impl ClientService for Scheduler {
                                         log::info!("Client disconnected: {:?}", remote_addr);
                                         break;
                                     }
+
+                                    let mut range = range.lock().await;
+                                    range.0 += 1;
+                                    range.1 += 1;
+                                    if range.1 - range.0 < 5 {
+                                        range.0 -= 1;
+                                    }
+
+                                    log::debug!("notify, range: {}..{}", range.0, range.1);
                                 }
                                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                                     log::warn!(
@@ -178,9 +188,11 @@ impl ClientService for Scheduler {
 
         {
             let mut range = self.range.lock().await;
-            range.0 = (notifications.len() as u32)
-                .saturating_sub(self.max_visible.load(Ordering::Relaxed));
-            range.1 = notifications.len() as u32;
+            if range.1 - range.0 < self.max_visible.load(Ordering::Relaxed) {
+                range.0 = (notifications.len() as u32)
+                    .saturating_sub(self.max_visible.load(Ordering::Relaxed));
+                range.1 = notifications.len() as u32;
+            }
         }
 
         for notification in notifications.into_iter().rev() {
@@ -246,6 +258,19 @@ impl ClientService for Scheduler {
             log::warn!("Failed to remove notification from active HASH: {}", e);
         }
 
+        let mut range = self.range.lock().await;
+        if range.1 == notifications.len() as u32 {
+            range.0 = range.0.saturating_sub(1);
+        } else if range.0 == 0 && range.1 - range.0 > 1 {
+            range.1 -= 1;
+        } else if range.0 > 0 && range.1 < notifications.len() as u32 {
+            range.0 -= 1;
+            range.1 -= 1;
+        }
+
+        range.1 = range.1.min(notifications.len() as u32 - 1);
+        log::debug!("notification_closed, range: {}..{}", range.0, range.1);
+
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
 
@@ -301,7 +326,9 @@ impl ClientService for Scheduler {
                         range.0 = 0;
                         range.1 = self.max_visible.load(Ordering::Relaxed);
                     } else if idx >= range.1 as usize {
-                        range.0 += 1;
+                        if range.1 - range.0 == self.max_visible.load(Ordering::Relaxed) {
+                            range.0 += 1;
+                        }
                         range.1 += 1;
                     }
                 } else if let Some(first) = notifications.first() {
@@ -311,6 +338,7 @@ impl ClientService for Scheduler {
                         .saturating_sub(self.max_visible.load(Ordering::Relaxed));
                     range.1 = notifications.len() as u32;
                 }
+                log::debug!("Direction::Prev, range: {}..{}", range.0, range.1);
             }
             Direction::Next => {
                 if let Some(selected) = *selected_id
@@ -328,17 +356,30 @@ impl ClientService for Scheduler {
                         range.1 = notifications.len() as u32;
                     } else if idx < range.0 as usize {
                         range.0 -= 1;
-                        range.1 -= 1;
+                        if range.1 - range.0 >= self.max_visible.load(Ordering::Relaxed) {
+                            range.1 -= 1;
+                        }
                     }
                 } else if let Some(last) = notifications.last() {
                     *selected_id = Some(last.id);
 
-                    range.0 = notifications
-                        .len()
-                        .saturating_sub(self.max_visible.load(Ordering::Relaxed) as usize)
-                        as u32;
-                    range.1 = notifications.len() as u32;
+                    range.0 = 0;
+                    range.1 = self.max_visible.load(Ordering::Relaxed);
                 }
+                log::debug!("Direction::Next, range: {}..{}", range.0, range.1);
+            }
+            Direction::First => {
+                *selected_id = notifications.last().map(|n| n.id);
+                range.0 = (notifications.len() as u32)
+                    .saturating_sub(self.max_visible.load(Ordering::Relaxed));
+                range.1 = notifications.len() as u32;
+                log::debug!("Direction::First, range: {}..{}", range.0, range.1);
+            }
+            Direction::Last => {
+                *selected_id = notifications.first().map(|n| n.id);
+                range.0 = 0;
+                range.1 = self.max_visible.load(Ordering::Relaxed);
+                log::debug!("Direction::Last, range: {}..{}", range.0, range.1);
             }
         }
 

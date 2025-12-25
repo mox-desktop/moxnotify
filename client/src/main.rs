@@ -1,4 +1,3 @@
-use futures_lite::future;
 use wayland_backend as _;
 
 pub mod moxnotify {
@@ -23,14 +22,11 @@ mod rendering;
 pub mod utils;
 mod wayland;
 
-use crate::{
-    config::keymaps,
-    moxnotify::{
-        client::{ClientActionInvokedRequest, GetViewportRequest},
-        common::{CloseReason, Urgency},
-        types::{ActionInvoked, NewNotification},
-    },
-};
+use crate::config::keymaps;
+use crate::moxnotify::client::{ClientActionInvokedRequest, GetViewportRequest};
+use crate::moxnotify::common::{CloseReason, Urgency};
+use crate::moxnotify::types::{ActionInvoked, NewNotification};
+use crate::utils::wait;
 use audio::Audio;
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
@@ -40,28 +36,19 @@ use config::Config;
 use glyphon::FontSystem;
 use input::Seat;
 use manager::NotificationManager;
-use rendering::{
-    surface::{FocusReason, Surface},
-    wgpu_state,
-};
-use std::{
-    cell::RefCell,
-    path::{Path, PathBuf},
-    rc::Rc,
-    str::FromStr,
-    sync::{Arc, atomic::Ordering},
-};
+use rendering::surface::{FocusReason, Surface};
+use rendering::wgpu_state;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+use std::str::FromStr;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tokio::sync::broadcast;
-use wayland_client::{
-    Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
-    globals::{GlobalList, registry_queue_init},
-    protocol::{wl_compositor, wl_output},
-};
+use wayland_client::globals::{GlobalList, registry_queue_init};
+use wayland_client::protocol::{wl_compositor, wl_output};
+use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, delegate_noop};
 use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1;
-
-// Urgency enum is now defined in proto/common.proto
-// Use Urgency::UrgencyLow, Urgency::UrgencyNormal, Urgency::UrgencyCritical
-// Convert to i32 using `as i32` when needed for compatibility
 
 #[derive(Debug)]
 pub struct Output {
@@ -148,13 +135,12 @@ impl Moxnotify {
         })
     }
 
-    async fn handle_app_event(&mut self, event: Event) -> anyhow::Result<()> {
+    fn handle_app_event(&mut self, event: Event) -> anyhow::Result<()> {
         match event {
             Event::Dismiss { all, id } => {
                 if all {
                     log::info!("Dismissing all notifications");
-                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser))
-                        .await;
+                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser));
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
@@ -176,18 +162,20 @@ impl Moxnotify {
 
                     log::info!("Action invoked: id: {}, key: {}", id, key);
 
-                    self.notifications
-                        .grpc_client
-                        .action_invoked(tonic::Request::new(ClientActionInvokedRequest {
-                            action_invoked: Some(ActionInvoked {
-                                id,
-                                action_key: key,
-                                token: token.unwrap_or_default().to_string(),
-                                uuid,
-                            }),
-                        }))
-                        .await
-                        .unwrap();
+                    let mut grpc_client = self.notifications.grpc_client.clone();
+                    wait(move || async move {
+                        grpc_client
+                            .action_invoked(tonic::Request::new(ClientActionInvokedRequest {
+                                action_invoked: Some(ActionInvoked {
+                                    id,
+                                    action_key: key,
+                                    token: token.unwrap_or_default().to_string(),
+                                    uuid,
+                                }),
+                            }))
+                            .await
+                            .unwrap();
+                    });
                 }
 
                 if !self
@@ -270,13 +258,14 @@ impl Moxnotify {
 
                 self.notifications.add(*data);
 
-                let response = self
-                    .notifications
-                    .grpc_client
-                    .get_viewport(tonic::Request::new(GetViewportRequest {}))
-                    .await
-                    .unwrap()
-                    .into_inner();
+                let mut grpc_client = self.notifications.grpc_client.clone();
+                let response = wait(|| async move {
+                    grpc_client
+                        .get_viewport(tonic::Request::new(GetViewportRequest {}))
+                        .await
+                        .unwrap()
+                        .into_inner()
+                });
 
                 self.notifications.notification_view.update(
                     response.focused_ids,
@@ -308,18 +297,19 @@ impl Moxnotify {
                     log::info!("Focusing notification surface");
                     surface.focus(FocusReason::Ctl);
 
-                    let response = self
-                        .notifications
-                        .grpc_client
-                        .get_viewport(tonic::Request::new(GetViewportRequest {}))
-                        .await
-                        .unwrap()
-                        .into_inner();
+                    let mut grpc_client = self.notifications.grpc_client.clone();
+                    let response = wait(|| async move {
+                        grpc_client
+                            .get_viewport(tonic::Request::new(GetViewportRequest {}))
+                            .await
+                            .unwrap()
+                            .into_inner()
+                    });
 
                     if let Some(selected) = response.selected_id {
                         self.notifications.select(selected);
                     } else {
-                        self.notifications.next();
+                        self.notifications.first();
                     }
                 }
             }
@@ -592,7 +582,7 @@ async fn main() -> anyhow::Result<()> {
         .handle()
         .insert_source(event_receiver, |event, (), moxnotify| {
             if let calloop::channel::Event::Msg(event) = event
-                && let Err(e) = future::block_on(moxnotify.handle_app_event(event))
+                && let Err(e) = moxnotify.handle_app_event(event)
             {
                 log::error!("Failed to handle event: {e}");
             }

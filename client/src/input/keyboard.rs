@@ -244,18 +244,8 @@ impl Moxnotify {
                 KeyAction::Noop => {}
                 KeyAction::NextNotification => self.notifications.next(),
                 KeyAction::PreviousNotification => self.notifications.prev(),
-                KeyAction::FirstNotification => {
-                    if let Some(notification) = self.notifications.notifications().front() {
-                        self.notifications.select(notification.id());
-                        self.notifications.update_size();
-                    }
-                }
-                KeyAction::LastNotification => {
-                    if let Some(notification) = self.notifications.notifications().back() {
-                        self.notifications.select(notification.id());
-                        self.notifications.update_size();
-                    }
-                }
+                KeyAction::FirstNotification => self.notifications.first(),
+                KeyAction::LastNotification => self.notifications.last(),
                 KeyAction::DismissNotification => {
                     if let Some(id) = self.notifications.selected_id() {
                         self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
