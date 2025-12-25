@@ -58,6 +58,12 @@ export function NotificationDashboard() {
   }
   
   const [timeRange, setTimeRange] = useState<TimeRange>(getInitialTimeRange())
+  
+  // Debug: log when timeRange changes
+  useEffect(() => {
+    console.log("Time range changed:", timeRange)
+  }, [timeRange])
+  
   const [maxHits, setMaxHits] = useState<number>(
     searchParams.get("maxHits") ? Number(searchParams.get("maxHits")) : 100
   )
@@ -73,7 +79,7 @@ export function NotificationDashboard() {
     setError(null)
 
     try {
-      // Build request body with timestamp filters for absolute ranges
+      // Build request body with timestamp filters
       const requestBody: any = {
         query: searchQuery || "*",
         max_hits: maxHits,
@@ -81,11 +87,43 @@ export function NotificationDashboard() {
         sort_order: sortOrder,
       }
 
-      // Add timestamp filters for absolute time ranges
+      // Add timestamp filters for both absolute and relative time ranges
       if (timeRange.type === "absolute") {
         requestBody.start_timestamp = timeRange.from.toISOString()
         requestBody.end_timestamp = timeRange.to.toISOString()
+      } else if (timeRange.type === "relative") {
+        if (timeRange.value === "all") {
+          // For "all" relative range, don't add timestamp filters (show all notifications)
+        } else if (typeof timeRange.value === "number" && timeRange.value > 0) {
+          // Convert relative time range to absolute timestamps
+          const now = new Date()
+          const minutesAgo = timeRange.value
+          const startTime = new Date(now.getTime() - minutesAgo * 60 * 1000)
+          
+          // Validate timestamps
+          if (isNaN(startTime.getTime()) || isNaN(now.getTime())) {
+            console.error("Invalid timestamp calculated:", { startTime, now, minutesAgo })
+          } else if (startTime >= now) {
+            console.error("Start time is not before end time:", { startTime, now, minutesAgo })
+          } else {
+            requestBody.start_timestamp = startTime.toISOString()
+            requestBody.end_timestamp = now.toISOString()
+            console.log(`Relative range: ${minutesAgo} minutes ago`, {
+              start: startTime.toISOString(),
+              end: now.toISOString(),
+              minutesAgo,
+              startTimeMs: startTime.getTime(),
+              endTimeMs: now.getTime(),
+              diffMs: now.getTime() - startTime.getTime()
+            })
+          }
+        } else {
+          console.warn("Invalid relative time range value:", timeRange.value, typeof timeRange.value)
+        }
       }
+
+      console.log("Fetching notifications with request:", JSON.stringify(requestBody, null, 2))
+      console.log("Time range:", timeRange)
 
       const response = await fetch(`${API_BASE_URL}/api/search`, {
         method: "POST",
@@ -111,6 +149,7 @@ export function NotificationDashboard() {
       let data
       try {
         data = await response.json()
+        console.log("API response received:", data?.length || 0, "notifications")
       } catch (err) {
         throw new Error("Invalid JSON response from API")
       }
@@ -247,24 +286,9 @@ export function NotificationDashboard() {
         }
       })
       
-      // Filter notifications by time range if specified (only for relative ranges, absolute is handled by backend)
-      let filteredNotifications = notificationsWithDates
-      
-      if (timeRange.type === "relative") {
-        if (timeRange.value !== "all") {
-          const now = Date.now()
-          const timeRangeMs = timeRange.value * 60 * 1000
-          filteredNotifications = notificationsWithDates.filter((n) => {
-            const notificationTime = n.timestamp instanceof Date 
-              ? n.timestamp.getTime() 
-              : new Date(n.timestamp).getTime()
-            return now - notificationTime <= timeRangeMs
-          })
-        }
-      }
-      // For absolute ranges, backend handles filtering via start_timestamp/end_timestamp
-      
-      setNotifications(filteredNotifications)
+      // Backend handles filtering via start_timestamp/end_timestamp for both absolute and relative ranges
+      // For "all" relative range, backend returns all notifications
+      setNotifications(notificationsWithDates)
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to fetch notifications"
       console.error("Error fetching notifications:", err)

@@ -262,15 +262,11 @@ in
       moxnotify-webui = lib.mkIf cfg.webui.enable {
         Unit = {
           Description = "Run moxnotify webui";
-          After = [
-            "moxnotify-searcher.service"
-            "network.target"
-          ];
-          Wants = [
-            "moxnotify-searcher.service"
-            "network.target"
-          ];
+          Wants = [ "graphical-session.target" ];
+          After = [ "graphical-session.target" ];
         };
+
+        Install.WantedBy = [ "default.target" ];
 
         Service = {
           Type = "simple";
@@ -278,15 +274,14 @@ in
 
           ExecStart =
             let
-              path = lib.makeBinPath [ pkgs.nodejs ];
+              p = lib.makeBinPath [ pkgs.nodejs ];
             in
             "${pkgs.writeShellScriptBin "run-moxnotify-webui" ''
-              PATH=\"$PATH:${path}\" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
+              PATH="$PATH:${p}" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
             ''}/bin/run-moxnotify-webui";
         };
-
-        Install.WantedBy = [ "graphical-session.target" ];
       };
+
     };
 
     home.packages = [ cfg.package ];
