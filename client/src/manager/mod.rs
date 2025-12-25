@@ -186,19 +186,11 @@ impl NotificationManager {
     }
 
     pub fn height(&self) -> f32 {
-        let height = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map_or(0., |n| n.get_bounds().height);
+        let height = self.notification_view.prev.get_bounds().height;
 
         self.iter_viewed().fold(height, |acc, notification| {
             acc + notification.get_bounds().height
-        }) + self
-            .notification_view
-            .next
-            .as_ref()
-            .map_or(0., |n| n.get_bounds().height)
+        }) + self.notification_view.next.get_bounds().height
     }
 
     pub fn width(&self) -> f32 {
@@ -276,6 +268,11 @@ impl NotificationManager {
     pub fn next(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
+        // We're spawning asynchronous task and using a channel to force
+        // synchronous behavior and to prevent coloring the function, as
+        // it will eventually end up in a wayland Dispatch callback which
+        // is not async. We also can't use block_on as those can cause
+        // deadlocks if used in async runtime
         let (tx, rx) = mpsc::channel();
         tokio::spawn(async move {
             let response = grpc_client
@@ -294,15 +291,22 @@ impl NotificationManager {
             self.select(selected_id);
         }
 
-        self.notification_view.set_prev(response.before_count);
-        self.notification_view.set_next(response.after_count);
-        self.notification_view.set_visible(response.focused_ids);
+        self.notification_view.update(
+            response.focused_ids,
+            response.before_count,
+            response.after_count,
+        );
     }
 
     /// Select previous notification
     pub fn prev(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
+        // We're spawning asynchronous task and using a channel to force
+        // synchronous behavior and to prevent coloring the function, as
+        // it will eventually end up in a wayland Dispatch callback which
+        // is not async. We also can't use block_on as those can cause
+        // deadlocks if used in async runtime
         let (tx, rx) = mpsc::channel();
         tokio::spawn(async move {
             let response = grpc_client
@@ -321,9 +325,11 @@ impl NotificationManager {
             self.select(selected_id);
         }
 
-        self.notification_view.set_prev(response.before_count);
-        self.notification_view.set_next(response.after_count);
-        self.notification_view.set_visible(response.focused_ids);
+        self.notification_view.update(
+            response.focused_ids,
+            response.before_count,
+            response.after_count,
+        );
     }
 
     pub fn waiting(&self) -> usize {
@@ -416,25 +422,17 @@ impl NotificationManager {
             .unwrap_or_default()
             .abs() as f32;
 
-        if let Some(prev) = self.notification_view.prev.as_mut() {
-            prev.set_position(0., 0.);
-        }
-
-        let mut start = self
-            .notification_view
-            .prev
-            .as_ref()
-            .map(|n| n.get_bounds().y + n.get_bounds().height)
-            .unwrap_or_default();
+        let mut start = {
+            let bounds = self.notification_view.prev.get_bounds();
+            bounds.y + bounds.height
+        };
 
         self.iter_viewed_mut().for_each(|notification| {
             notification.set_position(x_offset, start);
             start += notification.get_bounds().height;
         });
 
-        if let Some(next) = self.notification_view.next.as_mut() {
-            next.set_position(0., start);
-        }
+        self.notification_view.next.set_position(0., start);
     }
 }
 
@@ -540,12 +538,11 @@ impl Moxnotify {
                 self.notifications.select(*selected_id);
             }
 
-            self.notifications
-                .notification_view
-                .set_prev(response.before_count);
-            self.notifications
-                .notification_view
-                .set_next(response.after_count);
+            self.notifications.notification_view.update(
+                response.focused_ids,
+                response.before_count,
+                response.after_count,
+            );
 
             self.update_surface_size();
             if let Some(surface) = self.surface.as_mut()
@@ -561,10 +558,6 @@ impl Moxnotify {
             if self.notifications.notifications().is_empty() {
                 self.seat.keyboard.repeat.key = None;
             }
-
-            self.notifications
-                .notification_view
-                .set_visible(response.focused_ids);
 
             log::debug!("Successfully dismissed notification, id: {id}");
         } else {

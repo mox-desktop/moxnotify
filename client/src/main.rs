@@ -277,15 +277,11 @@ impl Moxnotify {
                     .unwrap()
                     .into_inner();
 
-                self.notifications
-                    .notification_view
-                    .set_visible(response.focused_ids);
-                self.notifications
-                    .notification_view
-                    .set_prev(response.before_count);
-                self.notifications
-                    .notification_view
-                    .set_next(response.after_count);
+                self.notifications.notification_view.update(
+                    response.focused_ids,
+                    response.before_count,
+                    response.after_count,
+                );
 
                 if let Some(selected_id) = response.selected_id
                     && self.notifications.selected_id().is_some()
