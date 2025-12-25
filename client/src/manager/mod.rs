@@ -28,6 +28,7 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc,
     },
 };
 use tonic::transport::Channel;
@@ -272,16 +273,23 @@ impl NotificationManager {
     }
 
     /// Select next notification
-    pub async fn next(&mut self) {
-        let response = self
-            .grpc_client
-            .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
-                direction: Direction::Next as i32,
-            }))
-            .await
-            .unwrap()
-            .into_inner();
+    pub fn next(&mut self) {
+        let mut grpc_client = self.grpc_client.clone();
 
+        let (tx, rx) = mpsc::channel();
+        tokio::spawn(async move {
+            let response = grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::Next as i32,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            tx.send(response);
+        });
+
+        let response = rx.recv().unwrap();
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
         }
@@ -292,16 +300,23 @@ impl NotificationManager {
     }
 
     /// Select previous notification
-    pub async fn prev(&mut self) {
-        let response = self
-            .grpc_client
-            .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
-                direction: Direction::Prev as i32,
-            }))
-            .await
-            .unwrap()
-            .into_inner();
+    pub fn prev(&mut self) {
+        let mut grpc_client = self.grpc_client.clone();
 
+        let (tx, rx) = mpsc::channel();
+        tokio::spawn(async move {
+            let response = grpc_client
+                .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
+                    direction: Direction::Prev as i32,
+                }))
+                .await
+                .unwrap()
+                .into_inner();
+
+            tx.send(response);
+        });
+
+        let response = rx.recv().unwrap();
         if let Some(selected_id) = response.selected_id {
             self.select(selected_id);
         }
@@ -482,7 +497,7 @@ impl Moxnotify {
             .for_each(|id| _ = self.notifications.dismiss_by_id(*id));
     }
 
-    pub async fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
+    pub fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
         if self.notifications.selected_id() == Some(id) {
             self.notifications
                 .ui_state
@@ -493,25 +508,31 @@ impl Moxnotify {
         if let Some(notification) = self.notifications.dismiss_by_id(id) {
             let uuid = notification.uuid();
 
-            self.notifications
-                .grpc_client
-                .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
-                    notification_closed: Some(NotificationClosed {
-                        id,
-                        reason: reason as i32,
-                        uuid,
-                    }),
-                }))
-                .await
-                .unwrap();
+            let mut grpc_client = self.notifications.grpc_client.clone();
 
-            let response = self
-                .notifications
-                .grpc_client
-                .get_viewport(tonic::Request::new(GetViewportRequest {}))
-                .await
-                .unwrap()
-                .into_inner();
+            let (tx, rx) = mpsc::channel();
+            tokio::spawn(async move {
+                grpc_client
+                    .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
+                        notification_closed: Some(NotificationClosed {
+                            id,
+                            reason: reason as i32,
+                            uuid,
+                        }),
+                    }))
+                    .await
+                    .unwrap();
+
+                let response = grpc_client
+                    .get_viewport(tonic::Request::new(GetViewportRequest {}))
+                    .await
+                    .unwrap()
+                    .into_inner();
+
+                tx.send(response);
+            });
+
+            let response = rx.recv().unwrap();
 
             if let Some(selected_id) = response.selected_id.as_ref()
                 && self.notifications.selected_id().is_some()

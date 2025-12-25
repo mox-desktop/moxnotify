@@ -195,7 +195,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                             return TimeoutAction::Drop;
                                         }
 
-                                        if future::block_on(moxnotify.handle_key()).is_err() {
+                                        if moxnotify.handle_key().is_err() {
                                             return TimeoutAction::Drop;
                                         }
                                         TimeoutAction::ToDuration(Duration::from_millis(rate))
@@ -208,7 +208,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                             }
                         }
 
-                        _ = future::block_on(state.handle_key());
+                        _ = state.handle_key();
                     }
                     _ => unreachable!(),
                 }
@@ -223,7 +223,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
 }
 
 impl Moxnotify {
-    async fn handle_key(&mut self) -> anyhow::Result<()> {
+    fn handle_key(&mut self) -> anyhow::Result<()> {
         if !self
             .config
             .keymaps
@@ -243,8 +243,8 @@ impl Moxnotify {
             self.seat.keyboard.key_combination.clear();
             match key_combination.action {
                 KeyAction::Noop => {}
-                KeyAction::NextNotification => self.notifications.next().await,
-                KeyAction::PreviousNotification => self.notifications.prev().await,
+                KeyAction::NextNotification => self.notifications.next(),
+                KeyAction::PreviousNotification => self.notifications.prev(),
                 KeyAction::FirstNotification => {
                     if let Some(notification) = self.notifications.notifications().front() {
                         self.notifications.select(notification.id());
@@ -259,8 +259,7 @@ impl Moxnotify {
                 }
                 KeyAction::DismissNotification => {
                     if let Some(id) = self.notifications.selected_id() {
-                        self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser)
-                            .await;
+                        self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
                         return Ok(());
                     }
                 }

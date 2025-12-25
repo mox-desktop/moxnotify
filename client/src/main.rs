@@ -153,23 +153,20 @@ impl Moxnotify {
             Event::Dismiss { all, id } => {
                 if all {
                     log::info!("Dismissing all notifications");
-                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser))
-                        .await;
+                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser));
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());
                         self.dismiss_with_reason(
                             notification.id(),
                             CloseReason::ReasonDismissedByUser,
-                        )
-                        .await;
+                        );
                     } else {
                         log::debug!("No notifications to dismiss");
                     }
                 } else {
                     log::info!("Dismissing notification with id={id}");
-                    self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser)
-                        .await;
+                    self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
                 }
             }
             Event::InvokeAction { id, key, uuid } => {
@@ -199,8 +196,7 @@ impl Moxnotify {
                     .find(|notification| notification.id() == id)
                     .is_some_and(|n| n.data().hints.as_ref().unwrap().resident)
                 {
-                    self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall)
-                        .await;
+                    self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
                 }
             }
             Event::InvokeAnchor(uri) => {
@@ -306,8 +302,7 @@ impl Moxnotify {
             }
             Event::CloseNotification(id) => {
                 log::info!("Closing notification with id={id}");
-                self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall)
-                    .await;
+                self.dismiss_with_reason(id, CloseReason::ReasonCloseNotificationCall);
             }
             Event::FocusSurface => {
                 if let Some(surface) = self.surface.as_mut()
@@ -327,7 +322,7 @@ impl Moxnotify {
                     if let Some(selected) = response.selected_id {
                         self.notifications.select(selected);
                     } else {
-                        self.notifications.next().await;
+                        self.notifications.next();
                     }
                 }
             }
