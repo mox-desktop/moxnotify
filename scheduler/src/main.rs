@@ -49,7 +49,7 @@ impl Scheduler {
             redis_con: Arc::new(Mutex::new(redis_con)),
             selected_id: Arc::new(Mutex::new(None)),
             max_visible: Arc::new(AtomicU32::new(0)),
-            range: Arc::new(Mutex::new((0, 5))),
+            range: Arc::new(Mutex::new((0, 0))),
         }
     }
 
@@ -181,10 +181,8 @@ impl ClientService for Scheduler {
 
         {
             let mut range = self.range.lock().await;
-            range.0 = notifications
-                .len()
-                .saturating_sub(self.max_visible.load(Ordering::Relaxed) as usize)
-                as u32;
+            range.0 = (notifications.len() as u32)
+                .saturating_sub(self.max_visible.load(Ordering::Relaxed));
             range.1 = notifications.len() as u32;
         }
 
@@ -288,6 +286,7 @@ impl ClientService for Scheduler {
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
+        let mut range = self.range.lock().await;
         let mut selected_id = self.selected_id.lock().await;
         match Direction::try_from(req.direction).unwrap() {
             Direction::Prev => {
@@ -301,7 +300,6 @@ impl ClientService for Scheduler {
 
                     *selected_id = notifications.get(idx).map(|n| n.id);
 
-                    let mut range = self.range.lock().await;
                     if idx == 0 {
                         range.0 = 0;
                         range.1 = self.max_visible.load(Ordering::Relaxed);
@@ -312,7 +310,6 @@ impl ClientService for Scheduler {
                 } else if let Some(first) = notifications.first() {
                     *selected_id = Some(first.id);
 
-                    let mut range = self.range.lock().await;
                     range.0 = (notifications.len() as u32)
                         .saturating_sub(self.max_visible.load(Ordering::Relaxed));
                     range.1 = notifications.len() as u32;
@@ -326,7 +323,6 @@ impl ClientService for Scheduler {
 
                     *selected_id = notifications.get(idx).map(|n| n.id);
 
-                    let mut range = self.range.lock().await;
                     if idx == notifications.len() - 1 {
                         range.0 = notifications
                             .len()
@@ -340,7 +336,6 @@ impl ClientService for Scheduler {
                 } else if let Some(last) = notifications.last() {
                     *selected_id = Some(last.id);
 
-                    let mut range = self.range.lock().await;
                     range.0 = notifications
                         .len()
                         .saturating_sub(self.max_visible.load(Ordering::Relaxed) as usize)
@@ -350,10 +345,9 @@ impl ClientService for Scheduler {
             }
         }
 
-        let before_count = 0;
-        let after_count = 0;
+        let after_count = range.0;
+        let before_count = (notifications.len() as u32).saturating_sub(range.1);
 
-        let range = self.range.lock().await;
         let focused_ids = notifications
             .iter()
             .skip(range.0 as usize)
@@ -383,10 +377,10 @@ impl ClientService for Scheduler {
             *selected
         };
 
-        let before_count = 0;
-        let after_count = 0;
-
         let range = self.range.lock().await;
+        let after_count = range.0;
+        let before_count = (notifications.len() as u32).saturating_sub(range.1);
+
         let focused_ids = notifications
             .iter()
             .skip(range.0 as usize)

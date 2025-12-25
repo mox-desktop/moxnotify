@@ -294,8 +294,8 @@ impl NotificationManager {
             self.select(selected_id);
         }
 
-        self.notification_view.set_prev(response.after_count);
-        self.notification_view.set_next(response.before_count);
+        self.notification_view.set_prev(response.before_count);
+        self.notification_view.set_next(response.after_count);
         self.notification_view.set_visible(response.focused_ids);
     }
 
@@ -321,8 +321,8 @@ impl NotificationManager {
             self.select(selected_id);
         }
 
-        self.notification_view.set_prev(response.after_count);
-        self.notification_view.set_next(response.before_count);
+        self.notification_view.set_prev(response.before_count);
+        self.notification_view.set_next(response.after_count);
         self.notification_view.set_visible(response.focused_ids);
     }
 
@@ -542,10 +542,10 @@ impl Moxnotify {
 
             self.notifications
                 .notification_view
-                .set_prev(response.after_count);
+                .set_prev(response.before_count);
             self.notifications
                 .notification_view
-                .set_next(response.before_count);
+                .set_next(response.after_count);
 
             self.update_surface_size();
             if let Some(surface) = self.surface.as_mut()
