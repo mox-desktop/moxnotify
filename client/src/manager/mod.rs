@@ -186,11 +186,19 @@ impl NotificationManager {
     }
 
     pub fn height(&self) -> f32 {
-        let height = self.notification_view.prev.get_bounds().height;
+        let prev_height = self.notification_view.prev_bounds()
+            .map(|b| b.height)
+            .unwrap_or(0.0);
 
-        self.iter_viewed().fold(height, |acc, notification| {
-            acc + notification.get_bounds().height
-        }) + self.notification_view.next.get_bounds().height
+        let notification_height = self.iter_viewed()
+            .map(|notification| notification.get_bounds().height)
+            .sum::<f32>();
+
+        let next_height = self.notification_view.next_bounds()
+            .map(|b| b.height)
+            .unwrap_or(0.0);
+
+        prev_height + notification_height + next_height
     }
 
     pub fn width(&self) -> f32 {
@@ -422,17 +430,16 @@ impl NotificationManager {
             .unwrap_or_default()
             .abs() as f32;
 
-        let mut start = {
-            let bounds = self.notification_view.prev.get_bounds();
-            bounds.y + bounds.height
-        };
+        let mut start = self.notification_view.prev_bounds()
+            .map(|bounds| bounds.y + bounds.height)
+            .unwrap_or(0.0);
 
         self.iter_viewed_mut().for_each(|notification| {
             notification.set_position(x_offset, start);
             start += notification.get_bounds().height;
         });
 
-        self.notification_view.next.set_position(0., start);
+        self.notification_view.set_next_position(0., start);
     }
 }
 

@@ -33,7 +33,7 @@ impl Text {
             .family(glyphon::Family::Name(&font.family))
             .weight(Weight::BOLD);
         let mut buffer = create_buffer(font, font_system, None);
-        buffer.set_text(font_system, body.as_ref(), &attrs, Shaping::Advanced);
+        buffer.set_text(font_system, body.as_ref(), &attrs, Shaping::Advanced, None);
 
         Self {
             buffer,

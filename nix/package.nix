@@ -17,7 +17,7 @@
   stdenv,
 }:
 let
-  cargoToml = builtins.fromTOML (builtins.readFile ../Cargo.toml);
+  cargoToml = fromTOML (builtins.readFile ../Cargo.toml);
 
   webui = stdenv.mkDerivation {
     pname = "moxnotify-webui";
@@ -77,17 +77,16 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ../Cargo.lock;
     outputHashes = {
-      "moxui-0.1.0" = "sha256-tO4izQiqmcGqa21SCTPWFBt7d51wzEWS4E2D5qVCdLM=";
-      "glyphon-0.9.0" = "sha256-d5CdSfq2pLwdgAmp5ncQQ4lsMfUVIGKhtctSQ4fz8ss=";
+      "moxui-0.1.0" = "sha256-i2jwHkdoJW99mcb+DqCqhMfigNz4Bc1QmGcThWl2bRM=";
     };
   };
 
   src = lib.cleanSourceWith {
     src = ../.;
     filter =
-      path: type:
+      p: type:
       let
-        relPath = lib.removePrefix (toString ../. + "/") (toString path);
+        relPath = lib.removePrefix (toString ../. + "/") (toString p);
       in
       lib.any (p: lib.hasPrefix p relPath) [
         "client"

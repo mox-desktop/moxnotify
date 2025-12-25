@@ -37,6 +37,7 @@ impl Text for Summary {
             text.as_ref(),
             &attrs,
             glyphon::Shaping::Advanced,
+            None,
         );
     }
 }

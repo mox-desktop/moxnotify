@@ -172,6 +172,7 @@ impl Surface {
             }),
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
 
         let (instances, text_data, textures) = notifications.data();

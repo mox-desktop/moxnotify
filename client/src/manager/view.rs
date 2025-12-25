@@ -17,8 +17,8 @@ use std::{
 
 pub struct NotificationView {
     pub visible: Vec<u32>,
-    pub prev: Notification,
-    pub next: Notification,
+    prev: Notification,
+    next: Notification,
     font_system: Rc<RefCell<FontSystem>>,
     config: Arc<Config>,
     ui_state: UiState,
@@ -109,6 +109,10 @@ impl NotificationView {
         &self,
         total_width: f32,
     ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
+        if self.visible.is_empty() {
+            return None;
+        }
+
         let extents = self.prev.get_render_bounds();
         let style = &self.config.styles.prev;
         let instance = shape_renderer::ShapeInstance {
@@ -125,7 +129,7 @@ impl NotificationView {
             depth: 0.9,
         };
 
-        return Some((
+        Some((
             instance,
             self.prev
                 .summary
@@ -133,13 +137,17 @@ impl NotificationView {
                 .expect("Something went horribly wrong")
                 .get_text_areas(Urgency::Low)
                 .swap_remove(0),
-        ));
+        ))
     }
 
     pub fn next_data(
         &self,
         total_width: f32,
     ) -> Option<(shape_renderer::ShapeInstance, TextArea<'_>)> {
+        if self.visible.is_empty() {
+            return None;
+        }
+
         let extents = self.next.get_render_bounds();
         let style = &self.config.styles.prev;
         let instance = shape_renderer::ShapeInstance {
@@ -156,7 +164,7 @@ impl NotificationView {
             depth: 0.9,
         };
 
-        return Some((
+        Some((
             instance,
             self.next
                 .summary
@@ -164,6 +172,31 @@ impl NotificationView {
                 .expect("Something went horribly wrong")
                 .get_text_areas(Urgency::Low)
                 .swap_remove(0),
-        ));
+        ))
+    }
+
+    /// Get the bounds of the previous notification counter, if notifications exist
+    pub fn prev_bounds(&self) -> Option<crate::components::Bounds> {
+        if self.visible.is_empty() {
+            None
+        } else {
+            Some(self.prev.get_bounds())
+        }
+    }
+
+    /// Get the bounds of the next notification counter, if notifications exist
+    pub fn next_bounds(&self) -> Option<crate::components::Bounds> {
+        if self.visible.is_empty() {
+            None
+        } else {
+            Some(self.next.get_bounds())
+        }
+    }
+
+    /// Set the position of the next notification counter, if notifications exist
+    pub fn set_next_position(&mut self, x: f32, y: f32) {
+        if !self.visible.is_empty() {
+            self.next.set_position(x, y);
+        }
     }
 }

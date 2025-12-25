@@ -7,7 +7,6 @@ use calloop::{
     RegistrationToken,
     timer::{TimeoutAction, Timer},
 };
-use futures_lite::future;
 use std::{sync::atomic::Ordering, time::Duration};
 use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum,

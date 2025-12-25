@@ -153,7 +153,8 @@ impl Moxnotify {
             Event::Dismiss { all, id } => {
                 if all {
                     log::info!("Dismissing all notifications");
-                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser));
+                    self.dismiss_range(.., Some(CloseReason::ReasonDismissedByUser))
+                        .await;
                 } else if id == 0 {
                     if let Some(notification) = self.notifications.notifications().front() {
                         log::info!("Dismissing first notification (id={})", notification.id());

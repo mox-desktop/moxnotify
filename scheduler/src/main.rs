@@ -21,7 +21,7 @@ use crate::moxnotify::types::CloseNotification;
 use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -106,19 +106,16 @@ impl ClientService for Scheduler {
 
         {
             let tx = tx.clone();
-            let max_visible = self.max_visible.load(Ordering::Relaxed);
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
                         notification = notification_rx.recv() => {
                             match notification {
                                 Ok(notification) => {
-                                    let id = notification.id;
                                     let message = NotificationMessage {
                                         notification: Some(notification),
                                         close_notification: None,
                                     };
-
 
                                     if tx.send(Ok(message)).await.is_err() {
                                         log::info!("Client disconnected: {:?}", remote_addr);
