@@ -119,153 +119,158 @@ in
       moxnotify-control-plane = lib.mkIf cfg.controlPlane.enable {
         Unit = {
           Description = "Moxnotify Control Plane - gRPC coordination service";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [
-            "graphical-session.target"
-          ]
-          ++ lib.optionals (cfg.redis.address == null) [
+
+          After = lib.optionals (cfg.redis.address == null) [
             "moxnotify-valkey.service"
           ];
+
           Requires = lib.optionals (cfg.redis.address == null) [
             "moxnotify-valkey.service"
           ];
         };
+
         Service = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-control-plane";
           Restart = "on-failure";
           Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
-        Install.WantedBy = [ "default.target" ];
       };
 
       moxnotify-collector = lib.mkIf cfg.collector.enable {
         Unit = {
-          Description = "Moxnotify Collector - D-Bus notification service";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [
-            "graphical-session.target"
+          Description = "Moxnotify Collector";
+          After = lib.optionals cfg.controlPlane.enable [
             "moxnotify-control-plane.service"
           ];
-          Requires = [ "moxnotify-control-plane.service" ];
+          Requires = lib.optionals cfg.controlPlane.enable [
+            "moxnotify-control-plane.service"
+          ];
+          Wants =
+            lib.optionals cfg.scheduler.enable [
+              "moxnotify-scheduler.service"
+            ]
+            ++ lib.optionals cfg.indexer.enable [
+              "moxnotify-indexer.service"
+            ]
+            ++ lib.optionals cfg.client.enable [
+              "moxnotify-client.service"
+            ];
         };
+
         Service = {
-          Type = "simple";
+          Type = "dbus";
+          BusName = "org.freedesktop.Notifications";
           ExecStart = "${cfg.package}/bin/moxnotify-collector";
           Restart = "on-failure";
           Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
-        Install.WantedBy = [ "default.target" ];
+
+        Install.WantedBy = [ "graphical-session.target" ];
       };
 
       moxnotify-scheduler = lib.mkIf cfg.scheduler.enable {
         Unit = {
           Description = "Moxnotify Scheduler - Notification scheduling service";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [
-            "graphical-session.target"
-          ]
-          ++ lib.optionals (cfg.redis.address == null) [
-            "moxnotify-valkey.service"
-          ];
+          After =
+            lib.optionals cfg.collector.enable [
+              "moxnotify-collector.service"
+            ]
+            ++ lib.optionals (cfg.redis.address == null) [
+              "moxnotify-valkey.service"
+            ];
           Requires = lib.optionals (cfg.redis.address == null) [
             "moxnotify-valkey.service"
           ];
         };
+
         Service = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-scheduler";
           Restart = "on-failure";
           Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
-        Install.WantedBy = [ "default.target" ];
       };
 
       moxnotify-client = lib.mkIf cfg.client.enable {
         Unit = {
           Description = "Moxnotify Client - Wayland notification display client";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [
-            "graphical-session.target"
-            "moxnotify-scheduler.service"
-          ];
+          After =
+            lib.optionals cfg.collector.enable [
+              "moxnotify-collector.service"
+            ]
+            ++ [ "moxnotify-scheduler.service" ];
           Requires = [ "moxnotify-scheduler.service" ];
+          PartOf = [ "graphical-session.target" ];
         };
+
         Service = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-client";
           Restart = "on-failure";
+          RestartSec = "5s";
           Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
-        Install.WantedBy = [ "default.target" ];
       };
 
       moxnotify-indexer = lib.mkIf cfg.indexer.enable {
         Unit = {
           Description = "Moxnotify Indexer - Notification indexing service";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [
-            "graphical-session.target"
-          ]
-          ++ lib.optionals (cfg.redis.address == null) [
-            "moxnotify-valkey.service"
-          ];
+          After =
+            lib.optionals cfg.collector.enable [
+              "moxnotify-collector.service"
+            ]
+            ++ lib.optionals (cfg.redis.address == null) [
+              "moxnotify-valkey.service"
+            ];
           Requires = lib.optionals (cfg.redis.address == null) [
             "moxnotify-valkey.service"
           ];
         };
+
         Service = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-indexer";
           Restart = "on-failure";
           Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
-        Install.WantedBy = [ "default.target" ];
-      };
-
-      moxnotify-searcher = lib.mkIf cfg.searcher.enable {
-        Unit = {
-          Description = "Moxnotify Searcher - Notification search service";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [ "graphical-session.target" ];
-        };
-        Service = {
-          Type = "simple";
-          ExecStart = "${cfg.package}/bin/moxnotify-searcher";
-          Restart = "on-failure";
-        };
-        Install.WantedBy = [ "default.target" ];
       };
 
       moxnotify-valkey = lib.mkIf (cfg.redis.address == null) {
-        Unit = {
-          Description = "Moxnotify Redis";
-          PartOf = [ "graphical-session.target" ];
-          Wants = [ "graphical-session.target" ];
-          After = [ "graphical-session.target" ];
-        };
+        Unit.Description = "Moxnotify Redis";
+
         Service = {
           Type = "simple";
           ExecStart = "${pkgs.valkey}/bin/valkey-server";
           Restart = "on-failure";
         };
-        Install.WantedBy = [ "default.target" ];
+      };
+
+      moxnotify-searcher = lib.mkIf cfg.searcher.enable {
+        Unit = {
+          Description = "Moxnotify Searcher - Notification search service";
+          ConditionPathExists = "${config.xdg.dataHome}/moxnotify";
+        };
+
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-searcher";
+          Restart = "on-failure";
+        };
       };
 
       moxnotify-webui = lib.mkIf cfg.webui.enable {
         Unit = {
           Description = "Run moxnotify webui";
-          Wants = [ "graphical-session.target" ];
-          After = [ "graphical-session.target" ];
+          After = [
+            "moxnotify-searcher.service"
+            "network.target"
+          ];
+          Wants = [
+            "moxnotify-searcher.service"
+            "network.target"
+          ];
         };
-
-        Install.WantedBy = [ "default.target" ];
 
         Service = {
           Type = "simple";
@@ -276,9 +281,11 @@ in
               path = lib.makeBinPath [ pkgs.nodejs ];
             in
             "${pkgs.writeShellScriptBin "run-moxnotify-webui" ''
-              PATH="$PATH:${path}" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
+              PATH=\"$PATH:${path}\" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
             ''}/bin/run-moxnotify-webui";
         };
+
+        Install.WantedBy = [ "graphical-session.target" ];
       };
     };
 
