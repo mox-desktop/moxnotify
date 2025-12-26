@@ -10,6 +10,8 @@ pub mod moxnotify {
     }
 }
 
+mod timeout_scheduler;
+
 use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use crate::moxnotify::client::viewport_navigation_request::Direction;
 use crate::moxnotify::client::{
@@ -18,7 +20,9 @@ use crate::moxnotify::client::{
     StartTimersResponse, StopTimersRequest, StopTimersResponse, ViewportNavigationRequest,
     ViewportNavigationResponse,
 };
-use crate::moxnotify::types::CloseNotification;
+use crate::moxnotify::common::CloseReason;
+use crate::moxnotify::types::{CloseNotification, NotificationClosed};
+use crate::timeout_scheduler::TimeoutScheduler;
 use moxnotify::types::{NewNotification, NotificationMessage};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
@@ -32,6 +36,7 @@ use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Clone)]
 struct Scheduler {
+    timeouts: Arc<TimeoutScheduler>,
     notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
     close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
@@ -44,7 +49,9 @@ impl Scheduler {
     fn new(redis_con: redis::Connection) -> Self {
         let (tx, _) = broadcast::channel(128);
         let (close_tx, _) = broadcast::channel(128);
+
         Self {
+            timeouts: Arc::new(TimeoutScheduler::new()),
             notification_broadcast: Arc::new(tx),
             close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
@@ -108,12 +115,20 @@ impl ClientService for Scheduler {
         {
             let tx = tx.clone();
             let range = Arc::clone(&self.range);
+
+            let redis_con = Arc::clone(&self.redis_con);
+            let timeouts = Arc::clone(&self.timeouts);
             tokio::spawn(async move {
+                let mut receiver = timeouts.receiver();
+                let redis_con = redis_con;
+
                 loop {
                     tokio::select! {
                         notification = notification_rx.recv() => {
                             match notification {
                                 Ok(notification) => {
+                                    timeouts.timer(notification.id, notification.uuid.clone(), notification.timeout as u64).start();
+
                                     let message = NotificationMessage {
                                         notification: Some(notification),
                                         close_notification: None,
@@ -125,11 +140,10 @@ impl ClientService for Scheduler {
                                     }
 
                                     let mut range = range.lock().await;
-                                    range.0 += 1;
-                                    range.1 += 1;
-                                    if range.1 - range.0 < 5 {
-                                        range.0 -= 1;
+                                    if range.1 - range.0 >= 5 {
+                                        range.0 += 1;
                                     }
+                                    range.1 += 1;
 
                                     log::debug!("notify, range: {}..{}", range.0, range.1);
                                 }
@@ -175,6 +189,39 @@ impl ClientService for Scheduler {
                                     );
                                     break;
                                 }
+                            }
+                        }
+                        Ok((id, uuid)) = receiver.recv() => {
+                            let message = NotificationMessage {
+                                notification: None,
+                                close_notification: Some(CloseNotification { id }),
+                            };
+
+                            log::debug!("Notification {id} expired");
+
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
+                            }
+
+                            let mut redis_con = redis_con.lock().await;
+
+                            let closed = NotificationClosed {
+                                id,
+                                reason: CloseReason::ReasonExpired as i32,
+                                uuid,
+                            };
+                            let json = serde_json::to_string(&closed).unwrap();
+                            if let Err(e) = redis_con.xadd(
+                                "moxnotify:notification_closed",
+                                "*",
+                                &[("notification", json.as_str())],
+                            ) {
+                                log::error!("Failed to write notification_closed to Redis: {}", e);
+                            }
+
+                            if let Err(e) = redis_con.hdel("moxnotify:active", id.to_string().as_str()) {
+                                log::warn!("Failed to remove notification from active HASH: {}", e);
                             }
                         }
                     }

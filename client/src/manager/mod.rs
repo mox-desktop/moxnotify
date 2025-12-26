@@ -558,7 +558,7 @@ impl Moxnotify {
             .for_each(|id| _ = self.notifications.dismiss_by_id(*id));
     }
 
-    pub fn dismiss_with_reason(&mut self, id: u32, reason: CloseReason) {
+    pub fn dismiss_with_reason(&mut self, id: u32, reason: Option<CloseReason>) {
         if self.notifications.selected_id() == Some(id) {
             self.notifications
                 .ui_state
@@ -566,7 +566,9 @@ impl Moxnotify {
                 .store(keymaps::Mode::Normal, Ordering::Relaxed);
         }
 
-        if let Some(notification) = self.notifications.dismiss_by_id(id) {
+        if let Some(notification) = self.notifications.dismiss_by_id(id)
+            && let Some(reason) = reason
+        {
             let uuid = notification.uuid();
 
             let mut grpc_client = self.notifications.grpc_client.clone();
@@ -623,8 +625,6 @@ impl Moxnotify {
             }
 
             log::debug!("Successfully dismissed notification, id: {id}");
-        } else {
-            log::debug!("Can't dismiss, notification not found, id: {id}");
         }
     }
 }

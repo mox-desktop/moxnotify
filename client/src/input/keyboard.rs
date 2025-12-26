@@ -248,7 +248,7 @@ impl Moxnotify {
                 KeyAction::LastNotification => self.notifications.last(),
                 KeyAction::DismissNotification => {
                     if let Some(id) = self.notifications.selected_id() {
-                        self.dismiss_with_reason(id, CloseReason::ReasonDismissedByUser);
+                        self.dismiss_with_reason(id, Some(CloseReason::ReasonDismissedByUser));
                         return Ok(());
                     }
                 }

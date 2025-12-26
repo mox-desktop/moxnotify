@@ -29,12 +29,6 @@ message ClientActionInvokedRequest {
 
 message ClientActionInvokedResponse {}
 
-message ClientCloseNotificationRequest {
-    moxnotify.types.CloseNotification close_notification = 1;
-}
-
-message ClientCloseNotificationResponse {}
-
 message ViewportNavigationRequest {
     enum Direction {
         NEXT = 0;
