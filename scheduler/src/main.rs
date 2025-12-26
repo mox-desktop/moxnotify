@@ -14,8 +14,9 @@ use crate::moxnotify::client::client_service_server::{ClientService, ClientServi
 use crate::moxnotify::client::viewport_navigation_request::Direction;
 use crate::moxnotify::client::{
     ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
-    ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest,
-    ViewportNavigationRequest, ViewportNavigationResponse,
+    ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest, StartTimersRequest,
+    StartTimersResponse, StopTimersRequest, StopTimersResponse, ViewportNavigationRequest,
+    ViewportNavigationResponse,
 };
 use crate::moxnotify::types::CloseNotification;
 use moxnotify::types::{NewNotification, NotificationMessage};
@@ -432,6 +433,20 @@ impl ClientService for Scheduler {
             after_count,
             selected_id,
         }))
+    }
+
+    async fn start_timers(
+        &self,
+        _: Request<StartTimersRequest>,
+    ) -> Result<Response<StartTimersResponse>, Status> {
+        Ok(Response::new(StartTimersResponse {}))
+    }
+
+    async fn stop_timers(
+        &self,
+        _: Request<StopTimersRequest>,
+    ) -> Result<Response<StopTimersResponse>, Status> {
+        Ok(Response::new(StopTimersResponse {}))
     }
 }
 

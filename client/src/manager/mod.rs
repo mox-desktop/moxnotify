@@ -9,7 +9,8 @@ use crate::{
     config::{Config, keymaps},
     moxnotify::{
         client::{
-            ClientNotificationClosedRequest, GetViewportRequest, ViewportNavigationRequest,
+            ClientNotificationClosedRequest, GetViewportRequest, StartTimersRequest,
+            StopTimersRequest, ViewportNavigationRequest,
             client_service_client::ClientServiceClient, viewport_navigation_request::Direction,
         },
         common::CloseReason,
@@ -258,7 +259,13 @@ impl NotificationManager {
         self.ui_state.selected_id.store(id, Ordering::Relaxed);
         self.ui_state.selected.store(true, Ordering::Relaxed);
 
-        // TODO: stop timers
+        let mut grpc_client = self.grpc_client.clone();
+        wait(|| async move {
+            grpc_client
+                .stop_timers(tonic::Request::new(StopTimersRequest {}))
+                .await
+                .unwrap();
+        });
 
         self.update_size();
     }
@@ -275,13 +282,18 @@ impl NotificationManager {
             notification.unhover();
         }
 
-        // TODO: start timers
+        let mut grpc_client = self.grpc_client.clone();
+        wait(|| async move {
+            grpc_client
+                .start_timers(tonic::Request::new(StartTimersRequest {}))
+                .await
+                .unwrap();
+        });
     }
 
     /// Select next notification
     pub fn next(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
-
         let response = wait(|| async move {
             grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {

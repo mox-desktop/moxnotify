@@ -69,11 +69,14 @@ in
       default = cfg.enable;
     };
 
-    redis = {
-      address = lib.mkOption {
-        default = null;
-        type = types.nullOr types.str;
-      };
+    valkey.enable = lib.mkOption {
+      type = types.bool;
+      default = cfg.enable;
+    };
+
+    redis.address = lib.mkOption {
+      default = null;
+      type = types.nullOr types.str;
     };
 
     logLevel = lib.mkOption {
@@ -120,11 +123,11 @@ in
         Unit = {
           Description = "Moxnotify Control Plane - gRPC coordination service";
 
-          After = lib.optionals (cfg.redis.address == null) [
+          After = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
 
-          Requires = lib.optionals (cfg.redis.address == null) [
+          Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
         };
@@ -176,10 +179,10 @@ in
             lib.optionals cfg.collector.enable [
               "moxnotify-collector.service"
             ]
-            ++ lib.optionals (cfg.redis.address == null) [
+            ++ lib.optionals cfg.valkey.enable [
               "moxnotify-valkey.service"
             ];
-          Requires = lib.optionals (cfg.redis.address == null) [
+          Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
         };
@@ -220,10 +223,10 @@ in
             lib.optionals cfg.collector.enable [
               "moxnotify-collector.service"
             ]
-            ++ lib.optionals (cfg.redis.address == null) [
+            ++ lib.optionals cfg.valkey.enable [
               "moxnotify-valkey.service"
             ];
-          Requires = lib.optionals (cfg.redis.address == null) [
+          Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
         };
@@ -236,7 +239,7 @@ in
         };
       };
 
-      moxnotify-valkey = lib.mkIf (cfg.redis.address == null) {
+      moxnotify-valkey = lib.mkIf cfg.valkey.enable {
         Unit.Description = "Moxnotify Redis";
 
         Service = {
@@ -265,8 +268,6 @@ in
           Wants = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
         };
-
-        Install.WantedBy = [ "default.target" ];
 
         Service = {
           Type = "simple";

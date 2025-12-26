@@ -9,6 +9,8 @@ service ClientService {
     rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
     rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
     rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
+    rpc StartTimers (StartTimersRequest) returns (StartTimersResponse);
+    rpc StopTimers (StopTimersRequest) returns (StopTimersResponse);
 }
 
 message ClientNotifyRequest {
@@ -51,3 +53,11 @@ message ViewportNavigationResponse {
     uint32 after_count = 3;
     optional uint32 selected_id = 4;
 }
+
+message StopTimersRequest {}
+
+message StopTimersResponse {}
+
+message StartTimersRequest {}
+
+message StartTimersResponse {}
