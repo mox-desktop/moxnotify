@@ -1,5 +1,6 @@
 mod view;
 
+use crate::CloseReason;
 use crate::{
     Moxnotify,
     components::{
@@ -13,7 +14,6 @@ use crate::{
             StopTimersRequest, ViewportNavigationRequest,
             client_service_client::ClientServiceClient, viewport_navigation_request::Direction,
         },
-        common::CloseReason,
         types::{NewNotification, NotificationClosed},
     },
     utils::wait,

@@ -1,10 +1,10 @@
 use super::partial::PartialColor;
-use crate::moxnotify::common::Urgency;
-use serde::{
-    Deserialize, Deserializer,
-    de::{self, MapAccess, Visitor},
-};
-use std::{fmt, str::FromStr};
+use crate::Urgency;
+use serde::de;
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use std::fmt;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Color {

@@ -1,10 +1,9 @@
-use crate::EmitEvent;
-use crate::Event;
 use crate::image_data::ImageData;
-use crate::moxnotify::common::{CloseReason, Urgency};
 use crate::moxnotify::types::{
-    Action, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
+    Action, CloseReason, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
+    Urgency,
 };
+use crate::{EmitEvent, Event};
 use chrono::offset::Local;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;

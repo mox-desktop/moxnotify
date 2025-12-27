@@ -3,6 +3,7 @@ mod anchor;
 mod dismiss;
 
 use super::text::body;
+use crate::Urgency;
 use crate::{
     components::{self, Bounds, Component, Data},
     config::{
@@ -10,7 +11,7 @@ use crate::{
         button::ButtonState,
         keymaps::{self},
     },
-    moxnotify::{common::Urgency, types::Action},
+    moxnotify::types::Action,
     rendering::text_renderer,
 };
 use action::ActionButton;

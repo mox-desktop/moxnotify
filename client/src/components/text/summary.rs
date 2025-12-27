@@ -1,12 +1,12 @@
 use super::Text;
-use crate::{
-    components::{self, Bounds, Component, Data},
-    config,
-    moxnotify::common::Urgency,
-};
+use crate::Urgency;
+use crate::components;
+use crate::components::{Bounds, Component, Data};
+use crate::config;
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 pub struct Summary {
     context: components::Context,

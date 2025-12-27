@@ -1,8 +1,9 @@
-use crate::{
-    components::{self, Bounds, Component},
-    config::{self, Insets, Size, border::BorderRadius},
-    moxnotify::common::Urgency,
-};
+use crate::Urgency;
+use crate::components;
+use crate::components::{Bounds, Component};
+use crate::config;
+use crate::config::border::BorderRadius;
+use crate::config::{Insets, Size};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 

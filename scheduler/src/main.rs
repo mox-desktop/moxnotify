@@ -2,9 +2,6 @@ pub mod moxnotify {
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
-    pub mod common {
-        tonic::include_proto!("moxnotify.common");
-    }
     pub mod client {
         tonic::include_proto!("moxnotify.client");
     }
@@ -12,18 +9,17 @@ pub mod moxnotify {
 
 mod timeout_scheduler;
 
-use crate::moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
-use crate::moxnotify::client::viewport_navigation_request::Direction;
-use crate::moxnotify::client::{
-    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
-    ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest, StartTimersRequest,
-    StartTimersResponse, StopTimersRequest, StopTimersResponse, ViewportNavigationRequest,
-    ViewportNavigationResponse,
-};
-use crate::moxnotify::common::CloseReason;
-use crate::moxnotify::types::{CloseNotification, NotificationClosed};
+use crate::moxnotify::client::notification_message;
 use crate::timeout_scheduler::TimeoutScheduler;
-use moxnotify::types::{NewNotification, NotificationMessage};
+use moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
+use moxnotify::client::viewport_navigation_request::Direction;
+use moxnotify::client::{
+    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
+    ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest, NotificationMessage,
+    StartTimersRequest, StartTimersResponse, StopTimersRequest, StopTimersResponse,
+    ViewportNavigationRequest, ViewportNavigationResponse,
+};
+use moxnotify::types::{CloseNotification, CloseReason, NewNotification, NotificationClosed};
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
@@ -130,8 +126,7 @@ impl ClientService for Scheduler {
                                     timeouts.timer(notification.id, notification.uuid.clone(), notification.timeout as u64).start();
 
                                     let message = NotificationMessage {
-                                        notification: Some(notification),
-                                        close_notification: None,
+                                        message: Some(notification_message::Message::Notification(notification))
                                     };
 
                                     if tx.send(Ok(message)).await.is_err() {
@@ -167,9 +162,9 @@ impl ClientService for Scheduler {
                             match close_notification {
                                 Ok(close_notification) => {
                                     let message = NotificationMessage {
-                                        notification: None,
-                                        close_notification: Some(close_notification),
+                                        message: Some(notification_message::Message::CloseNotification(close_notification))
                                     };
+
                                     if tx.send(Ok(message)).await.is_err() {
                                         log::info!("Client disconnected: {:?}", remote_addr);
                                         break;
@@ -193,8 +188,7 @@ impl ClientService for Scheduler {
                         }
                         Ok((id, uuid)) = receiver.recv() => {
                             let message = NotificationMessage {
-                                notification: None,
-                                close_notification: Some(CloseNotification { id }),
+                                message: Some(notification_message::Message::CloseNotification(CloseNotification { id }))
                             };
 
                             log::debug!("Notification {id} expired");
@@ -245,8 +239,7 @@ impl ClientService for Scheduler {
 
         for notification in notifications.into_iter().rev() {
             let message = NotificationMessage {
-                notification: Some(notification),
-                close_notification: None,
+                message: Some(notification_message::Message::Notification(notification)),
             };
 
             if tx.send(Ok(message)).await.is_err() {

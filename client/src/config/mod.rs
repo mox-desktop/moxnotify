@@ -5,6 +5,7 @@ pub mod keymaps;
 pub mod partial;
 pub mod text;
 
+use crate::Urgency;
 use border::{Border, BorderRadius};
 use button::{Button, ButtonState, Buttons};
 use color::Color;
@@ -19,8 +20,6 @@ use std::{
     sync::Arc,
 };
 use text::{Body, Summary};
-
-use crate::moxnotify::common::Urgency;
 
 #[derive(Default, Clone)]
 pub struct SoundFile {

@@ -1,10 +1,8 @@
 use super::{Button, ButtonType, Hint, State};
-use crate::{
-    components::{self, Bounds, Component},
-    config::button::ButtonState,
-    moxnotify::common::Urgency,
-    rendering::text_renderer,
-};
+use crate::components::{Bounds, Component};
+use crate::config::button::ButtonState;
+use crate::rendering::text_renderer;
+use crate::{Urgency, components};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 

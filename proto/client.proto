@@ -4,13 +4,20 @@ package moxnotify.client;
 import "types.proto";
 
 service ClientService {
-    rpc Notify (ClientNotifyRequest) returns (stream moxnotify.types.NotificationMessage);
+    rpc Notify (ClientNotifyRequest) returns (stream NotificationMessage);
     rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
     rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
     rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
     rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
     rpc StartTimers (StartTimersRequest) returns (StartTimersResponse);
     rpc StopTimers (StopTimersRequest) returns (StopTimersResponse);
+}
+
+message NotificationMessage {
+    oneof message {
+        moxnotify.types.NewNotification notification = 1;
+        moxnotify.types.CloseNotification close_notification = 2;
+    }
 }
 
 message ClientNotifyRequest {

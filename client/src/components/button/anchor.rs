@@ -1,10 +1,9 @@
 use super::{Button, Component, Hint, State};
-use crate::{
-    components::{self, Bounds, text::body::Anchor},
-    config::button::ButtonState,
-    moxnotify::common::Urgency,
-    rendering::text_renderer::Text,
-};
+use crate::components::Bounds;
+use crate::components::text::body::Anchor;
+use crate::config::button::ButtonState;
+use crate::rendering::text_renderer::Text;
+use crate::{Urgency, components};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 

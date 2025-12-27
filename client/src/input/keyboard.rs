@@ -1,17 +1,13 @@
-use crate::{
-    Moxnotify,
-    config::keymaps::{self, Key, KeyAction, KeyWithModifiers, Keys, Modifiers},
-    moxnotify::common::CloseReason,
-};
-use calloop::{
-    RegistrationToken,
-    timer::{TimeoutAction, Timer},
-};
-use std::{sync::atomic::Ordering, time::Duration};
-use wayland_client::{
-    Connection, Dispatch, QueueHandle, WEnum,
-    protocol::{wl_keyboard, wl_seat},
-};
+use crate::CloseReason;
+use crate::Moxnotify;
+use crate::config::keymaps;
+use crate::config::keymaps::{Key, KeyAction, KeyWithModifiers, Keys, Modifiers};
+use calloop::RegistrationToken;
+use calloop::timer::{TimeoutAction, Timer};
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use wayland_client::protocol::{wl_keyboard, wl_seat};
+use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 use xkbcommon::xkb::{Context, Keymap, State};
 
 struct Xkb {

@@ -1,9 +1,4 @@
-mod dbus;
-mod image_data;
 pub mod moxnotify {
-    pub mod common {
-        tonic::include_proto!("moxnotify.common");
-    }
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
@@ -12,15 +7,17 @@ pub mod moxnotify {
     }
 }
 
+mod dbus;
+mod image_data;
+
 use moxnotify::collector::CollectorMessage;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
+use moxnotify::collector::{collector_message, collector_response};
 use moxnotify::types::{ActionInvoked, CloseNotification, NewNotification, NotificationClosed};
 use tokio::sync::{broadcast, mpsc};
 use tokio_stream::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
-
-use crate::moxnotify::collector::{collector_message, collector_response};
 
 type NotificationId = u32;
 

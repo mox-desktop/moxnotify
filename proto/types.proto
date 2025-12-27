@@ -1,7 +1,18 @@
 syntax = "proto3";
 package moxnotify.types;
 
-import "common.proto";
+enum Urgency {
+  URGENCY_LOW = 0;
+  URGENCY_NORMAL = 1;
+  URGENCY_CRITICAL = 2;
+}
+
+enum CloseReason {
+  REASON_EXPIRED = 0;
+  REASON_DISMISSED_BY_USER = 1;
+  REASON_CLOSE_NOTIFICATION_CALL = 2;
+  REASON_UNKNOWN = 3;
+}
 
 message Action {
   string key = 1;
@@ -38,7 +49,7 @@ message NotificationHints {
   bool transient = 9;
   int32 x = 10;
   optional int32 y = 11;
-  moxnotify.common.Urgency urgency = 12;
+  Urgency urgency = 12;
   optional Image image = 13;
 }
 
@@ -48,7 +59,7 @@ message CloseNotification {
 
 message NotificationClosed {
   uint32 id = 1;
-  moxnotify.common.CloseReason reason = 2;
+  CloseReason reason = 2;
   string uuid = 3;
 }
 
@@ -57,11 +68,6 @@ message ActionInvoked {
   string action_key = 2;
   string token = 3;
   string uuid = 4;
-}
-
-message NotificationMessage {
-  NewNotification notification = 1;
-  CloseNotification close_notification = 2;
 }
 
 message NewNotification {

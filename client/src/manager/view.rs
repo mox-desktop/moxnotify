@@ -1,11 +1,9 @@
 use super::UiState;
+use crate::Urgency;
 use crate::{
     components::{Component, notification::Notification, text::Text},
     config::Config,
-    moxnotify::{
-        common::Urgency,
-        types::{NewNotification, NotificationHints},
-    },
+    moxnotify::types::{NewNotification, NotificationHints},
 };
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;

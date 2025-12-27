@@ -1,9 +1,6 @@
 use wayland_backend as _;
 
 pub mod moxnotify {
-    pub mod common {
-        tonic::include_proto!("moxnotify.common");
-    }
     pub mod types {
         tonic::include_proto!("moxnotify.types");
     }
@@ -23,9 +20,6 @@ pub mod utils;
 mod wayland;
 
 use crate::config::keymaps;
-use crate::moxnotify::client::{ClientActionInvokedRequest, GetViewportRequest};
-use crate::moxnotify::common::{CloseReason, Urgency};
-use crate::moxnotify::types::{ActionInvoked, NewNotification};
 use crate::utils::wait;
 use audio::Audio;
 use calloop::EventLoop;
@@ -36,6 +30,9 @@ use config::Config;
 use glyphon::FontSystem;
 use input::Seat;
 use manager::NotificationManager;
+use moxnotify::client::{ClientActionInvokedRequest, GetViewportRequest};
+use moxnotify::types::CloseReason;
+use moxnotify::types::{ActionInvoked, NewNotification, Urgency};
 use rendering::surface::{FocusReason, Surface};
 use rendering::wgpu_state;
 use std::cell::RefCell;

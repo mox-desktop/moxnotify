@@ -6,18 +6,16 @@ use super::text::body::Body;
 use super::text::summary::Summary;
 use super::{Bounds, UiState};
 use crate::components;
-use crate::moxnotify::common::Urgency;
+use crate::components::{Component, Data};
+use crate::config::{Size, StyleState};
 use crate::moxnotify::types::NewNotification;
-use crate::{
-    Config,
-    components::{Component, Data},
-    config::{Size, StyleState},
-};
+use crate::{Config, Urgency};
 use calloop::RegistrationToken;
 use glyphon::FontSystem;
 use moxui::shape_renderer;
 use moxui::texture_renderer;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 pub type NotificationId = u32;
 

@@ -30,6 +30,7 @@
                 nodejs_25
                 tilt
                 valkey
+                protols
                 ;
             };
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;

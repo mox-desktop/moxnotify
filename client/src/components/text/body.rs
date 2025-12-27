@@ -1,15 +1,13 @@
-use super::{
-    Text,
-    markup::{Parser, Tag},
-};
-use crate::{
-    components::{self, Bounds, Component, Data},
-    config,
-    moxnotify::common::Urgency,
-};
+use super::Text;
+use super::markup::{Parser, Tag};
+use crate::Urgency;
+use crate::components;
+use crate::components::{Bounds, Component, Data};
+use crate::config;
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use moxui::shape_renderer;
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 #[derive(Debug)]
 pub struct Anchor {

@@ -1,7 +1,8 @@
+use crate::Urgency;
 use crate::{
     components::{self, Bounds, Component},
     config::StyleState,
-    moxnotify::{common::Urgency, types::Image},
+    moxnotify::types::Image,
     utils::image_data::ImageData,
 };
 use moxui::{

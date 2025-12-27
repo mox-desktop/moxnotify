@@ -4,13 +4,12 @@ pub mod notification;
 pub mod progress;
 pub mod text;
 
-use crate::{
-    config::{Config, StyleState},
-    manager::UiState,
-    moxnotify::common::Urgency,
-};
+use crate::Urgency;
+use crate::config::{Config, StyleState};
+use crate::manager::UiState;
 use moxui::{shape_renderer, texture_renderer};
-use std::sync::{Arc, atomic::Ordering};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 #[derive(Clone, Default)]
 pub struct Context {
