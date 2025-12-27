@@ -30,7 +30,6 @@ use std::{
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc,
     },
 };
 use tonic::transport::Channel;
@@ -260,7 +259,7 @@ impl NotificationManager {
         self.ui_state.selected.store(true, Ordering::Relaxed);
 
         let mut grpc_client = self.grpc_client.clone();
-        wait(|| async move {
+        _ = wait(|| async move {
             grpc_client
                 .stop_timers(tonic::Request::new(StopTimersRequest {}))
                 .await
@@ -283,7 +282,7 @@ impl NotificationManager {
         }
 
         let mut grpc_client = self.grpc_client.clone();
-        wait(|| async move {
+        _ = wait(|| async move {
             grpc_client
                 .start_timers(tonic::Request::new(StartTimersRequest {}))
                 .await
@@ -294,7 +293,7 @@ impl NotificationManager {
     /// Select next notification
     pub fn next(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
-        let response = wait(|| async move {
+        if let Ok(response) = wait(|| async move {
             grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::Next as i32,
@@ -302,24 +301,24 @@ impl NotificationManager {
                 .await
                 .unwrap()
                 .into_inner()
-        });
+        }) {
+            if let Some(selected_id) = response.selected_id {
+                self.select(selected_id);
+            }
 
-        if let Some(selected_id) = response.selected_id {
-            self.select(selected_id);
+            self.notification_view.update(
+                response.focused_ids,
+                response.before_count,
+                response.after_count,
+            );
         }
-
-        self.notification_view.update(
-            response.focused_ids,
-            response.before_count,
-            response.after_count,
-        );
     }
 
     /// Select previous notification
     pub fn prev(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
-        let response = wait(|| async move {
+        if let Ok(response) = wait(|| async move {
             grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::Prev as i32,
@@ -327,23 +326,23 @@ impl NotificationManager {
                 .await
                 .unwrap()
                 .into_inner()
-        });
+        }) {
+            if let Some(selected_id) = response.selected_id {
+                self.select(selected_id);
+            }
 
-        if let Some(selected_id) = response.selected_id {
-            self.select(selected_id);
+            self.notification_view.update(
+                response.focused_ids,
+                response.before_count,
+                response.after_count,
+            );
         }
-
-        self.notification_view.update(
-            response.focused_ids,
-            response.before_count,
-            response.after_count,
-        );
     }
 
     pub fn first(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
-        let response = wait(|| async move {
+        if let Ok(response) = wait(|| async move {
             grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::First as i32,
@@ -351,23 +350,23 @@ impl NotificationManager {
                 .await
                 .unwrap()
                 .into_inner()
-        });
+        }) {
+            if let Some(selected_id) = response.selected_id {
+                self.select(selected_id);
+            }
 
-        if let Some(selected_id) = response.selected_id {
-            self.select(selected_id);
+            self.notification_view.update(
+                response.focused_ids,
+                response.before_count,
+                response.after_count,
+            );
         }
-
-        self.notification_view.update(
-            response.focused_ids,
-            response.before_count,
-            response.after_count,
-        );
     }
 
     pub fn last(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
 
-        let response = wait(|| async move {
+        if let Ok(response) = wait(|| async move {
             grpc_client
                 .navigate_viewport(tonic::Request::new(ViewportNavigationRequest {
                     direction: Direction::Last as i32,
@@ -375,17 +374,17 @@ impl NotificationManager {
                 .await
                 .unwrap()
                 .into_inner()
-        });
+        }) {
+            if let Some(selected_id) = response.selected_id {
+                self.select(selected_id);
+            }
 
-        if let Some(selected_id) = response.selected_id {
-            self.select(selected_id);
+            self.notification_view.update(
+                response.focused_ids,
+                response.before_count,
+                response.after_count,
+            );
         }
-
-        self.notification_view.update(
-            response.focused_ids,
-            response.before_count,
-            response.after_count,
-        );
     }
 
     pub fn waiting(&self) -> usize {
@@ -533,7 +532,7 @@ impl Moxnotify {
                 let mut grpc_client = self.notifications.grpc_client.clone();
 
                 let id = *id;
-                wait(move || async move {
+                _ = wait(move || async move {
                     grpc_client
                         .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
                             notification_closed: Some(NotificationClosed {
@@ -566,36 +565,33 @@ impl Moxnotify {
                 .store(keymaps::Mode::Normal, Ordering::Relaxed);
         }
 
-        if let Some(notification) = self.notifications.dismiss_by_id(id)
-            && let Some(reason) = reason
-        {
+        if let Some(notification) = self.notifications.dismiss_by_id(id) {
             let uuid = notification.uuid();
 
             let mut grpc_client = self.notifications.grpc_client.clone();
 
-            let (tx, rx) = mpsc::channel();
-            tokio::spawn(async move {
-                grpc_client
-                    .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
-                        notification_closed: Some(NotificationClosed {
-                            id,
-                            reason: reason as i32,
-                            uuid,
-                        }),
-                    }))
-                    .await
-                    .unwrap();
+            let Ok(response) = wait(move || async move {
+                if let Some(reason) = reason {
+                    grpc_client
+                        .notification_closed(tonic::Request::new(ClientNotificationClosedRequest {
+                            notification_closed: Some(NotificationClosed {
+                                id,
+                                reason: reason as i32,
+                                uuid,
+                            }),
+                        }))
+                        .await
+                        .unwrap();
+                }
 
-                let response = grpc_client
+                grpc_client
                     .get_viewport(tonic::Request::new(GetViewportRequest {}))
                     .await
                     .unwrap()
-                    .into_inner();
-
-                tx.send(response);
-            });
-
-            let response = rx.recv().unwrap();
+                    .into_inner()
+            }) else {
+                return;
+            };
 
             if let Some(selected_id) = response.selected_id.as_ref()
                 && self.notifications.selected_id().is_some()

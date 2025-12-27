@@ -9,7 +9,7 @@ use std::sync::mpsc;
 // it will eventually end up in a wayland Dispatch callback which
 // is not async. We also can't use block_on as those can cause
 // deadlocks if used in async runtime
-pub fn wait<F, Fut, T>(f: F) -> T
+pub fn wait<F, Fut, T>(f: F) -> anyhow::Result<T>
 where
     F: FnOnce() -> Fut + Send + 'static,
     Fut: std::future::Future<Output = T> + Send + 'static,
@@ -22,5 +22,5 @@ where
         tx.send(result).unwrap();
     });
 
-    rx.recv().unwrap()
+    rx.recv().map_err(|e| anyhow::anyhow!(e))
 }

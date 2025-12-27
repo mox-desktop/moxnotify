@@ -8,6 +8,7 @@ pub mod moxnotify {
 }
 
 mod timeout_scheduler;
+mod view_range;
 
 use crate::moxnotify::client::notification_message;
 use crate::timeout_scheduler::TimeoutScheduler;
@@ -25,10 +26,11 @@ use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Mutex, broadcast, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
+use view_range::ViewRange;
 
 #[derive(Clone)]
 struct Scheduler {
@@ -37,8 +39,8 @@ struct Scheduler {
     close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
     selected_id: Arc<Mutex<Option<u32>>>,
-    max_visible: Arc<AtomicU32>,
-    range: Arc<Mutex<(u32, u32)>>,
+    max_visible: Arc<AtomicUsize>,
+    range: Arc<Mutex<ViewRange>>,
 }
 
 impl Scheduler {
@@ -52,8 +54,8 @@ impl Scheduler {
             close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
             selected_id: Arc::new(Mutex::new(None)),
-            max_visible: Arc::new(AtomicU32::new(0)),
-            range: Arc::new(Mutex::new((0, 0))),
+            max_visible: Arc::new(AtomicUsize::new(0)),
+            range: Arc::new(Mutex::new(ViewRange::default())),
         }
     }
 
@@ -106,7 +108,22 @@ impl ClientService for Scheduler {
         let mut close_notification_rx = self.close_notification_broadcast.subscribe();
         let (tx, stream_rx) = mpsc::channel(128);
 
-        self.max_visible.store(req.max_visible, Ordering::Relaxed);
+        self.max_visible
+            .store(req.max_visible as usize, Ordering::Relaxed);
+        {
+            let mut range = self.range.lock().await;
+            *range = ViewRange::new(req.max_visible as usize);
+        }
+
+        let active_notifications = self.get_active_notifications().await;
+
+        let notifications = {
+            let mut notifications: Vec<NewNotification> =
+                active_notifications.into_values().collect::<Vec<_>>();
+            notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+            Arc::new(notifications)
+        };
 
         {
             let tx = tx.clone();
@@ -123,7 +140,24 @@ impl ClientService for Scheduler {
                         notification = notification_rx.recv() => {
                             match notification {
                                 Ok(notification) => {
-                                    timeouts.timer(notification.id, notification.uuid.clone(), notification.timeout as u64).start();
+                                    let active_count = {
+                                        let mut redis_con = redis_con.lock().await;
+                                        let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
+                                        hash_data.len()
+                                    };
+
+                                    let mut range = range.lock().await;
+                                    range.show_tail(active_count);
+                                    log::debug!("notify, range: {}", range);
+
+                                    // New notifications are at position 0 (newest first)
+                                    if range.start() == 0 {
+                                        timeouts.start_timer(
+                                            notification.id,
+                                            notification.uuid.clone(),
+                                            std::time::Duration::from_millis(notification.timeout as u64)
+                                        ).await;
+                                    }
 
                                     let message = NotificationMessage {
                                         message: Some(notification_message::Message::Notification(notification))
@@ -133,14 +167,6 @@ impl ClientService for Scheduler {
                                         log::info!("Client disconnected: {:?}", remote_addr);
                                         break;
                                     }
-
-                                    let mut range = range.lock().await;
-                                    if range.1 - range.0 >= 5 {
-                                        range.0 += 1;
-                                    }
-                                    range.1 += 1;
-
-                                    log::debug!("notify, range: {}..{}", range.0, range.1);
                                 }
                                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                                     log::warn!(
@@ -168,6 +194,15 @@ impl ClientService for Scheduler {
                                     if tx.send(Ok(message)).await.is_err() {
                                         log::info!("Client disconnected: {:?}", remote_addr);
                                         break;
+                                    }
+
+                                    let mut redis_con = redis_con.lock().await;
+                                    let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
+                                    let remaining_count = hash_data.len();
+
+                                    {
+                                        let mut range = range.lock().await;
+                                        range.show_tail(remaining_count);
                                     }
                                 }
                                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
@@ -205,6 +240,7 @@ impl ClientService for Scheduler {
                                 reason: CloseReason::ReasonExpired as i32,
                                 uuid,
                             };
+
                             let json = serde_json::to_string(&closed).unwrap();
                             if let Err(e) = redis_con.xadd(
                                 "moxnotify:notification_closed",
@@ -217,29 +253,31 @@ impl ClientService for Scheduler {
                             if let Err(e) = redis_con.hdel("moxnotify:active", id.to_string().as_str()) {
                                 log::warn!("Failed to remove notification from active HASH: {}", e);
                             }
+
+                            let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
+                            let remaining_count = hash_data.len();
+
+                            {
+                                let mut range = range.lock().await;
+                                range.show_tail(remaining_count);
+                                log::debug!("Notification {id} expired, range: {}", range);
+                            }
                         }
                     }
                 }
             });
         }
 
-        let active_notifications = self.get_active_notifications().await;
-
-        let mut notifications: Vec<NewNotification> = active_notifications.into_values().collect();
-        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
         {
             let mut range = self.range.lock().await;
-            if range.1 - range.0 < self.max_visible.load(Ordering::Relaxed) {
-                range.0 = (notifications.len() as u32)
-                    .saturating_sub(self.max_visible.load(Ordering::Relaxed));
-                range.1 = notifications.len() as u32;
-            }
+            range.show_tail(notifications.len());
         }
 
-        for notification in notifications.into_iter().rev() {
+        for notification in notifications.iter().rev() {
             let message = NotificationMessage {
-                message: Some(notification_message::Message::Notification(notification)),
+                message: Some(notification_message::Message::Notification(
+                    notification.to_owned(),
+                )),
             };
 
             if tx.send(Ok(message)).await.is_err() {
@@ -300,17 +338,9 @@ impl ClientService for Scheduler {
         }
 
         let mut range = self.range.lock().await;
-        if range.1 == notifications.len() as u32 {
-            range.0 = range.0.saturating_sub(1);
-        } else if range.0 == 0 && range.1 - range.0 > 1 {
-            range.1 -= 1;
-        } else if range.0 > 0 && range.1 < notifications.len() as u32 {
-            range.0 -= 1;
-            range.1 -= 1;
-        }
+        range.scroll_down_clamped(notifications.len());
 
-        range.1 = range.1.min(notifications.len() as u32 - 1);
-        log::debug!("notification_closed, range: {}..{}", range.0, range.1);
+        log::debug!("notification_closed, range: {}", range);
 
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
@@ -363,23 +393,13 @@ impl ClientService for Scheduler {
 
                     *selected_id = notifications.get(idx).map(|n| n.id);
 
-                    if idx == 0 {
-                        range.0 = 0;
-                        range.1 = self.max_visible.load(Ordering::Relaxed);
-                    } else if idx >= range.1 as usize {
-                        if range.1 - range.0 == self.max_visible.load(Ordering::Relaxed) {
-                            range.0 += 1;
-                        }
-                        range.1 += 1;
-                    }
+                    range.ensure_visible_down(idx);
                 } else if let Some(first) = notifications.first() {
                     *selected_id = Some(first.id);
 
-                    range.0 = (notifications.len() as u32)
-                        .saturating_sub(self.max_visible.load(Ordering::Relaxed));
-                    range.1 = notifications.len() as u32;
+                    range.show_tail(notifications.len());
                 }
-                log::debug!("Direction::Prev, range: {}..{}", range.0, range.1);
+                log::debug!("Direction::Prev, range: {}", range);
             }
             Direction::Next => {
                 if let Some(selected) = *selected_id
@@ -389,55 +409,37 @@ impl ClientService for Scheduler {
 
                     *selected_id = notifications.get(idx).map(|n| n.id);
 
-                    if idx == notifications.len() - 1 {
-                        range.0 = notifications
-                            .len()
-                            .saturating_sub(self.max_visible.load(Ordering::Relaxed) as usize)
-                            as u32;
-                        range.1 = notifications.len() as u32;
-                    } else if idx < range.0 as usize {
-                        range.0 -= 1;
-                        if range.1 - range.0 >= self.max_visible.load(Ordering::Relaxed) {
-                            range.1 -= 1;
-                        }
-                    }
+                    range.ensure_visible_up(idx, notifications.len());
                 } else if let Some(last) = notifications.last() {
                     *selected_id = Some(last.id);
 
-                    range.0 = 0;
-                    range.1 = self.max_visible.load(Ordering::Relaxed);
+                    range.show_head();
                 }
-                log::debug!("Direction::Next, range: {}..{}", range.0, range.1);
+                log::debug!("Direction::Next, range: {}", range);
             }
             Direction::First => {
                 *selected_id = notifications.last().map(|n| n.id);
-                range.0 = (notifications.len() as u32)
-                    .saturating_sub(self.max_visible.load(Ordering::Relaxed));
-                range.1 = notifications.len() as u32;
-                log::debug!("Direction::First, range: {}..{}", range.0, range.1);
+                range.show_tail(notifications.len());
+                log::debug!("Direction::First, range: {}", range);
             }
             Direction::Last => {
                 *selected_id = notifications.first().map(|n| n.id);
-                range.0 = 0;
-                range.1 = self.max_visible.load(Ordering::Relaxed);
-                log::debug!("Direction::Last, range: {}..{}", range.0, range.1);
+                range.show_head();
+                log::debug!("Direction::Last, range: {}", range);
             }
         }
 
-        let after_count = range.0;
-        let before_count = (notifications.len() as u32).saturating_sub(range.1);
-
         let focused_ids = notifications
             .iter()
-            .skip(range.0 as usize)
-            .take((range.1 - range.0) as usize)
+            .skip(range.start())
+            .take(range.width())
             .map(|n| n.id)
             .collect();
 
         Ok(Response::new(ViewportNavigationResponse {
             focused_ids,
-            before_count,
-            after_count,
+            before_count: notifications.len().saturating_sub(range.end()) as u32,
+            after_count: range.start() as u32,
             selected_id: *selected_id,
         }))
     }
@@ -457,20 +459,17 @@ impl ClientService for Scheduler {
         };
 
         let range = self.range.lock().await;
-        let after_count = range.0;
-        let before_count = (notifications.len() as u32).saturating_sub(range.1);
-
         let focused_ids = notifications
             .iter()
-            .skip(range.0 as usize)
-            .take((range.1 - range.0) as usize)
+            .skip(range.start())
+            .take(range.width())
             .map(|n| n.id)
             .collect();
 
         Ok(Response::new(ViewportNavigationResponse {
             focused_ids,
-            before_count,
-            after_count,
+            before_count: notifications.len().saturating_sub(range.end()) as u32,
+            after_count: range.start() as u32,
             selected_id,
         }))
     }

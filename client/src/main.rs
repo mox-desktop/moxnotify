@@ -160,7 +160,7 @@ impl Moxnotify {
                     log::info!("Action invoked: id: {}, key: {}", id, key);
 
                     let mut grpc_client = self.notifications.grpc_client.clone();
-                    wait(move || async move {
+                    _ = wait(move || async move {
                         grpc_client
                             .action_invoked(tonic::Request::new(ClientActionInvokedRequest {
                                 action_invoked: Some(ActionInvoked {
@@ -256,24 +256,24 @@ impl Moxnotify {
                 self.notifications.add(*data);
 
                 let mut grpc_client = self.notifications.grpc_client.clone();
-                let response = wait(|| async move {
+                if let Ok(response) = wait(|| async move {
                     grpc_client
                         .get_viewport(tonic::Request::new(GetViewportRequest {}))
                         .await
                         .unwrap()
                         .into_inner()
-                });
+                }) {
+                    self.notifications.notification_view.update(
+                        response.focused_ids,
+                        response.before_count,
+                        response.after_count,
+                    );
 
-                self.notifications.notification_view.update(
-                    response.focused_ids,
-                    response.before_count,
-                    response.after_count,
-                );
-
-                if let Some(selected_id) = response.selected_id
-                    && self.notifications.selected_id().is_some()
-                {
-                    self.notifications.select(selected_id);
+                    if let Some(selected_id) = response.selected_id
+                        && self.notifications.selected_id().is_some()
+                    {
+                        self.notifications.select(selected_id);
+                    }
                 }
 
                 if self.notifications.inhibited() || suppress_sound {
@@ -295,15 +295,14 @@ impl Moxnotify {
                     surface.focus(FocusReason::Ctl);
 
                     let mut grpc_client = self.notifications.grpc_client.clone();
-                    let response = wait(|| async move {
+                    if let Ok(response) = wait(|| async move {
                         grpc_client
                             .get_viewport(tonic::Request::new(GetViewportRequest {}))
                             .await
                             .unwrap()
                             .into_inner()
-                    });
-
-                    if let Some(selected) = response.selected_id {
+                    }) && let Some(selected) = response.selected_id
+                    {
                         self.notifications.select(selected);
                     } else {
                         self.notifications.first();

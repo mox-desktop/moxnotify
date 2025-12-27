@@ -79,15 +79,14 @@ async fn main() -> anyhow::Result<()> {
             &StreamReadOptions::default()
                 .group("indexer-group", "indexer-1")
                 .block(0),
-        )?
-            && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
-                stream_key.ids.iter().for_each(|stream_id| {
+        )? && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify")
+        {
+            stream_key.ids.iter().for_each(|stream_id| {
                     if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification") {
                         let notification =
                             serde_json::from_str::<NewNotification>(str::from_utf8(json).unwrap())
                                 .unwrap();
 
-                        
                         log::info!(
                             "Indexing notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
                             notification.id,
@@ -118,12 +117,12 @@ async fn main() -> anyhow::Result<()> {
                         }
 
                         index_writer.add_document(doc).unwrap();
-        
+
                         con.xack("moxnotify:notify", "indexer-group", &[stream_id.id.as_str()])
                             .unwrap();
                         index_writer.commit().unwrap();
                     }
                 });
-            }
+        }
     }
 }

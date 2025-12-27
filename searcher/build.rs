@@ -3,9 +3,9 @@ use std::path::Path;
 
 fn main() {
     // Tell Cargo to rerun this build script if the webui directory changes
-    let webui_path = env::var("MOXNOTIFY_WEBUI_DIR")
-        .unwrap_or_else(|_| "../webui/dist".to_string());
-    
+    let webui_path =
+        env::var("MOXNOTIFY_WEBUI_DIR").unwrap_or_else(|_| "../webui/dist".to_string());
+
     let webui_path = Path::new(&webui_path);
     if webui_path.exists() {
         println!("cargo:rerun-if-changed={}", webui_path.display());
