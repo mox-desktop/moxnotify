@@ -8,6 +8,7 @@ use chrono::offset::Local;
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 #[cfg(not(debug_assertions))]
 use zbus::fdo::DBusProxy;
@@ -134,6 +135,7 @@ struct NotificationsImpl {
     next_id: u32,
     event_sender: tokio::sync::mpsc::Sender<Event>,
     uuid: String,
+    config: Arc<config::Config>,
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -178,6 +180,17 @@ impl NotificationsImpl {
             Some(app_icon.to_string())
         };
 
+        let hints = NotificationHints::new(hints);
+        let timeout = if expire_timeout == -1 {
+            match Urgency::try_from(hints.urgency).unwrap() {
+                Urgency::Low => self.config.collector.default_timeout.urgency_low * 1000,
+                Urgency::Normal => self.config.collector.default_timeout.urgency_normal * 1000,
+                Urgency::Critical => self.config.collector.default_timeout.urgency_critical * 1000,
+            }
+        } else {
+            expire_timeout
+        };
+
         if let Err(e) = self
             .event_sender
             .send(Event::Notify(Box::new(NewNotification {
@@ -185,7 +198,7 @@ impl NotificationsImpl {
                 app_name: app_name.into(),
                 summary: summary.into(),
                 body: body.into(),
-                timeout: expire_timeout,
+                timeout,
                 actions: actions
                     .chunks_exact(2)
                     .map(|action| Action {
@@ -193,7 +206,7 @@ impl NotificationsImpl {
                         label: action[1].to_string(),
                     })
                     .collect(),
-                hints: Some(NotificationHints::new(hints)),
+                hints: Some(hints),
                 app_icon,
                 timestamp: Local::now().timestamp_millis(),
                 uuid: self.uuid.clone(),
@@ -246,11 +259,13 @@ pub async fn serve(
     event_sender: tokio::sync::mpsc::Sender<Event>,
     mut emit_receiver: broadcast::Receiver<EmitEvent>,
     uuid: String,
+    config: Arc<config::Config>,
 ) -> zbus::Result<()> {
     let server = NotificationsImpl {
         next_id: 1,
         event_sender,
         uuid: uuid.clone(),
+        config,
     };
 
     let conn = zbus::connection::Builder::session()?

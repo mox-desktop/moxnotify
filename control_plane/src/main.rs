@@ -233,19 +233,17 @@ impl CollectorService for ControlPlaneService {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
-        .filter_level(log::LevelFilter::Off)
-        .filter_module("control_plane", log::LevelFilter::max())
+    let config = config::Config::load(None);
+
+    env_logger::Builder::new()
+        .filter(Some("control_plane"), config.control_plane.log_level.into())
         .init();
 
-    let client = redis::Client::open("redis://127.0.0.1/").unwrap();
+    let client = redis::Client::open(&*config.redis_address).unwrap();
 
-    let addr = "[::1]:50051".parse()?;
     let service = ControlPlaneService::try_new(client.get_connection()?)?;
     let notification_closed_broadcast = Arc::clone(&service.notification_closed_broadcast);
     let action_invoked_broadcast = Arc::clone(&service.action_invoked_broadcast);
-
-    log::info!("Control plane server listening on {}", addr);
 
     let con = client.get_connection().unwrap();
     tokio::spawn(async move {
@@ -385,8 +383,13 @@ async fn main() -> anyhow::Result<()> {
 
     Server::builder()
         .add_service(CollectorServiceServer::new(service.clone()))
-        .serve(addr)
+        .serve(config.control_plane.address.parse()?)
         .await?;
+
+    log::info!(
+        "Control plane server listening on {}",
+        config.control_plane.address
+    );
 
     Ok(())
 }

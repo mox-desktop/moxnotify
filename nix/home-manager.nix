@@ -43,7 +43,24 @@ in
     enable = lib.mkEnableOption "moxnotify";
     package = lib.mkPackageOption pkgs "moxnotify" { };
 
-    webui.enable = lib.mkEnableOption "moxnotify webui";
+    webui = {
+      enable = lib.mkEnableOption "moxnotify webui";
+      searcherAddress = lib.mkOption {
+        type = types.str;
+        default = "http://localhost:64203";
+      };
+      port = lib.mkOption {
+        type = types.int;
+        default = 64204;
+        description = "Port for the webui server";
+      };
+      hostname = lib.mkOption {
+        type = types.str;
+        default = "localhost";
+        description = "Hostname/IP for the webui server to bind to";
+      };
+    };
+
     client.enable = lib.mkOption {
       type = types.bool;
       default = cfg.enable;
@@ -77,12 +94,6 @@ in
     redis.address = lib.mkOption {
       default = null;
       type = types.nullOr types.str;
-    };
-
-    logLevel = lib.mkOption {
-      default = "info";
-      type = types.str;
-      description = "MOXNOTIFY_LOG value for moxnotify services";
     };
 
     settings = lib.mkOption {
@@ -136,7 +147,6 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-control-plane";
           Restart = "on-failure";
-          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
       };
 
@@ -166,7 +176,6 @@ in
           BusName = "org.freedesktop.Notifications";
           ExecStart = "${cfg.package}/bin/moxnotify-collector";
           Restart = "on-failure";
-          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
 
         Install.WantedBy = [ "graphical-session.target" ];
@@ -191,7 +200,6 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-scheduler";
           Restart = "on-failure";
-          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
       };
 
@@ -212,7 +220,6 @@ in
           ExecStart = "${cfg.package}/bin/moxnotify-client";
           Restart = "on-failure";
           RestartSec = "5s";
-          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
       };
 
@@ -235,7 +242,6 @@ in
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-indexer";
           Restart = "on-failure";
-          Environment = "MOXNOTIFY_LOG=${cfg.logLevel}";
         };
       };
 
@@ -272,13 +278,15 @@ in
         Service = {
           Type = "simple";
           Restart = "on-failure";
+          Environment = [ "MOXNOTIFY_SEARCHER_ADDRESS=${cfg.webui.searcherAddress}" ];
 
           ExecStart =
             let
               p = lib.makeBinPath [ pkgs.nodejs ];
             in
             "${pkgs.writeShellScriptBin "run-moxnotify-webui" ''
-              PATH="$PATH:${p}" ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start
+              PATH="$PATH:${p}"
+              ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start -H "${toString cfg.webui.hostname}" -p "${toString cfg.webui.port}"
             ''}/bin/run-moxnotify-webui";
         };
       };

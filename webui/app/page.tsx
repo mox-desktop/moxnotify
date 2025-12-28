@@ -11,10 +11,14 @@ function LoadingFallback() {
 }
 
 export default function Home() {
+  // Read API URL from environment variable at runtime (server-side)
+  // Default matches searcher's default address (0.0.0.0:64203) but uses localhost for HTTP connection
+  const apiBaseUrl = process.env.MOXNOTIFY_SEARCHER_ADDRESS || "http://localhost:64203"
+  
   return (
     <main className="min-h-screen bg-background">
       <Suspense fallback={<LoadingFallback />}>
-        <NotificationDashboard />
+        <NotificationDashboard apiBaseUrl={apiBaseUrl} />
       </Suspense>
     </main>
   )

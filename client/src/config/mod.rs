@@ -5,7 +5,6 @@ pub mod keymaps;
 pub mod partial;
 pub mod text;
 
-use crate::Urgency;
 use border::{Border, BorderRadius};
 use button::{Button, ButtonState, Buttons};
 use color::Color;
@@ -13,12 +12,10 @@ use keymaps::Keymaps;
 use mlua::{Lua, LuaSerdeExt};
 use partial::{PartialFont, PartialInsets, PartialStyle};
 use serde::{Deserialize, Deserializer};
-use std::{
-    fmt, fs,
-    ops::{Add, Sub},
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::ops::{Add, Sub};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::{fmt, fs};
 use text::{Body, Summary};
 
 #[derive(Default, Clone)]
@@ -139,7 +136,6 @@ pub struct General {
     pub anchor: Anchor,
     pub layer: Layer,
     pub output: Option<Arc<str>>,
-    pub default_timeout: Timeout,
     pub ignore_timeout: bool,
 }
 
@@ -159,7 +155,6 @@ impl Default for General {
             anchor: Anchor::default(),
             layer: Layer::default(),
             output: None,
-            default_timeout: Timeout::default(),
             ignore_timeout: false,
         }
     }
@@ -180,8 +175,6 @@ pub struct Style {
     #[serde(default)]
     pub state: State,
     pub style: PartialStyle,
-    #[serde(default)]
-    pub default_timeout: Option<Timeout>,
     #[serde(default)]
     pub ignore_timeout: Option<bool>,
     #[serde(default)]
@@ -767,7 +760,6 @@ impl<'de> Deserialize<'de> for Styles {
                         selector: vec![selector],
                         state: style.state.clone(),
                         style: style.style.clone(),
-                        default_timeout: style.default_timeout,
                         ignore_timeout: style.ignore_timeout,
                         default_sound_file: style.default_sound_file.clone(),
                         ignore_sound_file: style.ignore_sound_file,
@@ -1089,140 +1081,11 @@ pub enum Anchor {
     Center,
 }
 
-#[derive(Clone, Copy)]
-pub struct Timeout {
-    urgency_low: i32,
-    urgency_normal: i32,
-    urgency_critical: i32,
-}
-
-impl Default for Timeout {
-    fn default() -> Self {
-        Self {
-            urgency_low: 5,
-            urgency_normal: 10,
-            urgency_critical: 0,
-        }
-    }
-}
-
-impl Timeout {
-    pub fn get(&self, urgency: Urgency) -> i32 {
-        match urgency {
-            Urgency::Low => self.urgency_low,
-            Urgency::Normal => self.urgency_normal,
-            Urgency::Critical => self.urgency_critical,
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Timeout {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct TimeoutVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for TimeoutVisitor {
-            type Value = Timeout;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a number or a map")
-            }
-
-            fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E> {
-                let value = v as i32;
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> {
-                let value = v as i32;
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_i32<E>(self, value: i32) -> Result<Self::Value, E> {
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
-                let value = v as i32;
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E> {
-                let value = v as i32;
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
-                let value = v as i32;
-                Ok(Timeout {
-                    urgency_low: value,
-                    urgency_normal: value,
-                    urgency_critical: value,
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let mut urgency_low = None;
-                let mut urgency_normal = None;
-                let mut urgency_critical = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "urgency_low" => urgency_low = Some(map.next_value()?),
-                        "urgency_normal" => urgency_normal = Some(map.next_value()?),
-                        "urgency_critical" => urgency_critical = Some(map.next_value()?),
-                        _ => {
-                            return Err(serde::de::Error::unknown_field(
-                                &key,
-                                &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ));
-                        }
-                    }
-                }
-
-                Ok(Timeout {
-                    urgency_low: urgency_low.unwrap_or_default(),
-                    urgency_normal: urgency_normal.unwrap_or_default(),
-                    urgency_critical: urgency_critical.unwrap_or_default(),
-                })
-            }
-        }
-
-        deserializer.deserialize_any(TimeoutVisitor)
-    }
-}
-
 #[derive(Default)]
 pub struct NotificationStyleEntry {
     pub app: Arc<str>,
     pub default: StyleState,
     pub hover: StyleState,
-    pub default_timeout: Option<Timeout>,
     pub ignore_timeout: Option<bool>,
     pub default_sound_file: Option<SoundFile>,
     pub ignore_sound_file: Option<bool>,

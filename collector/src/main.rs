@@ -10,6 +10,8 @@ pub mod moxnotify {
 mod dbus;
 mod image_data;
 
+use std::sync::Arc;
+
 use moxnotify::collector::CollectorMessage;
 use moxnotify::collector::collector_service_client::CollectorServiceClient;
 use moxnotify::collector::{collector_message, collector_response};
@@ -35,24 +37,31 @@ pub enum EmitEvent {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
-        .filter_level(log::LevelFilter::Off)
-        .filter_module("collector", log::LevelFilter::max())
+    let config = Arc::new(config::Config::load(None));
+
+    env_logger::Builder::new()
+        .filter(Some("collector"), config.collector.log_level.into())
         .init();
 
     let (event_sender, mut event_receiver) = mpsc::channel(128);
     let (emit_sender, emit_receiver) = broadcast::channel(128);
 
-    tokio::spawn(async move {
-        let uuid = Uuid::new_v4().to_string();
-        if let Err(e) = dbus::serve(event_sender, emit_receiver, uuid).await {
-            log::error!("D-Bus serve error: {e}");
-        }
-    });
+    {
+        let config = Arc::clone(&config);
+        tokio::spawn(async move {
+            let uuid = Uuid::new_v4().to_string();
+            if let Err(e) = dbus::serve(event_sender, emit_receiver, uuid, config).await {
+                log::error!("D-Bus serve error: {e}");
+            }
+        });
+    }
 
-    let addr = "http://[::1]:50051";
-    let mut client = CollectorServiceClient::connect(addr.to_string()).await?;
-    log::info!("Connected to control plane at {}", addr);
+    let mut client = CollectorServiceClient::connect(config.collector.control_plane_address.clone()).await?;
+
+    log::info!(
+        "Connected to control plane at {}",
+        config.collector.control_plane_address
+    );
 
     let (tx, rx) = mpsc::channel(128);
     let message_stream = ReceiverStream::new(rx);
@@ -149,8 +158,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
-
-    log::info!("Main event loop exited");
 
     Ok(())
 }

@@ -38,7 +38,17 @@ struct GlobalState {
 
 #[tokio::main]
 async fn main() -> tantivy::Result<()> {
-    let index = Index::open(MmapDirectory::open(path()).unwrap()).unwrap();
+    let config = config::Config::load(None);
+
+    env_logger::Builder::new()
+        .filter(Some("searcher"), config.searcher.log_level.into())
+        .init();
+
+    let index_path = path();
+    log::info!("Opening index from: {:?}", index_path);
+    
+    let index = Index::open(MmapDirectory::open(&index_path).unwrap()).unwrap();
+    log::info!("Index opened successfully");
 
     let schema = index.schema();
     let summary = schema.get_field("summary").unwrap();
@@ -50,6 +60,7 @@ async fn main() -> tantivy::Result<()> {
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
+    log::info!("Index reader created");
 
     let mut query_parser = QueryParser::for_index(&index, vec![summary, body, app_name]);
     query_parser.set_field_boost(summary, 2.);
@@ -65,7 +76,11 @@ async fn main() -> tantivy::Result<()> {
         .route("/api/search", post(search))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3029").await.unwrap();
+    log::info!("Starting searcher server on {}", config.searcher.address);
+    let listener = tokio::net::TcpListener::bind(&config.searcher.address)
+        .await
+        .unwrap();
+    log::info!("Searcher server listening on {}", config.searcher.address);
     axum::serve(listener, app).await.unwrap();
 
     Ok(())
@@ -75,12 +90,34 @@ async fn search(
     State(state): State<GlobalState>,
     Json(payload): Json<Query>,
 ) -> Json<Vec<serde_json::Value>> {
+    log::info!(
+        "Received search request: query='{}', max_hits={:?}, sort_by={:?}, sort_order={:?}",
+        payload.query,
+        payload.max_hits,
+        payload.sort_by,
+        payload.sort_order
+    );
+    
+    log::debug!(
+        "Search request details: start_timestamp={:?}, end_timestamp={:?}",
+        payload.start_timestamp,
+        payload.end_timestamp
+    );
+
     state.reader.reload().unwrap();
+    log::debug!("Index reader reloaded");
 
     let searcher = state.reader.searcher();
-    let text_query = state.parser.parse_query(&payload.query).unwrap();
+    let text_query = match state.parser.parse_query(&payload.query) {
+        Ok(q) => q,
+        Err(e) => {
+            log::error!("Failed to parse query '{}': {}", payload.query, e);
+            return Json(vec![]);
+        }
+    };
 
     let query = if payload.start_timestamp.is_some() || payload.end_timestamp.is_some() {
+        log::debug!("Building query with timestamp range");
         let lower_bound = payload
             .start_timestamp
             .as_ref()
@@ -119,44 +156,64 @@ async fn search(
             (Occur::Must, range_query),
         ])) as Box<dyn tantivy::query::Query>
     } else {
+        log::debug!("Building query without timestamp range");
         text_query
     };
 
     let limit = payload.max_hits.unwrap_or(20) as usize;
+    log::debug!("Search limit: {}", limit);
+    
     let top_docs: Vec<DocAddress> = if let Some(sort_by) = payload.sort_by {
         let sort_order = match payload.sort_order {
             Some(SortOrder::Asc) => Order::Asc,
             _ => Order::Desc,
         };
-        searcher
-            .search(
-                &query,
-                &TopDocs::with_limit(limit).order_by_u64_field(sort_by, sort_order),
-            )
-            .unwrap()
-            .into_iter()
-            .map(|(_, addr)| addr)
-            .collect()
+        log::debug!("Searching with sort: field={}, order={:?}", sort_by, sort_order);
+        match searcher.search(
+            &query,
+            &TopDocs::with_limit(limit).order_by_u64_field(sort_by, sort_order),
+        ) {
+            Ok(results) => results.into_iter().map(|(_, addr)| addr).collect(),
+            Err(e) => {
+                log::error!("Search failed: {}", e);
+                return Json(vec![]);
+            }
+        }
     } else {
-        searcher
-            .search(&query, &TopDocs::with_limit(limit))
-            .unwrap()
-            .into_iter()
-            .map(|(_, addr)| addr)
-            .collect()
+        log::debug!("Searching without sort");
+        match searcher.search(&query, &TopDocs::with_limit(limit)) {
+            Ok(results) => results.into_iter().map(|(_, addr)| addr).collect(),
+            Err(e) => {
+                log::error!("Search failed: {}", e);
+                return Json(vec![]);
+            }
+        }
     };
 
-    let docs = top_docs
-        .into_iter()
-        .map(|doc| {
-            let doc: TantivyDocument = searcher.doc(doc).unwrap();
-            let json_value: serde_json::Value =
-                serde_json::from_str(&doc.to_json(&state.schema)).unwrap();
+    log::info!("Search found {} documents", top_docs.len());
 
-            json_value
+    let docs: Vec<serde_json::Value> = top_docs
+        .into_iter()
+        .filter_map(|doc_addr| {
+            match searcher.doc::<TantivyDocument>(doc_addr) {
+                Ok(tantivy_doc) => {
+                    match serde_json::from_str::<serde_json::Value>(&tantivy_doc.to_json(&state.schema)) {
+                        Ok(json_value) => Some(json_value),
+                        Err(e) => {
+                            log::warn!("Failed to serialize document: {}", e);
+                            None
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to retrieve document: {}", e);
+                    None
+                }
+            }
         })
         .collect();
 
+    log::debug!("Returning {} documents", docs.len());
     Json(docs)
 }
 
@@ -170,7 +227,7 @@ struct Query {
     sort_order: Option<SortOrder>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "lowercase")]
 enum SortOrder {
     Asc,

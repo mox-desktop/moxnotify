@@ -72,8 +72,7 @@ impl NotificationManager {
         sender: calloop::channel::Sender<crate::Event>,
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
-        let scheduler_addr = std::env::var("MOXNOTIFY_SCHEDULER_ADDR")
-            .unwrap_or_else(|_| "http://[::1]:50052".to_string());
+        let scheduler_addr = "http://[::1]:64202".to_string();
 
         log::info!("Connecting to scheduler at: {}", scheduler_addr);
 

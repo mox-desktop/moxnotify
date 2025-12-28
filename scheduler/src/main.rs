@@ -618,24 +618,22 @@ impl ClientService for Scheduler {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
-        .filter_level(log::LevelFilter::Off)
-        .filter_module("scheduler", log::LevelFilter::max())
-        .init();
+    let config = Arc::new(config::Config::load(None));
 
-    let scheduler_addr =
-        std::env::var("MOXNOTIFY_SCHEDULER_ADDR").unwrap_or_else(|_| "[::1]:50052".to_string());
+    env_logger::Builder::new()
+        .filter(Some("scheduler"), config.indexer.log_level.into())
+        .init();
 
     log::info!("Connecting to Redis and subscribing to notifications...");
 
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let client = redis::Client::open(&*config.redis_address)?;
     let write_con = client.get_connection()?;
     let read_con = client.get_connection()?;
     let scheduler = Scheduler::new(write_con);
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
     let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
 
-    let server_addr = scheduler_addr.parse()?;
+    let server_addr = config.scheduler.address.parse()?;
     tokio::spawn(async move {
         log::info!("Scheduler server listening on {}", server_addr);
         Server::builder()

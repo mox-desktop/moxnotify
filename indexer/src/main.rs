@@ -4,13 +4,13 @@ pub mod moxnotify {
     }
 }
 
+use moxnotify::types::NewNotification;
 use redis::TypedCommands;
 use redis::streams::StreamReadOptions;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tantivy::directory::MmapDirectory;
 use tantivy::{DateTime, Index, IndexWriter, schema::*};
-
-use crate::moxnotify::types::NewNotification;
 
 fn path() -> PathBuf {
     let path = std::env::var("XDG_DATA_HOME")
@@ -29,9 +29,10 @@ fn path() -> PathBuf {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
-        .filter_level(log::LevelFilter::Off)
-        .filter_module("indexer", log::LevelFilter::max())
+    let config = Arc::new(config::Config::load(None));
+
+    env_logger::Builder::new()
+        .filter(Some("indexer"), config.indexer.log_level.into())
         .init();
 
     let mut schema_builder = Schema::builder();
@@ -69,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     let hints = schema.get_field("hints").unwrap();
 
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let client = redis::Client::open(&*config.redis_address)?;
     let mut con = client.get_connection()?;
 
     loop {

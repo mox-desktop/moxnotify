@@ -549,38 +549,6 @@ impl Notification {
     }
 
     #[must_use]
-    pub fn timeout(&self) -> Option<u64> {
-        let notification_style_entry = self
-            .context
-            .config
-            .styles
-            .notification
-            .iter()
-            .find(|entry| *entry.app == self.data.app_name);
-
-        let ignore_timeout = notification_style_entry
-            .and_then(|entry| entry.ignore_timeout)
-            .unwrap_or(self.context.config.general.ignore_timeout);
-
-        let default_timeout = notification_style_entry
-            .and_then(|entry| entry.default_timeout.as_ref())
-            .unwrap_or(&self.context.config.general.default_timeout);
-
-        if ignore_timeout {
-            (default_timeout.get(self.urgency()) > 0)
-                .then(|| (default_timeout.get(self.urgency()) as u64) * 1000)
-        } else {
-            match self.data.timeout {
-                0 => None,
-                -1 => (default_timeout.get(self.urgency()) > 0)
-                    .then(|| (default_timeout.get(self.urgency()) as u64) * 1000),
-                t if t > 0 => Some(t as u64),
-                _ => None,
-            }
-        }
-    }
-
-    #[must_use]
     pub fn width(&self) -> f32 {
         if self.hovered() {
             self.context.config.styles.hover.width.resolve(0.)

@@ -24,6 +24,8 @@ tonic = "0.14.2"
 tonic-prost = "0.14.2"
 prost = "0.14.1"
 redis = { version = "1.0.1", features = ["tokio-comp"] }
+tvix_serde = { git = "https://code.tvl.fyi/depot.git", rev = "a17a8928c6193fc758393a22bd9e71b8439ebfd3", package = "tvix-serde" }
+config = { path = "../config" }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

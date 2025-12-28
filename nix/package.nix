@@ -78,6 +78,7 @@ rustPlatform.buildRustPackage {
     lockFile = ../Cargo.lock;
     outputHashes = {
       "moxui-0.1.0" = "sha256-i2jwHkdoJW99mcb+DqCqhMfigNz4Bc1QmGcThWl2bRM=";
+      "tvix-eval-0.1.0" = "sha256-OVcABz/8InamZLdF3AvD1FW13aL3Nd3BZ2vkjfMEjkM=";
     };
   };
 
@@ -97,6 +98,7 @@ rustPlatform.buildRustPackage {
         "proto"
         "scheduler"
         "searcher"
+        "config"
         "pl.mox.notify.service.in"
         "Cargo.toml"
         "Cargo.lock"

@@ -11,9 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3029"
-
-export function NotificationDashboard() {
+export function NotificationDashboard({ apiBaseUrl = "http://localhost:64203" }: { apiBaseUrl?: string }) {
+  // Default matches searcher's default address (0.0.0.0:64203) but uses localhost for HTTP connection
+  const API_BASE_URL = apiBaseUrl
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
