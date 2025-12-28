@@ -41,6 +41,7 @@ struct Scheduler {
     selected_id: Arc<Mutex<Option<u32>>>,
     max_visible: Arc<AtomicUsize>,
     range: Arc<Mutex<ViewRange>>,
+    prev_visible_ids: Arc<Mutex<Vec<u32>>>,
 }
 
 impl Scheduler {
@@ -56,6 +57,7 @@ impl Scheduler {
             selected_id: Arc::new(Mutex::new(None)),
             max_visible: Arc::new(AtomicUsize::new(0)),
             range: Arc::new(Mutex::new(ViewRange::default())),
+            prev_visible_ids: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -82,6 +84,45 @@ impl Scheduler {
         }
 
         active_notifications
+    }
+
+    async fn start_timers_for_newly_visible(
+        &self,
+        notifications: &[&NewNotification],
+        current_visible_ids: &[u32],
+    ) {
+        let prev_visible = self.prev_visible_ids.lock().await;
+        let newly_visible: Vec<u32> = current_visible_ids
+            .iter()
+            .filter(|id| !prev_visible.contains(id))
+            .copied()
+            .collect();
+        drop(prev_visible);
+
+        if newly_visible.is_empty() {
+            return;
+        }
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in notifications.iter() {
+            if !newly_visible.contains(&notification.id) {
+                continue;
+            }
+
+            let timeout_ms = notification.timeout;
+            // Timeout == 0 means that notification never expires
+            // Timeout == -1 means that timeout should be chosen by notifications server
+            // but we handle it in collectors
+            if timeout_ms > 0 {
+                let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                timeouts
+                    .start_timer(notification.id, notification.uuid.clone(), duration)
+                    .await;
+            }
+        }
+
+        let mut prev_visible = self.prev_visible_ids.lock().await;
+        *prev_visible = current_visible_ids.to_vec();
     }
 }
 
@@ -128,6 +169,7 @@ impl ClientService for Scheduler {
         {
             let tx = tx.clone();
             let range = Arc::clone(&self.range);
+            let scheduler = self.clone();
 
             let redis_con = Arc::clone(&self.redis_con);
             let timeouts = Arc::clone(&self.timeouts);
@@ -150,14 +192,22 @@ impl ClientService for Scheduler {
                                     range.show_tail(active_count);
                                     log::debug!("notify, range: {}", range);
 
-                                    // New notifications are at position 0 (newest first)
-                                    if range.start() == 0 {
-                                        timeouts.start_timer(
-                                            notification.id,
-                                            notification.uuid.clone(),
-                                            std::time::Duration::from_millis(notification.timeout as u64)
-                                        ).await;
-                                    }
+                                    let active_notifications = scheduler.get_active_notifications().await;
+                                    let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                                    notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                                    let focused_ids: Vec<u32> = notifications_vec
+                                        .iter()
+                                        .skip(range.start())
+                                        .take(range.width())
+                                        .map(|n| n.id)
+                                        .collect();
+
+                                    drop(range);
+                                    scheduler.start_timers_for_newly_visible(
+                                        &notifications_vec,
+                                        &focused_ids,
+                                    ).await;
 
                                     let message = NotificationMessage {
                                         message: Some(notification_message::Message::Notification(notification))
@@ -200,10 +250,26 @@ impl ClientService for Scheduler {
                                     let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
                                     let remaining_count = hash_data.len();
 
-                                    {
-                                        let mut range = range.lock().await;
-                                        range.show_tail(remaining_count);
-                                    }
+                                    let mut range = range.lock().await;
+                                    range.show_tail(remaining_count);
+                                    drop(redis_con);
+
+                                    let active_notifications = scheduler.get_active_notifications().await;
+                                    let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                                    notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                                    let focused_ids: Vec<u32> = notifications_vec
+                                        .iter()
+                                        .skip(range.start())
+                                        .take(range.width())
+                                        .map(|n| n.id)
+                                        .collect();
+
+                                    drop(range);
+                                    scheduler.start_timers_for_newly_visible(
+                                        &notifications_vec,
+                                        &focused_ids,
+                                    ).await;
                                 }
                                 Err(broadcast::error::RecvError::Lagged(skipped)) => {
                                     log::warn!(
@@ -257,11 +323,27 @@ impl ClientService for Scheduler {
                             let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
                             let remaining_count = hash_data.len();
 
-                            {
-                                let mut range = range.lock().await;
-                                range.show_tail(remaining_count);
-                                log::debug!("Notification {id} expired, range: {}", range);
-                            }
+                            let mut range = range.lock().await;
+                            range.show_tail(remaining_count);
+                            log::debug!("Notification {id} expired, range: {}", range);
+                            drop(redis_con);
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(range.start())
+                                .take(range.width())
+                                .map(|n| n.id)
+                                .collect();
+
+                            drop(range);
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                            ).await;
                         }
                     }
                 }
@@ -340,7 +422,18 @@ impl ClientService for Scheduler {
         let mut range = self.range.lock().await;
         range.scroll_down_clamped(notifications.len());
 
+        let focused_ids: Vec<u32> = notifications
+            .iter()
+            .skip(range.start())
+            .take(range.width())
+            .map(|n| n.id)
+            .collect();
+
         log::debug!("notification_closed, range: {}", range);
+
+        drop(range);
+        self.start_timers_for_newly_visible(&notifications, &focused_ids)
+            .await;
 
         Ok(Response::new(ClientNotificationClosedResponse {}))
     }
@@ -429,18 +522,25 @@ impl ClientService for Scheduler {
             }
         }
 
-        let focused_ids = notifications
+        let focused_ids: Vec<u32> = notifications
             .iter()
             .skip(range.start())
             .take(range.width())
             .map(|n| n.id)
             .collect();
 
+        let selected_id_val = *selected_id;
+        drop(range);
+        drop(selected_id);
+        self.start_timers_for_newly_visible(&notifications, &focused_ids)
+            .await;
+
+        let range = self.range.lock().await;
         Ok(Response::new(ViewportNavigationResponse {
             focused_ids,
             before_count: notifications.len().saturating_sub(range.end()) as u32,
             after_count: range.start() as u32,
-            selected_id: *selected_id,
+            selected_id: selected_id_val,
         }))
     }
 
@@ -478,6 +578,33 @@ impl ClientService for Scheduler {
         &self,
         _: Request<StartTimersRequest>,
     ) -> Result<Response<StartTimersResponse>, Status> {
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let range = self.range.lock().await;
+        let visible_notifications: Vec<&NewNotification> = notifications
+            .iter()
+            .skip(range.start())
+            .take(range.width())
+            .copied()
+            .collect();
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in visible_notifications {
+            let timeout_ms = notification.timeout;
+            // Timeout == 0 means that notification never expires
+            // Timeout == -1 means that timeout should be chosen by notifications server
+            // but we handle it in collectors
+            if timeout_ms > 0 {
+                let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                timeouts
+                    .start_timer(notification.id, notification.uuid.clone(), duration)
+                    .await;
+            }
+        }
+
         Ok(Response::new(StartTimersResponse {}))
     }
 
@@ -591,14 +718,18 @@ async fn main() -> anyhow::Result<()> {
                                     );
                                 }
 
-                                close_notification_broadcast.send(close_notification);
+                                if let Err(e) =
+                                    close_notification_broadcast.send(close_notification)
+                                {
+                                    log::error!("{e}");
+                                }
 
                                 if let Err(e) = con.xack(
                                     "moxnotify:close_notification",
                                     "scheduler-group",
                                     &[stream_id.id.as_str()],
                                 ) {
-                                    log::error!("Failed to ACK message: {}", e);
+                                    log::error!("Failed to ACK message: {e}");
                                 }
                             }
                         }

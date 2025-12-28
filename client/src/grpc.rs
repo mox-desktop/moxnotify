@@ -2,7 +2,6 @@ use crate::Event;
 use crate::moxnotify::client::client_service_client::ClientServiceClient;
 use crate::moxnotify::client::{ClientNotifyRequest, notification_message};
 use futures_lite::stream::StreamExt;
-use std::time::Duration;
 use tokio::time;
 use tonic::Request;
 use tonic::transport::Channel;

@@ -281,6 +281,10 @@ impl NotificationManager {
             notification.unhover();
         }
 
+        self.start_timers_for_visible();
+    }
+
+    pub fn start_timers_for_visible(&mut self) {
         let mut grpc_client = self.grpc_client.clone();
         _ = wait(|| async move {
             grpc_client
