@@ -14,37 +14,42 @@ pub async fn serve(
     let mut disconnects = 0;
     loop {
         let request = Request::new(ClientNotifyRequest { max_visible });
-        let mut stream = client.notify(request).await.unwrap().into_inner();
+        if let Ok(mut stream) = client
+            .notify(request)
+            .await
+            .map(|response| response.into_inner())
+        {
+            log::info!("Connected to scheduler, subscribing to notifications...");
 
-        log::info!("Connected to scheduler, subscribing to notifications...");
+            while let Some(msg_result) = stream.next().await {
+                if let Ok(msg) = msg_result
+                    && let Some(message) = msg.message
+                {
+                    disconnects = 0;
+                    match message {
+                        notification_message::Message::Notification(notification) => {
+                            log::info!(
+                                "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
+                                notification.id,
+                                notification.app_name,
+                                notification.summary,
+                                notification.body,
+                                notification.hints.as_ref().unwrap().urgency
+                            );
 
-        while let Some(msg_result) = stream.next().await {
-            if let Ok(msg) = msg_result
-                && let Some(message) = msg.message
-            {
-                disconnects = 0;
-                match message {
-                    notification_message::Message::Notification(notification) => {
-                        log::info!(
-                            "Received notification: id={}, app_name='{}', summary='{}', body='{}', urgency='{}'",
-                            notification.id,
-                            notification.app_name,
-                            notification.summary,
-                            notification.body,
-                            notification.hints.as_ref().unwrap().urgency
-                        );
-
-                        if let Err(e) = event_sender.send(Event::Notify(Box::new(notification))) {
-                            log::error!("Error: {e}");
+                            if let Err(e) = event_sender.send(Event::Notify(Box::new(notification)))
+                            {
+                                log::error!("Error: {e}");
+                            }
                         }
-                    }
-                    notification_message::Message::CloseNotification(close_notification) => {
-                        log::info!("Received close_notification: id={}", close_notification.id);
+                        notification_message::Message::CloseNotification(close_notification) => {
+                            log::info!("Received close_notification: id={}", close_notification.id);
 
-                        if let Err(e) =
-                            event_sender.send(Event::CloseNotification(close_notification.id))
-                        {
-                            log::error!("Error: {e}");
+                            if let Err(e) =
+                                event_sender.send(Event::CloseNotification(close_notification.id))
+                            {
+                                log::error!("Error: {e}");
+                            }
                         }
                     }
                 }

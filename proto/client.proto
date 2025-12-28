@@ -9,7 +9,7 @@ service ClientService {
     rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
     rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
     rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
-    rpc StartTimers (StartTimersRequest) returns (StartTimersResponse);
+    rpc RestartTimers (RestartTimersRequest) returns (RestartTimersResponse);
     rpc StopTimers (StopTimersRequest) returns (StopTimersResponse);
 }
 
@@ -59,6 +59,6 @@ message StopTimersRequest {}
 
 message StopTimersResponse {}
 
-message StartTimersRequest {}
+message RestartTimersRequest {}
 
-message StartTimersResponse {}
+message RestartTimersResponse {}

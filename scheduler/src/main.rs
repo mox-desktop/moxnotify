@@ -17,7 +17,7 @@ use moxnotify::client::viewport_navigation_request::Direction;
 use moxnotify::client::{
     ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
     ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest, NotificationMessage,
-    StartTimersRequest, StartTimersResponse, StopTimersRequest, StopTimersResponse,
+    RestartTimersRequest, RestartTimersResponse, StopTimersRequest, StopTimersResponse,
     ViewportNavigationRequest, ViewportNavigationResponse,
 };
 use moxnotify::types::{CloseNotification, CloseReason, NewNotification, NotificationClosed};
@@ -115,6 +115,11 @@ impl Scheduler {
             // but we handle it in collectors
             if timeout_ms > 0 {
                 let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                log::debug!(
+                    "Stopping timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
                 timeouts
                     .start_timer(notification.id, notification.uuid.clone(), duration)
                     .await;
@@ -292,11 +297,29 @@ impl ClientService for Scheduler {
                                 message: Some(notification_message::Message::CloseNotification(CloseNotification { id }))
                             };
 
-                            log::debug!("Notification {id} expired");
-
                             if tx.send(Ok(message)).await.is_err() {
                                 log::info!("Client disconnected: {:?}", remote_addr);
                                 break;
+                            }
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            {
+                                let mut selected_id = scheduler.selected_id.lock().await;
+
+                                if let Some(selected) = *selected_id
+                                    && selected == id
+                                    && let Some(pos) = notifications_vec.iter().position(|n| n.id == selected)
+                                {
+                                    let new_selected = pos
+                                        .checked_sub(1)
+                                        .or_else(|| pos.checked_add(1).filter(|&i| i < notifications_vec.len()))
+                                        .and_then(|idx| notifications_vec.get(idx).map(|n| n.id));
+
+                                    *selected_id = new_selected;
+                                }
                             }
 
                             let mut redis_con = redis_con.lock().await;
@@ -382,6 +405,8 @@ impl ClientService for Scheduler {
             closed.id,
             closed.reason()
         );
+
+        self.timeouts.stop(closed.id).await;
 
         let active_notifications = self.get_active_notifications().await;
 
@@ -574,10 +599,10 @@ impl ClientService for Scheduler {
         }))
     }
 
-    async fn start_timers(
+    async fn restart_timers(
         &self,
-        _: Request<StartTimersRequest>,
-    ) -> Result<Response<StartTimersResponse>, Status> {
+        _: Request<RestartTimersRequest>,
+    ) -> Result<Response<RestartTimersResponse>, Status> {
         let active_notifications = self.get_active_notifications().await;
 
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
@@ -599,19 +624,50 @@ impl ClientService for Scheduler {
             // but we handle it in collectors
             if timeout_ms > 0 {
                 let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                log::debug!(
+                    "Stopping timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
                 timeouts
                     .start_timer(notification.id, notification.uuid.clone(), duration)
                     .await;
             }
         }
 
-        Ok(Response::new(StartTimersResponse {}))
+        Ok(Response::new(RestartTimersResponse {}))
     }
 
     async fn stop_timers(
         &self,
         _: Request<StopTimersRequest>,
     ) -> Result<Response<StopTimersResponse>, Status> {
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let range = self.range.lock().await;
+        let visible_notifications: Vec<&NewNotification> = notifications
+            .iter()
+            .skip(range.start())
+            .take(range.width())
+            .copied()
+            .collect();
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in visible_notifications {
+            let timeout_ms = notification.timeout;
+            if timeout_ms > 0 {
+                log::debug!(
+                    "Stopping timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
+                timeouts.stop(notification.id).await;
+            }
+        }
+
         Ok(Response::new(StopTimersResponse {}))
     }
 }
@@ -632,6 +688,7 @@ async fn main() -> anyhow::Result<()> {
     let scheduler = Scheduler::new(write_con);
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
     let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
+    let timeouts = Arc::clone(&scheduler.timeouts);
 
     let server_addr = config.scheduler.address.parse()?;
     tokio::spawn(async move {
@@ -707,6 +764,12 @@ async fn main() -> anyhow::Result<()> {
                                     "Broadcasting close_notification to clients: id={}",
                                     close_notification.id
                                 );
+
+                                let timeouts = Arc::clone(&timeouts);
+                                let id = close_notification.id;
+                                tokio::spawn(async move {
+                                    timeouts.stop(id).await;
+                                });
 
                                 let id_str = close_notification.id.to_string();
                                 if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {

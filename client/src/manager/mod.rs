@@ -10,7 +10,7 @@ use crate::{
     config::{Config, keymaps},
     moxnotify::{
         client::{
-            ClientNotificationClosedRequest, GetViewportRequest, StartTimersRequest,
+            ClientNotificationClosedRequest, GetViewportRequest, RestartTimersRequest,
             StopTimersRequest, ViewportNavigationRequest,
             client_service_client::ClientServiceClient, viewport_navigation_request::Direction,
         },
@@ -287,7 +287,7 @@ impl NotificationManager {
         let mut grpc_client = self.grpc_client.clone();
         _ = wait(|| async move {
             grpc_client
-                .start_timers(tonic::Request::new(StartTimersRequest {}))
+                .restart_timers(tonic::Request::new(RestartTimersRequest {}))
                 .await
                 .unwrap();
         });

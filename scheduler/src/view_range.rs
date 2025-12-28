@@ -23,19 +23,8 @@ impl ViewRange {
         self.end
     }
 
-    pub fn max_visible(&self) -> usize {
-        self.max_visible
-    }
-
     pub fn width(&self) -> usize {
         self.end - self.start
-    }
-
-    pub fn scroll_up(&mut self) {
-        if self.end - self.start >= self.max_visible {
-            self.start += 1;
-        }
-        self.end += 1;
     }
 
     pub fn scroll_down_clamped(&mut self, len: usize) {

@@ -44,58 +44,20 @@ impl TimeoutScheduler {
         self.sender.subscribe()
     }
 
-    pub async fn pause(&self, id: u32) {
-        if let Some(t) = self.timers.lock().await.get(&id) {
-            t.pause();
-        }
-    }
-
-    pub async fn restart(&self, id: u32) {
-        if let Some(t) = self.timers.lock().await.get(&id) {
-            t.restart();
-        }
-    }
-
-    pub async fn restart_all(&self) {
-        let timers = self.timers.lock().await;
-        for t in timers.values() {
-            t.restart();
-        }
-        let _ = self.global_pause.send(false);
-    }
-
     pub async fn stop(&self, id: u32) {
         if let Some(t) = self.timers.lock().await.remove(&id) {
             t.stop();
         }
     }
-
-    pub fn pause_all(&self) {
-        let _ = self.global_pause.send(true);
-    }
-}
-
-enum TimerCommand {
-    Pause,
-    Restart,
-    Stop,
 }
 
 struct TimerHandle {
-    cmd: mpsc::UnboundedSender<TimerCommand>,
+    cmd: mpsc::UnboundedSender<()>,
 }
 
 impl TimerHandle {
-    fn pause(&self) {
-        let _ = self.cmd.send(TimerCommand::Pause);
-    }
-
-    fn restart(&self) {
-        let _ = self.cmd.send(TimerCommand::Restart);
-    }
-
     fn stop(&self) {
-        let _ = self.cmd.send(TimerCommand::Stop);
+        let _ = self.cmd.send(());
     }
 }
 
@@ -107,11 +69,10 @@ impl Timer {
         uuid: String,
         duration: Duration,
         sender: broadcast::Sender<(u32, String)>,
-        mut cmd_rx: mpsc::UnboundedReceiver<TimerCommand>,
+        mut cmd_rx: mpsc::UnboundedReceiver<()>,
         mut global_pause: watch::Receiver<bool>,
     ) {
         tokio::spawn(async move {
-            let initial_duration = duration;
             let mut remaining = duration;
             let mut paused = false;
 
@@ -124,18 +85,7 @@ impl Timer {
                         break;
                     }
 
-                    Some(cmd) = cmd_rx.recv() => {
-                        match cmd {
-                            TimerCommand::Pause => paused = true,
-
-                            TimerCommand::Restart => {
-                                remaining = initial_duration;
-                                paused = false;
-                            }
-
-                            TimerCommand::Stop => break,
-                        }
-                    }
+                    _ = cmd_rx.recv() => break,
 
                     _ = global_pause.changed() => {
                         paused = *global_pause.borrow();
