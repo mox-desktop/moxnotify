@@ -8,11 +8,13 @@ pub mod moxnotify {
         tonic::include_proto!("moxnotify.client");
     }
 }
+
 mod audio;
 pub mod components;
 mod config;
 mod dbus;
 mod grpc;
+mod history;
 mod input;
 mod manager;
 mod rendering;
@@ -20,6 +22,7 @@ pub mod utils;
 mod wayland;
 
 use crate::config::keymaps;
+use crate::history::HistoryState;
 use crate::utils::wait;
 use audio::Audio;
 use calloop::EventLoop;
@@ -406,6 +409,48 @@ impl Moxnotify {
                         .unwrap_or("auto".into()),
                 ));
             }
+            Event::ShowHistory => {
+                if self.notifications.history.is_hidden() {
+                    log::info!("Showing notification history");
+                    self.notifications.history.show();
+                    _ = self.emit_sender.send(EmitEvent::HistoryStateChanged(
+                        self.notifications.history.state(),
+                    ));
+                    self.dismiss_range(.., None);
+
+                    let history = self.notifications.history.clone();
+                    if let Ok(notifications) =
+                        wait(|| async move { history.load_all().await.unwrap() })
+                    {
+                        log::info!("Loaded {} historical notifications", notifications.len());
+                        self.notifications.add_many(notifications);
+                        log::debug!("History view completed");
+                    }
+                } else {
+                    log::debug!("History already shown");
+                }
+            }
+            Event::HideHistory => {
+                if self.notifications.history.is_shown() {
+                    log::info!("Hiding notification history");
+                    self.notifications.history.hide();
+                    _ = self.emit_sender.send(EmitEvent::HistoryStateChanged(
+                        self.notifications.history.state(),
+                    ));
+                    self.dismiss_range(.., None);
+                    log::debug!("History hidden");
+                } else {
+                    log::debug!("History already hidden");
+                }
+            }
+            Event::GetHistory => {
+                log::debug!("Getting history state");
+                _ = self
+                    .emit_sender
+                    .send(EmitEvent::HistoryState(self.notifications.history.state()));
+
+                return Ok(());
+            }
         }
 
         self.update_surface_size();
@@ -433,6 +478,8 @@ pub enum EmitEvent {
     Muted(bool),
     Inhibited(bool),
     ShowOutput(Arc<str>),
+    HistoryStateChanged(HistoryState),
+    HistoryState(HistoryState),
 }
 
 #[derive(Debug)]
@@ -454,12 +501,15 @@ pub enum Event {
     FocusSurface,
     Mute,
     Unmute,
+    ShowHistory,
+    HideHistory,
     GetMuted,
     Inhibit,
     Uninhibit,
     GetInhibited,
     SetOutput(Option<Arc<str>>),
     ShowOutput,
+    GetHistory,
 }
 
 impl Dispatch<wl_output::WlOutput, ()> for Moxnotify {

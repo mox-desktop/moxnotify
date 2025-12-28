@@ -239,7 +239,7 @@ async fn main() -> anyhow::Result<()> {
         .filter(Some("control_plane"), config.control_plane.log_level.into())
         .init();
 
-    let client = redis::Client::open(&*config.redis_address).unwrap();
+    let client = redis::Client::open(&*config.redis.address).unwrap();
 
     let service = ControlPlaneService::try_new(client.get_connection()?)?;
     let notification_closed_broadcast = Arc::clone(&service.notification_closed_broadcast);

@@ -2,7 +2,7 @@
 members = [
   "client",
   "ctl",
-  "collector",
+  "collector-dbus",
   "control_plane",
   "indexer",
   "searcher",
@@ -27,7 +27,6 @@ categories = [
   "multimedia",
 ]
 edition = "2024"
-homepage = "https://pipewire.org"
 license = "GPLv3"
 repository = "https://github.com/mox-desktop/moxnotify"
 version = "0.1.0"

@@ -12,8 +12,8 @@ local_resource(
 
 local_resource(
     'run-collector',
-    cmd='cargo build --bin collector',
-    serve_cmd='cargo run --bin collector',
+    cmd='cargo build --bin collector-dbus',
+    serve_cmd='cargo run --bin collector-dbus',
     resource_deps=['run-control-plane']
 )
 

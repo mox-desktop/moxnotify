@@ -56,7 +56,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let mut client = CollectorServiceClient::connect(config.collector.control_plane_address.clone()).await?;
+    let mut client =
+        CollectorServiceClient::connect(config.collector.control_plane_address.clone()).await?;
 
     log::info!(
         "Connected to control plane at {}",

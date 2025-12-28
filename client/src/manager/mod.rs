@@ -1,37 +1,28 @@
 mod view;
 
-use crate::CloseReason;
-use crate::{
-    Moxnotify,
-    components::{
-        Component, Data,
-        notification::{self, Notification, NotificationId},
-    },
-    config::{Config, keymaps},
-    moxnotify::{
-        client::{
-            ClientNotificationClosedRequest, GetViewportRequest, RestartTimersRequest,
-            StopTimersRequest, ViewportNavigationRequest,
-            client_service_client::ClientServiceClient, viewport_navigation_request::Direction,
-        },
-        types::{NewNotification, NotificationClosed},
-    },
-    utils::wait,
+use crate::components::notification;
+use crate::components::notification::{Notification, NotificationId};
+use crate::components::{Component, Data};
+use crate::config::{Config, keymaps};
+use crate::moxnotify::client::client_service_client::ClientServiceClient;
+use crate::moxnotify::client::viewport_navigation_request::Direction;
+use crate::moxnotify::client::{
+    ClientNotificationClosedRequest, GetViewportRequest, RestartTimersRequest, StopTimersRequest,
+    ViewportNavigationRequest,
 };
+use crate::moxnotify::types::{NewNotification, NotificationClosed};
+use crate::utils::wait;
+use crate::{CloseReason, Moxnotify, history};
 use atomic_float::AtomicF32;
 use glyphon::{FontSystem, TextArea};
-use moxui::{shape_renderer, texture_renderer::TextureArea};
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    fmt,
-    ops::RangeBounds,
-    rc::Rc,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU32, Ordering},
-    },
-};
+use moxui::{shape_renderer, texture_renderer};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::fmt;
+use std::ops::RangeBounds;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tonic::transport::Channel;
 use view::NotificationView;
 
@@ -55,6 +46,7 @@ impl Default for UiState {
 }
 
 pub struct NotificationManager {
+    pub history: history::History,
     notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
@@ -79,8 +71,10 @@ impl NotificationManager {
         let client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
 
         let ui_state = UiState::default();
+        let searcher_address = "http://0.0.0.0:64203".to_string();
 
         Self {
+            history: history::History::new(searcher_address),
             grpc_client: client,
             sender,
             inhibited: false,
@@ -123,7 +117,7 @@ impl NotificationManager {
     ) -> (
         Vec<shape_renderer::ShapeInstance>,
         Vec<TextArea<'_>>,
-        Vec<TextureArea<'_>>,
+        Vec<texture_renderer::TextureArea<'_>>,
     ) {
         let mut instances = Vec::new();
         let mut text_areas = Vec::new();

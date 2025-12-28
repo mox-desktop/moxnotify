@@ -682,7 +682,7 @@ async fn main() -> anyhow::Result<()> {
 
     log::info!("Connecting to Redis and subscribing to notifications...");
 
-    let client = redis::Client::open(&*config.redis_address)?;
+    let client = redis::Client::open(&*config.redis.address)?;
     let write_con = client.get_connection()?;
     let read_con = client.get_connection()?;
     let scheduler = Scheduler::new(write_con);

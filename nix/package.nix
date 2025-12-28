@@ -92,7 +92,7 @@ rustPlatform.buildRustPackage {
       lib.any (p: lib.hasPrefix p relPath) [
         "client"
         "ctl"
-        "collector"
+        "collector-dbus"
         "control_plane"
         "indexer"
         "proto"
@@ -128,7 +128,7 @@ rustPlatform.buildRustPackage {
 
   installPhase = ''
     install -Dm755 target/release/client $out/bin/moxnotify-client
-    install -Dm755 target/release/collector $out/bin/moxnotify-collector
+    install -Dm755 target/release/collector-dbus $out/bin/moxnotify-collector
     install -Dm755 target/release/control_plane $out/bin/moxnotify-control-plane
     install -Dm755 target/release/indexer $out/bin/moxnotify-indexer
     install -Dm755 target/release/scheduler $out/bin/moxnotify-scheduler

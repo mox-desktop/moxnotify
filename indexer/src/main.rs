@@ -70,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
 
     let hints = schema.get_field("hints").unwrap();
 
-    let client = redis::Client::open(&*config.redis_address)?;
+    let client = redis::Client::open(&*config.redis.address)?;
     let mut con = client.get_connection()?;
 
     loop {
