@@ -17,7 +17,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::mpsc;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use tokio_stream::{StreamExt, wrappers::ReceiverStream};
 use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Clone)]
@@ -27,7 +27,10 @@ pub struct ControlPlaneService {
 }
 
 impl ControlPlaneService {
-    fn try_new(mut redis_con: redis::Connection, redis_client: redis::Client) -> anyhow::Result<Self> {
+    fn try_new(
+        mut redis_con: redis::Connection,
+        redis_client: redis::Client,
+    ) -> anyhow::Result<Self> {
         // If any of these errors it's likely because group already exists
         _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "indexer-group", "$");
         _ = redis_con.xgroup_create_mkstream("moxnotify:notify", "scheduler-group", "$");
@@ -83,21 +86,29 @@ impl CollectorService for ControlPlaneService {
         let action_invoked_sub_client = self.redis_client.clone();
         let (notification_closed_tx, mut notification_closed_rx) = mpsc::channel(128);
         let (action_invoked_tx, mut action_invoked_rx) = mpsc::channel(128);
-        
+
         // Spawn task to subscribe to notification_closed channel (using blocking connection)
         tokio::spawn(async move {
             let notification_closed_tx = notification_closed_tx;
             tokio::task::spawn_blocking(move || {
                 if let Ok(mut con) = notification_closed_sub_client.get_connection() {
                     let mut pubsub = con.as_pubsub();
-                    if pubsub.subscribe("moxnotify:pubsub:notification_closed").is_ok() {
+                    if pubsub
+                        .subscribe("moxnotify:pubsub:notification_closed")
+                        .is_ok()
+                    {
                         loop {
                             match pubsub.get_message() {
                                 Ok(msg) => {
                                     if let Ok(payload) = msg.get_payload::<String>() {
-                                        if let Ok(notification_closed) = serde_json::from_str::<NotificationClosed>(&payload) {
+                                        if let Ok(notification_closed) =
+                                            serde_json::from_str::<NotificationClosed>(&payload)
+                                        {
                                             // Use blocking send since we're in a blocking context
-                                            if notification_closed_tx.blocking_send(notification_closed).is_err() {
+                                            if notification_closed_tx
+                                                .blocking_send(notification_closed)
+                                                .is_err()
+                                            {
                                                 break;
                                             }
                                         }
@@ -108,9 +119,11 @@ impl CollectorService for ControlPlaneService {
                         }
                     }
                 }
-            }).await.ok();
+            })
+            .await
+            .ok();
         });
-        
+
         // Spawn task to subscribe to action_invoked channel (using blocking connection)
         tokio::spawn(async move {
             let action_invoked_tx = action_invoked_tx;
@@ -122,9 +135,14 @@ impl CollectorService for ControlPlaneService {
                             match pubsub.get_message() {
                                 Ok(msg) => {
                                     if let Ok(payload) = msg.get_payload::<String>() {
-                                        if let Ok(action_invoked) = serde_json::from_str::<ActionInvoked>(&payload) {
+                                        if let Ok(action_invoked) =
+                                            serde_json::from_str::<ActionInvoked>(&payload)
+                                        {
                                             // Use blocking send since we're in a blocking context
-                                            if action_invoked_tx.blocking_send(action_invoked).is_err() {
+                                            if action_invoked_tx
+                                                .blocking_send(action_invoked)
+                                                .is_err()
+                                            {
                                                 break;
                                             }
                                         }
@@ -135,9 +153,11 @@ impl CollectorService for ControlPlaneService {
                         }
                     }
                 }
-            }).await.ok();
+            })
+            .await
+            .ok();
         });
-        
+
         log::info!(
             "Subscribed collector {:?} to notification_closed Pub/Sub",
             remote_addr
@@ -323,11 +343,20 @@ async fn main() -> anyhow::Result<()> {
                                         let json = serde_json::to_string(&closed).unwrap();
                                         let pubsub_client = pubsub_client.clone();
                                         tokio::spawn(async move {
-                                            if let Ok(mut pub_con) = pubsub_client.get_connection() {
-                                                if let Err(e) = pub_con.publish::<&str, &str>("moxnotify:pubsub:notification_closed", &json) {
-                                                    log::error!("Failed to publish notification_closed to Redis Pub/Sub: {}", e);
+                                            if let Ok(mut pub_con) = pubsub_client.get_connection()
+                                            {
+                                                if let Err(e) = pub_con.publish::<&str, &str>(
+                                                    "moxnotify:pubsub:notification_closed",
+                                                    &json,
+                                                ) {
+                                                    log::error!(
+                                                        "Failed to publish notification_closed to Redis Pub/Sub: {}",
+                                                        e
+                                                    );
                                                 } else {
-                                                    log::debug!("Published notification_closed to Redis Pub/Sub");
+                                                    log::debug!(
+                                                        "Published notification_closed to Redis Pub/Sub"
+                                                    );
                                                 }
                                             }
                                         });
@@ -406,8 +435,13 @@ async fn main() -> anyhow::Result<()> {
                         let pubsub_client_action = pubsub_client_action.clone();
                         tokio::spawn(async move {
                             if let Ok(mut pub_con) = pubsub_client_action.get_connection() {
-                                if let Err(e) = pub_con.publish::<&str, &str>("moxnotify:pubsub:action_invoked", &json) {
-                                    log::error!("Failed to publish action_invoked to Redis Pub/Sub: {}", e);
+                                if let Err(e) = pub_con
+                                    .publish::<&str, &str>("moxnotify:pubsub:action_invoked", &json)
+                                {
+                                    log::error!(
+                                        "Failed to publish action_invoked to Redis Pub/Sub: {}",
+                                        e
+                                    );
                                 } else {
                                     log::debug!("Published action_invoked to Redis Pub/Sub");
                                 }

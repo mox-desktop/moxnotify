@@ -7,9 +7,11 @@ pub mod moxnotify {
     }
 }
 
+mod client_state;
 mod timeout_scheduler;
 mod view_range;
 
+use crate::client_state::{ClientState, ClientStateManager};
 use crate::moxnotify::client::notification_message;
 use crate::timeout_scheduler::TimeoutScheduler;
 use moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
@@ -26,7 +28,6 @@ use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
@@ -37,10 +38,7 @@ struct Scheduler {
     timeouts: Arc<TimeoutScheduler>,
     redis_con: Arc<Mutex<redis::Connection>>,
     redis_client: redis::Client,
-    selected_id: Arc<Mutex<Option<u32>>>,
-    max_visible: Arc<AtomicUsize>,
-    range: Arc<Mutex<ViewRange>>,
-    prev_visible_ids: Arc<Mutex<Vec<u32>>>,
+    state_manager: Arc<ClientStateManager>,
 }
 
 impl Scheduler {
@@ -49,14 +47,15 @@ impl Scheduler {
             .get_connection()
             .expect("Failed to get Redis connection for timeout scheduler");
 
+        let state_redis_con = redis_client
+            .get_connection()
+            .expect("Failed to get Redis connection for state manager");
+
         Self {
             timeouts: Arc::new(TimeoutScheduler::new(timeout_redis_con)),
             redis_con: Arc::new(Mutex::new(redis_con)),
             redis_client,
-            selected_id: Arc::new(Mutex::new(None)),
-            max_visible: Arc::new(AtomicUsize::new(0)),
-            range: Arc::new(Mutex::new(ViewRange::default())),
-            prev_visible_ids: Arc::new(Mutex::new(Vec::new())),
+            state_manager: Arc::new(ClientStateManager::new(state_redis_con)),
         }
     }
 
@@ -89,14 +88,13 @@ impl Scheduler {
         &self,
         notifications: &[&NewNotification],
         current_visible_ids: &[u32],
+        prev_visible_ids: &mut Vec<u32>,
     ) {
-        let prev_visible = self.prev_visible_ids.lock().await;
         let newly_visible: Vec<u32> = current_visible_ids
             .iter()
-            .filter(|id| !prev_visible.contains(id))
+            .filter(|id| !prev_visible_ids.contains(id))
             .copied()
             .collect();
-        drop(prev_visible);
 
         if newly_visible.is_empty() {
             return;
@@ -115,7 +113,7 @@ impl Scheduler {
             if timeout_ms > 0 {
                 let duration = std::time::Duration::from_millis(timeout_ms as u64);
                 log::debug!(
-                    "Stopping timer for notification, id: {}, timeout: {}",
+                    "Starting timer for notification, id: {}, timeout: {}",
                     notification.id,
                     notification.timeout
                 );
@@ -125,8 +123,7 @@ impl Scheduler {
             }
         }
 
-        let mut prev_visible = self.prev_visible_ids.lock().await;
-        *prev_visible = current_visible_ids.to_vec();
+        *prev_visible_ids = current_visible_ids.to_vec();
     }
 }
 
@@ -147,7 +144,23 @@ impl ClientService for Scheduler {
         let remote_addr = request.remote_addr().unwrap();
         let req = request.into_inner();
 
-        log::info!("New client connection from: {:?}", remote_addr);
+        let client_id = format!("{:?}", remote_addr);
+        log::info!(
+            "New client connection from: {} (client_id: {})",
+            remote_addr,
+            client_id
+        );
+
+        let state_manager = Arc::clone(&self.state_manager);
+        let mut client_state = state_manager.load_state(&client_id).await;
+
+        client_state.max_visible = req.max_visible as usize;
+
+        if client_state.range_end == 0 {
+            client_state.range_end = req.max_visible as usize;
+        }
+
+        state_manager.save_state(&client_id, &client_state).await;
 
         let notification_sub_client = self.redis_client.clone();
         let close_notification_sub_client = self.redis_client.clone();
@@ -205,13 +218,6 @@ impl ClientService for Scheduler {
 
         let (tx, stream_rx) = mpsc::channel(128);
 
-        self.max_visible
-            .store(req.max_visible as usize, Ordering::Relaxed);
-        {
-            let mut range = self.range.lock().await;
-            *range = ViewRange::new(req.max_visible as usize);
-        }
-
         let active_notifications = self.get_active_notifications().await;
 
         let notifications = {
@@ -224,11 +230,21 @@ impl ClientService for Scheduler {
 
         {
             let tx = tx.clone();
-            let range = Arc::clone(&self.range);
             let scheduler = self.clone();
+            let state_manager = Arc::clone(&self.state_manager);
+            let client_id_clone = client_id.clone();
 
             let redis_con = Arc::clone(&self.redis_con);
             let timeouts = Arc::clone(&self.timeouts);
+
+            let mut view_range = ViewRange {
+                max_visible: client_state.max_visible,
+                start: client_state.range_start,
+                end: client_state.range_end,
+            };
+            let mut local_selected_id = client_state.selected_id;
+            let mut local_prev_visible_ids = client_state.prev_visible_ids.clone();
+
             tokio::spawn(async move {
                 let mut receiver = timeouts.receiver();
                 let redis_con = redis_con;
@@ -244,9 +260,8 @@ impl ClientService for Scheduler {
                                         hash_data.len()
                                     };
 
-                                    let mut range = range.lock().await;
-                                    range.show_tail(active_count);
-                                    log::debug!("notify, range: {}", range);
+                                    view_range.show_tail(active_count);
+                                    log::debug!("notify, range: {}", view_range);
 
                                     let active_notifications = scheduler.get_active_notifications().await;
                                     let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
@@ -254,16 +269,25 @@ impl ClientService for Scheduler {
 
                                     let focused_ids: Vec<u32> = notifications_vec
                                         .iter()
-                                        .skip(range.start())
-                                        .take(range.width())
+                                        .skip(view_range.start())
+                                        .take(view_range.width())
                                         .map(|n| n.id)
                                         .collect();
 
-                                    drop(range);
                                     scheduler.start_timers_for_newly_visible(
                                         &notifications_vec,
                                         &focused_ids,
+                                        &mut local_prev_visible_ids,
                                     ).await;
+
+                                    let state = ClientState {
+                                        selected_id: local_selected_id,
+                                        range_start: view_range.start(),
+                                        range_end: view_range.end(),
+                                        max_visible: view_range.max_visible(),
+                                        prev_visible_ids: local_prev_visible_ids.clone(),
+                                    };
+                                    state_manager.save_state(&client_id_clone, &state).await;
 
                                     let message = NotificationMessage {
                                         message: Some(notification_message::Message::Notification(notification))
@@ -295,10 +319,9 @@ impl ClientService for Scheduler {
                                     let mut redis_con = redis_con.lock().await;
                                     let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
                                     let remaining_count = hash_data.len();
-
-                                    let mut range = range.lock().await;
-                                    range.show_tail(remaining_count);
                                     drop(redis_con);
+
+                                    view_range.show_tail(remaining_count);
 
                                     let active_notifications = scheduler.get_active_notifications().await;
                                     let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
@@ -306,16 +329,25 @@ impl ClientService for Scheduler {
 
                                     let focused_ids: Vec<u32> = notifications_vec
                                         .iter()
-                                        .skip(range.start())
-                                        .take(range.width())
+                                        .skip(view_range.start())
+                                        .take(view_range.width())
                                         .map(|n| n.id)
                                         .collect();
 
-                                    drop(range);
                                     scheduler.start_timers_for_newly_visible(
                                         &notifications_vec,
                                         &focused_ids,
+                                        &mut local_prev_visible_ids,
                                     ).await;
+
+                                    let state = ClientState {
+                                        selected_id: local_selected_id,
+                                        range_start: view_range.start(),
+                                        range_end: view_range.end(),
+                                        max_visible: view_range.max_visible(),
+                                        prev_visible_ids: local_prev_visible_ids.clone(),
+                                    };
+                                    state_manager.save_state(&client_id_clone, &state).await;
                                 }
                                 None => {
                                     log::info!("CloseNotification Pub/Sub channel closed for client: {:?}", remote_addr);
@@ -337,20 +369,14 @@ impl ClientService for Scheduler {
                             let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
                             notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
+                            if let Some(selected) = local_selected_id
+                                && selected == id
+                                && let Some(pos) = notifications_vec.iter().position(|n| n.id == selected)
                             {
-                                let mut selected_id = scheduler.selected_id.lock().await;
-
-                                if let Some(selected) = *selected_id
-                                    && selected == id
-                                    && let Some(pos) = notifications_vec.iter().position(|n| n.id == selected)
-                                {
-                                    let new_selected = pos
-                                        .checked_sub(1)
-                                        .or_else(|| pos.checked_add(1).filter(|&i| i < notifications_vec.len()))
-                                        .and_then(|idx| notifications_vec.get(idx).map(|n| n.id));
-
-                                    *selected_id = new_selected;
-                                }
+                                local_selected_id = pos
+                                    .checked_sub(1)
+                                    .or_else(|| pos.checked_add(1).filter(|&i| i < notifications_vec.len()))
+                                    .and_then(|idx| notifications_vec.get(idx).map(|n| n.id));
                             }
 
                             let mut redis_con = redis_con.lock().await;
@@ -376,11 +402,10 @@ impl ClientService for Scheduler {
 
                             let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
                             let remaining_count = hash_data.len();
-
-                            let mut range = range.lock().await;
-                            range.show_tail(remaining_count);
-                            log::debug!("Notification {id} expired, range: {}", range);
                             drop(redis_con);
+
+                            view_range.show_tail(remaining_count);
+                            log::debug!("Notification {id} expired, range: {}", view_range);
 
                             let active_notifications = scheduler.get_active_notifications().await;
                             let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
@@ -388,26 +413,47 @@ impl ClientService for Scheduler {
 
                             let focused_ids: Vec<u32> = notifications_vec
                                 .iter()
-                                .skip(range.start())
-                                .take(range.width())
+                                .skip(view_range.start())
+                                .take(view_range.width())
                                 .map(|n| n.id)
                                 .collect();
 
-                            drop(range);
                             scheduler.start_timers_for_newly_visible(
                                 &notifications_vec,
                                 &focused_ids,
+                                &mut local_prev_visible_ids,
                             ).await;
+
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
                         }
                     }
                 }
+
+                state_manager.delete_state(&client_id_clone).await;
             });
         }
 
-        {
-            let mut range = self.range.lock().await;
-            range.show_tail(notifications.len());
-        }
+        let mut initial_view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        initial_view_range.show_tail(notifications.len());
+        let state = ClientState {
+            selected_id: client_state.selected_id,
+            range_start: initial_view_range.start(),
+            range_end: initial_view_range.end(),
+            max_visible: client_state.max_visible,
+            prev_visible_ids: client_state.prev_visible_ids.clone(),
+        };
+        self.state_manager.save_state(&client_id, &state).await;
 
         for notification in notifications.iter().rev() {
             let message = NotificationMessage {
@@ -430,11 +476,14 @@ impl ClientService for Scheduler {
         &self,
         request: Request<ClientNotificationClosedRequest>,
     ) -> Result<Response<ClientNotificationClosedResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
         let closed = request.into_inner().notification_closed.unwrap();
         log::info!(
-            "Received notification_closed request: id: {}, reason: {:?}",
+            "Received notification_closed request: id: {}, reason: {:?}, client: {}",
             closed.id,
-            closed.reason()
+            closed.reason(),
+            client_id
         );
 
         self.timeouts.stop(closed.id).await;
@@ -444,20 +493,16 @@ impl ClientService for Scheduler {
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
+        let mut client_state = self.state_manager.load_state(&client_id).await;
+
+        if let Some(selected) = client_state.selected_id
+            && selected == closed.id
+            && let Some(pos) = notifications.iter().position(|n| n.id == selected)
         {
-            let mut selected_id = self.selected_id.lock().await;
-
-            if let Some(selected) = *selected_id
-                && selected == closed.id
-                && let Some(pos) = notifications.iter().position(|n| n.id == selected)
-            {
-                let new_selected = pos
-                    .checked_sub(1)
-                    .or_else(|| pos.checked_add(1).filter(|&i| i < notifications.len()))
-                    .and_then(|idx| notifications.get(idx).map(|n| n.id));
-
-                *selected_id = new_selected;
-            }
+            client_state.selected_id = pos
+                .checked_sub(1)
+                .or_else(|| pos.checked_add(1).filter(|&i| i < notifications.len()))
+                .and_then(|idx| notifications.get(idx).map(|n| n.id));
         }
 
         let mut con = self.redis_con.lock().await;
@@ -474,21 +519,35 @@ impl ClientService for Scheduler {
         if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
             log::warn!("Failed to remove notification from active HASH: {}", e);
         }
+        drop(con);
 
-        let mut range = self.range.lock().await;
-        range.scroll_down_clamped(notifications.len());
+        let mut view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        view_range.scroll_down_clamped(notifications.len());
 
         let focused_ids: Vec<u32> = notifications
             .iter()
-            .skip(range.start())
-            .take(range.width())
+            .skip(view_range.start())
+            .take(view_range.width())
             .map(|n| n.id)
             .collect();
 
-        log::debug!("notification_closed, range: {}", range);
+        log::debug!("notification_closed, range: {}", view_range);
 
-        drop(range);
-        self.start_timers_for_newly_visible(&notifications, &focused_ids)
+        self.start_timers_for_newly_visible(
+            &notifications,
+            &focused_ids,
+            &mut client_state.prev_visible_ids,
+        )
+        .await;
+
+        client_state.range_start = view_range.start();
+        client_state.range_end = view_range.end();
+        self.state_manager
+            .save_state(&client_id, &client_state)
             .await;
 
         Ok(Response::new(ClientNotificationClosedResponse {}))
@@ -522,17 +581,24 @@ impl ClientService for Scheduler {
         &self,
         request: Request<ViewportNavigationRequest>,
     ) -> Result<Response<ViewportNavigationResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
         let req = request.into_inner();
         let active_notifications = self.get_active_notifications().await;
 
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        let mut range = self.range.lock().await;
-        let mut selected_id = self.selected_id.lock().await;
+        let mut client_state = self.state_manager.load_state(&client_id).await;
+        let mut view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        let mut selected_id = client_state.selected_id;
         match Direction::try_from(req.direction).unwrap() {
             Direction::Prev => {
-                if let Some(selected) = *selected_id
+                if let Some(selected) = selected_id
                     && let Some(pos) = notifications.iter().position(|n| n.id == selected)
                 {
                     let idx = pos
@@ -540,110 +606,129 @@ impl ClientService for Scheduler {
                         .filter(|&i| i < notifications.len())
                         .unwrap_or(0);
 
-                    *selected_id = notifications.get(idx).map(|n| n.id);
+                    selected_id = notifications.get(idx).map(|n| n.id);
 
-                    range.ensure_visible_down(idx);
+                    view_range.ensure_visible_down(idx);
                 } else if let Some(first) = notifications.first() {
-                    *selected_id = Some(first.id);
+                    selected_id = Some(first.id);
 
-                    range.show_tail(notifications.len());
+                    view_range.show_tail(notifications.len());
                 }
-                log::debug!("Direction::Prev, range: {}", range);
+                log::debug!("Direction::Prev, range: {}", view_range);
             }
             Direction::Next => {
-                if let Some(selected) = *selected_id
+                if let Some(selected) = selected_id
                     && let Some(pos) = notifications.iter().position(|n| n.id == selected)
                 {
                     let idx = pos.checked_sub(1).unwrap_or(notifications.len() - 1);
 
-                    *selected_id = notifications.get(idx).map(|n| n.id);
+                    selected_id = notifications.get(idx).map(|n| n.id);
 
-                    range.ensure_visible_up(idx, notifications.len());
+                    view_range.ensure_visible_up(idx, notifications.len());
                 } else if let Some(last) = notifications.last() {
-                    *selected_id = Some(last.id);
+                    selected_id = Some(last.id);
 
-                    range.show_head();
+                    view_range.show_head();
                 }
-                log::debug!("Direction::Next, range: {}", range);
+                log::debug!("Direction::Next, range: {}", view_range);
             }
             Direction::First => {
-                *selected_id = notifications.last().map(|n| n.id);
-                range.show_tail(notifications.len());
-                log::debug!("Direction::First, range: {}", range);
+                selected_id = notifications.last().map(|n| n.id);
+                view_range.show_tail(notifications.len());
+                log::debug!("Direction::First, range: {}", view_range);
             }
             Direction::Last => {
-                *selected_id = notifications.first().map(|n| n.id);
-                range.show_head();
-                log::debug!("Direction::Last, range: {}", range);
+                selected_id = notifications.first().map(|n| n.id);
+                view_range.show_head();
+                log::debug!("Direction::Last, range: {}", view_range);
             }
         }
 
         let focused_ids: Vec<u32> = notifications
             .iter()
-            .skip(range.start())
-            .take(range.width())
+            .skip(view_range.start())
+            .take(view_range.width())
             .map(|n| n.id)
             .collect();
 
-        let selected_id_val = *selected_id;
-        drop(range);
-        drop(selected_id);
-        self.start_timers_for_newly_visible(&notifications, &focused_ids)
+        let selected_id_val = selected_id;
+        self.start_timers_for_newly_visible(
+            &notifications,
+            &focused_ids,
+            &mut client_state.prev_visible_ids,
+        )
+        .await;
+
+        client_state.selected_id = selected_id_val;
+        client_state.range_start = view_range.start();
+        client_state.range_end = view_range.end();
+        self.state_manager
+            .save_state(&client_id, &client_state)
             .await;
 
-        let range = self.range.lock().await;
         Ok(Response::new(ViewportNavigationResponse {
             focused_ids,
-            before_count: notifications.len().saturating_sub(range.end()) as u32,
-            after_count: range.start() as u32,
+            before_count: notifications.len().saturating_sub(view_range.end()) as u32,
+            after_count: view_range.start() as u32,
             selected_id: selected_id_val,
         }))
     }
 
     async fn get_viewport(
         &self,
-        _: Request<GetViewportRequest>,
+        request: Request<GetViewportRequest>,
     ) -> Result<Response<ViewportNavigationResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
         let active_notifications = self.get_active_notifications().await;
 
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        let selected_id = {
-            let selected = self.selected_id.lock().await;
-            *selected
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
         };
 
-        let range = self.range.lock().await;
         let focused_ids = notifications
             .iter()
-            .skip(range.start())
-            .take(range.width())
+            .skip(view_range.start())
+            .take(view_range.width())
             .map(|n| n.id)
             .collect();
 
         Ok(Response::new(ViewportNavigationResponse {
             focused_ids,
-            before_count: notifications.len().saturating_sub(range.end()) as u32,
-            after_count: range.start() as u32,
-            selected_id,
+            before_count: notifications.len().saturating_sub(view_range.end()) as u32,
+            after_count: view_range.start() as u32,
+            selected_id: client_state.selected_id,
         }))
     }
 
     async fn restart_timers(
         &self,
-        _: Request<RestartTimersRequest>,
+        request: Request<RestartTimersRequest>,
     ) -> Result<Response<RestartTimersResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
         let active_notifications = self.get_active_notifications().await;
 
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        let range = self.range.lock().await;
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+
         let visible_notifications: Vec<&NewNotification> = notifications
             .iter()
-            .skip(range.start())
-            .take(range.width())
+            .skip(view_range.start())
+            .take(view_range.width())
             .copied()
             .collect();
 
@@ -671,18 +756,26 @@ impl ClientService for Scheduler {
 
     async fn stop_timers(
         &self,
-        _: Request<StopTimersRequest>,
+        request: Request<StopTimersRequest>,
     ) -> Result<Response<StopTimersResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
         let active_notifications = self.get_active_notifications().await;
 
         let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
         notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        let range = self.range.lock().await;
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+
         let visible_notifications: Vec<&NewNotification> = notifications
             .iter()
-            .skip(range.start())
-            .take(range.width())
+            .skip(view_range.start())
+            .take(view_range.width())
             .copied()
             .collect();
 

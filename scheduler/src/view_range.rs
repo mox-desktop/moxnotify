@@ -2,19 +2,12 @@ use std::fmt;
 
 #[derive(Default)]
 pub struct ViewRange {
-    max_visible: usize,
-    start: usize,
-    end: usize,
+    pub max_visible: usize,
+    pub start: usize,
+    pub end: usize,
 }
 
 impl ViewRange {
-    pub fn new(max_visible: usize) -> Self {
-        Self {
-            max_visible,
-            ..Default::default()
-        }
-    }
-
     pub fn start(&self) -> usize {
         self.start
     }
@@ -25,6 +18,10 @@ impl ViewRange {
 
     pub fn width(&self) -> usize {
         self.end - self.start
+    }
+
+    pub fn max_visible(&self) -> usize {
+        self.max_visible
     }
 
     pub fn scroll_down_clamped(&mut self, len: usize) {

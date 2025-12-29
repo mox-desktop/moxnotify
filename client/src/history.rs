@@ -169,9 +169,10 @@ impl History {
                         }
                     })
                     .map(|u| u as u32),
-                Some(Value::Number(n)) => {
-                    n.as_u64().or_else(|| n.as_i64().map(|i| i as u64)).map(|u| u as u32)
-                }
+                Some(Value::Number(n)) => n
+                    .as_u64()
+                    .or_else(|| n.as_i64().map(|i| i as u64))
+                    .map(|u| u as u32),
                 _ => None,
             };
 
