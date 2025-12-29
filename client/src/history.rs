@@ -122,7 +122,7 @@ impl History {
     pub async fn load_all(&self) -> anyhow::Result<Vec<NewNotification>> {
         let request = SearchRequest {
             query: "*".to_string(),
-            max_hits: Some(100),
+            max_hits: Some(1000),
             sort_by: Some("timestamp".to_string()),
             sort_order: Some("desc".to_string()),
             start_timestamp: None,

@@ -409,6 +409,23 @@ impl NotificationManager {
         self.update_size();
     }
 
+    /// Update visible list to show all notifications (up to max_visible)
+    pub fn show_all_notifications(&mut self) {
+        let max_visible = self.config.general.max_visible;
+        let visible_ids: Vec<u32> = self
+            .notifications
+            .iter()
+            .take(max_visible)
+            .map(|n| n.id())
+            .collect();
+        
+        let total_count = self.notifications.len();
+        let prev_count = total_count.saturating_sub(max_visible) as u32;
+        let next_count = 0u32; // No notifications after the visible ones when showing all
+        
+        self.notification_view.update(visible_ids, prev_count, next_count);
+    }
+
     pub fn add(&mut self, data: NewNotification) {
         if self.inhibited() {
             self.waiting.push(data);

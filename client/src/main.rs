@@ -424,6 +424,7 @@ impl Moxnotify {
                     {
                         log::info!("Loaded {} historical notifications", notifications.len());
                         self.notifications.add_many(notifications);
+                        self.notifications.show_all_notifications();
                         log::debug!("History view completed");
                     }
                 } else {
