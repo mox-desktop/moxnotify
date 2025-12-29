@@ -1,43 +1,169 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use redis::Commands;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{
-    sync::{Mutex, broadcast, mpsc, watch},
-    time::{self, Instant},
+    sync::{Mutex, broadcast, watch},
+    time,
 };
+
+const POP_EXPIRED_TIMERS_SCRIPT: &str = r#"
+    local now = tonumber(ARGV[1])
+    local timers = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now)
+    if #timers > 0 then
+        redis.call('ZREM', KEYS[1], unpack(timers))
+    end
+    return timers
+"#;
 
 pub struct TimeoutScheduler {
     sender: broadcast::Sender<(u32, String)>,
-    global_pause: watch::Sender<bool>,
-    timers: Arc<Mutex<HashMap<u32, TimerHandle>>>,
+    redis_con: Arc<Mutex<redis::Connection>>,
+    shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl TimeoutScheduler {
-    pub fn new() -> Self {
+    pub fn new(redis_con: redis::Connection) -> Self {
         let (sender, _) = broadcast::channel(32);
         let (global_pause, _) = watch::channel(false);
+        let redis_con = Arc::new(Mutex::new(redis_con));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let pop_script = redis::Script::new(POP_EXPIRED_TIMERS_SCRIPT);
+
+        let timer_redis_con = Arc::clone(&redis_con);
+        let timer_sender = sender.clone();
+        let mut timer_pause = global_pause.subscribe();
+        let timer_pop_script = pop_script.clone();
+
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_millis(100));
+            interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+            let mut shutdown_rx = shutdown_rx;
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if !*timer_pause.borrow() {
+                            Self::process_expired_timers(
+                                &timer_redis_con,
+                                &timer_sender,
+                                &timer_pop_script,
+                            ).await;
+                        }
+                    }
+                    _ = &mut shutdown_rx => {
+                        log::debug!("Timer background task shutting down");
+                        break;
+                    }
+                    _ = timer_pause.changed() => {}
+                }
+            }
+        });
 
         Self {
             sender,
-            global_pause,
-            timers: Arc::new(Mutex::new(HashMap::new())),
+            redis_con,
+            shutdown_tx: Some(shutdown_tx),
+        }
+    }
+
+    async fn process_expired_timers(
+        redis_con: &Arc<Mutex<redis::Connection>>,
+        sender: &broadcast::Sender<(u32, String)>,
+        pop_script: &redis::Script,
+    ) {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64;
+
+        let mut con = redis_con.lock().await;
+
+        let expired_timers: Result<Vec<String>, _> = pop_script
+            .key("moxnotify:timers")
+            .arg(now_ms)
+            .invoke(&mut *con);
+
+        let expired_timers = match expired_timers {
+            Ok(timers) => timers,
+            Err(e) => {
+                log::error!("Failed to pop expired timers from Redis: {}", e);
+                return;
+            }
+        };
+
+        if expired_timers.is_empty() {
+            return;
+        }
+
+        log::debug!("Processing {} expired timer(s)", expired_timers.len());
+
+        for timer_id_str in expired_timers {
+            if let Ok(id) = timer_id_str.parse::<u32>() {
+                let timer_key = format!("moxnotify:timer:{}", id);
+                let uuid: Option<String> = match con.hget(&timer_key, "uuid") {
+                    Ok(uuid) => uuid,
+                    Err(e) => {
+                        log::warn!("Failed to get UUID for timer {}: {}", id, e);
+                        let _ = con.del::<_, ()>(&timer_key);
+                        continue;
+                    }
+                };
+
+                if let Some(uuid) = uuid {
+                    let _ = con.del::<_, ()>(&timer_key);
+
+                    if let Err(e) = sender.send((id, uuid)) {
+                        log::warn!("Failed to send timer expiration event: {}", e);
+                    }
+                } else {
+                    log::warn!("Timer {} metadata missing, skipping", id);
+                }
+            } else {
+                log::warn!("Invalid timer ID in Redis: {}", timer_id_str);
+            }
         }
     }
 
     pub async fn start_timer(&self, id: u32, uuid: String, duration: Duration) {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let expiration_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            + duration.as_millis() as i64;
 
-        Timer::spawn(
+        let mut con = self.redis_con.lock().await;
+        let timer_id_str = id.to_string();
+        let timer_key = format!("moxnotify:timer:{}", id);
+
+        let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
+        let _ = con.del::<_, ()>(&timer_key);
+
+        let zadd_result: Result<usize, _> = redis::cmd("ZADD")
+            .arg("moxnotify:timers")
+            .arg(expiration_ms)
+            .arg(&timer_id_str)
+            .query(&mut *con);
+
+        if let Err(e) = zadd_result {
+            log::error!("Failed to add timer {} to Redis: {}", id, e);
+            return;
+        }
+
+        if let Err(e) = con.hset_multiple::<_, _, _, ()>(
+            &timer_key,
+            &[("id", id.to_string()), ("uuid", uuid.clone())],
+        ) {
+            log::error!("Failed to store timer metadata for {}: {}", id, e);
+            // Clean up the timer entry if metadata storage failed
+            let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
+            return;
+        }
+
+        log::debug!(
+            "Started timer for notification {} (expires at {} ms)",
             id,
-            uuid,
-            duration,
-            self.sender.clone(),
-            cmd_rx,
-            self.global_pause.subscribe(),
+            expiration_ms
         );
-
-        self.timers
-            .lock()
-            .await
-            .insert(id, TimerHandle { cmd: cmd_tx });
     }
 
     pub fn receiver(&self) -> broadcast::Receiver<(u32, String)> {
@@ -45,57 +171,21 @@ impl TimeoutScheduler {
     }
 
     pub async fn stop(&self, id: u32) {
-        if let Some(t) = self.timers.lock().await.remove(&id) {
-            t.stop();
+        let mut con = self.redis_con.lock().await;
+        let timer_id_str = id.to_string();
+        let timer_key = format!("moxnotify:timer:{}", id);
+
+        let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
+        let _ = con.del::<_, ()>(&timer_key);
+
+        log::debug!("Stopped timer for notification {}", id);
+    }
+}
+
+impl Drop for TimeoutScheduler {
+    fn drop(&mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            let _ = shutdown_tx.send(());
         }
-    }
-}
-
-struct TimerHandle {
-    cmd: mpsc::UnboundedSender<()>,
-}
-
-impl TimerHandle {
-    fn stop(&self) {
-        let _ = self.cmd.send(());
-    }
-}
-
-struct Timer;
-
-impl Timer {
-    fn spawn(
-        id: u32,
-        uuid: String,
-        duration: Duration,
-        sender: broadcast::Sender<(u32, String)>,
-        mut cmd_rx: mpsc::UnboundedReceiver<()>,
-        mut global_pause: watch::Receiver<bool>,
-    ) {
-        tokio::spawn(async move {
-            let mut remaining = duration;
-            let mut paused = false;
-
-            loop {
-                let start = Instant::now();
-
-                tokio::select! {
-                    _ = time::sleep(remaining), if !paused && !*global_pause.borrow() => {
-                        let _ = sender.send((id, uuid));
-                        break;
-                    }
-
-                    _ = cmd_rx.recv() => break,
-
-                    _ = global_pause.changed() => {
-                        paused = *global_pause.borrow();
-                    }
-                }
-
-                if !paused {
-                    remaining = remaining.saturating_sub(start.elapsed());
-                }
-            }
-        });
     }
 }

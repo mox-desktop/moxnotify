@@ -45,12 +45,16 @@ struct Scheduler {
 }
 
 impl Scheduler {
-    fn new(redis_con: redis::Connection) -> Self {
+    fn new(redis_con: redis::Connection, redis_client: redis::Client) -> Self {
         let (tx, _) = broadcast::channel(128);
         let (close_tx, _) = broadcast::channel(128);
 
+        // Create a separate Redis connection for the timeout scheduler
+        let timeout_redis_con = redis_client.get_connection()
+            .expect("Failed to get Redis connection for timeout scheduler");
+
         Self {
-            timeouts: Arc::new(TimeoutScheduler::new()),
+            timeouts: Arc::new(TimeoutScheduler::new(timeout_redis_con)),
             notification_broadcast: Arc::new(tx),
             close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
@@ -685,7 +689,7 @@ async fn main() -> anyhow::Result<()> {
     let client = redis::Client::open(&*config.redis.address)?;
     let write_con = client.get_connection()?;
     let read_con = client.get_connection()?;
-    let scheduler = Scheduler::new(write_con);
+    let scheduler = Scheduler::new(write_con, client.clone());
     let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
     let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
     let timeouts = Arc::clone(&scheduler.timeouts);
