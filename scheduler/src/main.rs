@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio::sync::{Mutex, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, transport::Server};
 use view_range::ViewRange;
@@ -35,9 +35,8 @@ use view_range::ViewRange;
 #[derive(Clone)]
 struct Scheduler {
     timeouts: Arc<TimeoutScheduler>,
-    notification_broadcast: Arc<broadcast::Sender<NewNotification>>,
-    close_notification_broadcast: Arc<broadcast::Sender<CloseNotification>>,
     redis_con: Arc<Mutex<redis::Connection>>,
+    redis_client: redis::Client,
     selected_id: Arc<Mutex<Option<u32>>>,
     max_visible: Arc<AtomicUsize>,
     range: Arc<Mutex<ViewRange>>,
@@ -46,18 +45,14 @@ struct Scheduler {
 
 impl Scheduler {
     fn new(redis_con: redis::Connection, redis_client: redis::Client) -> Self {
-        let (tx, _) = broadcast::channel(128);
-        let (close_tx, _) = broadcast::channel(128);
-
-        // Create a separate Redis connection for the timeout scheduler
-        let timeout_redis_con = redis_client.get_connection()
+        let timeout_redis_con = redis_client
+            .get_connection()
             .expect("Failed to get Redis connection for timeout scheduler");
 
         Self {
             timeouts: Arc::new(TimeoutScheduler::new(timeout_redis_con)),
-            notification_broadcast: Arc::new(tx),
-            close_notification_broadcast: Arc::new(close_tx),
             redis_con: Arc::new(Mutex::new(redis_con)),
+            redis_client,
             selected_id: Arc::new(Mutex::new(None)),
             max_visible: Arc::new(AtomicUsize::new(0)),
             range: Arc::new(Mutex::new(ViewRange::default())),
@@ -154,8 +149,60 @@ impl ClientService for Scheduler {
 
         log::info!("New client connection from: {:?}", remote_addr);
 
-        let mut notification_rx = self.notification_broadcast.subscribe();
-        let mut close_notification_rx = self.close_notification_broadcast.subscribe();
+        let notification_sub_client = self.redis_client.clone();
+        let close_notification_sub_client = self.redis_client.clone();
+        let (notification_tx, mut notification_rx) = mpsc::channel(128);
+        let (close_notification_tx, mut close_notification_rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            let notification_tx = notification_tx;
+            tokio::task::spawn_blocking(move || {
+                if let Ok(mut con) = notification_sub_client.get_connection() {
+                    let mut pubsub = con.as_pubsub();
+                    if pubsub.subscribe("moxnotify:pubsub:notification").is_ok() {
+                        while let Ok(msg) = pubsub.get_message() {
+                            if let Ok(payload) = msg.get_payload::<String>()
+                                && let Ok(notification) =
+                                    serde_json::from_str::<NewNotification>(&payload)
+                                && notification_tx.blocking_send(notification).is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            .ok();
+        });
+
+        tokio::spawn(async move {
+            let close_notification_tx = close_notification_tx;
+            tokio::task::spawn_blocking(move || {
+                if let Ok(mut con) = close_notification_sub_client.get_connection() {
+                    let mut pubsub = con.as_pubsub();
+                    if pubsub
+                        .subscribe("moxnotify:pubsub:close_notification")
+                        .is_ok()
+                    {
+                        while let Ok(msg) = pubsub.get_message() {
+                            if let Ok(payload) = msg.get_payload::<String>()
+                                && let Ok(close_notification) =
+                                    serde_json::from_str::<CloseNotification>(&payload)
+                                && close_notification_tx
+                                    .blocking_send(close_notification)
+                                    .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            .ok();
+        });
+
         let (tx, stream_rx) = mpsc::channel(128);
 
         self.max_visible
@@ -190,7 +237,7 @@ impl ClientService for Scheduler {
                     tokio::select! {
                         notification = notification_rx.recv() => {
                             match notification {
-                                Ok(notification) => {
+                                Some(notification) => {
                                     let active_count = {
                                         let mut redis_con = redis_con.lock().await;
                                         let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
@@ -227,25 +274,15 @@ impl ClientService for Scheduler {
                                         break;
                                     }
                                 }
-                                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                                    log::warn!(
-                                        "Client {:?} lagged, skipped {} notification messages",
-                                        remote_addr,
-                                        skipped
-                                    );
-                                }
-                                Err(broadcast::error::RecvError::Closed) => {
-                                    log::error!(
-                                        "Notification broadcast channel closed for client: {:?}",
-                                        remote_addr
-                                    );
+                                None => {
+                                    log::info!("Notification Pub/Sub channel closed for client: {:?}", remote_addr);
                                     break;
                                 }
                             }
                         }
                         close_notification = close_notification_rx.recv() => {
                             match close_notification {
-                                Ok(close_notification) => {
+                                Some(close_notification) => {
                                     let message = NotificationMessage {
                                         message: Some(notification_message::Message::CloseNotification(close_notification))
                                     };
@@ -280,18 +317,8 @@ impl ClientService for Scheduler {
                                         &focused_ids,
                                     ).await;
                                 }
-                                Err(broadcast::error::RecvError::Lagged(skipped)) => {
-                                    log::warn!(
-                                        "Client {:?} lagged, skipped {} close_notification messages",
-                                        remote_addr,
-                                        skipped
-                                    );
-                                }
-                                Err(broadcast::error::RecvError::Closed) => {
-                                    log::error!(
-                                        "CloseNotification broadcast channel closed for client: {:?}",
-                                        remote_addr
-                                    );
+                                None => {
+                                    log::info!("CloseNotification Pub/Sub channel closed for client: {:?}", remote_addr);
                                     break;
                                 }
                             }
@@ -690,8 +717,6 @@ async fn main() -> anyhow::Result<()> {
     let write_con = client.get_connection()?;
     let read_con = client.get_connection()?;
     let scheduler = Scheduler::new(write_con, client.clone());
-    let notification_broadcast = Arc::clone(&scheduler.notification_broadcast);
-    let close_notification_broadcast = Arc::clone(&scheduler.close_notification_broadcast);
     let timeouts = Arc::clone(&scheduler.timeouts);
 
     let server_addr = config.scheduler.address.parse()?;
@@ -733,16 +758,16 @@ async fn main() -> anyhow::Result<()> {
                                     notification.summary
                                 );
 
-                                match notification_broadcast.send(notification) {
-                                    Ok(receiver_count) => {
-                                        log::info!(
-                                            "Broadcast notification to {} receivers",
-                                            receiver_count
-                                        );
-                                    }
-                                    Err(e) => {
-                                        log::error!("Failed to broadcast notification: {}", e);
-                                    }
+                                let json = serde_json::to_string(&notification).unwrap();
+                                if let Err(e) = con
+                                    .publish::<&str, &str>("moxnotify:pubsub:notification", &json)
+                                {
+                                    log::error!(
+                                        "Failed to publish notification to Redis Pub/Sub: {}",
+                                        e
+                                    );
+                                } else {
+                                    log::debug!("Published notification to Redis Pub/Sub");
                                 }
 
                                 if let Err(e) = con.xack(
@@ -783,10 +808,17 @@ async fn main() -> anyhow::Result<()> {
                                     );
                                 }
 
-                                if let Err(e) =
-                                    close_notification_broadcast.send(close_notification)
-                                {
-                                    log::error!("{e}");
+                                let json = serde_json::to_string(&close_notification).unwrap();
+                                if let Err(e) = con.publish::<&str, &str>(
+                                    "moxnotify:pubsub:close_notification",
+                                    &json,
+                                ) {
+                                    log::error!(
+                                        "Failed to publish close_notification to Redis Pub/Sub: {}",
+                                        e
+                                    );
+                                } else {
+                                    log::debug!("Published close_notification to Redis Pub/Sub");
                                 }
 
                                 if let Err(e) = con.xack(
