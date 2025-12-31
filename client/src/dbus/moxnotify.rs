@@ -1,4 +1,4 @@
-use crate::{EmitEvent, Event, history};
+use crate::{EmitEvent, Event};
 #[cfg(not(debug_assertions))]
 use futures_lite::stream::StreamExt;
 use std::sync::Arc;
@@ -96,36 +96,6 @@ impl MoxnotifyInterface {
         muted: bool,
     ) -> zbus::Result<()>;
 
-    async fn show_history(&self) {
-        if let Err(e) = self.event_sender.send(Event::ShowHistory) {
-            log::error!("{e}");
-        }
-    }
-
-    async fn hide_history(&self) {
-        if let Err(e) = self.event_sender.send(Event::HideHistory) {
-            log::error!("{e}");
-        }
-    }
-
-    async fn history(&mut self) -> history::HistoryState {
-        if let Err(e) = self.event_sender.send(Event::GetHistory) {
-            log::error!("{e}");
-            return history::HistoryState::Hidden;
-        }
-
-        match self.emit_receiver.recv().await {
-            Ok(EmitEvent::HistoryState(history)) => history,
-            _ => history::HistoryState::Hidden,
-        }
-    }
-
-    #[zbus(signal)]
-    async fn history_state_changed(
-        signal_emitter: &SignalEmitter<'_>,
-        history: history::HistoryState,
-    ) -> zbus::Result<()>;
-
     async fn inhibit(&self) {
         if let Err(e) = self.event_sender.send(Event::Inhibit) {
             log::error!("{e}");
@@ -205,16 +175,6 @@ pub async fn serve(
                     if let Err(e) =
                         MoxnotifyInterfaceSignals::mute_state_changed(iface.signal_emitter(), muted)
                             .await
-                    {
-                        log::error!("{e}");
-                    }
-                }
-                Ok(EmitEvent::HistoryStateChanged(history)) => {
-                    if let Err(e) = MoxnotifyInterfaceSignals::history_state_changed(
-                        iface.signal_emitter(),
-                        history,
-                    )
-                    .await
                     {
                         log::error!("{e}");
                     }

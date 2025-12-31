@@ -12,7 +12,7 @@ use crate::moxnotify::client::{
 };
 use crate::moxnotify::types::{NewNotification, NotificationClosed};
 use crate::utils::wait;
-use crate::{CloseReason, Moxnotify, history};
+use crate::{CloseReason, Moxnotify};
 use atomic_float::AtomicF32;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
@@ -46,7 +46,6 @@ impl Default for UiState {
 }
 
 pub struct NotificationManager {
-    pub history: history::History,
     notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
@@ -71,10 +70,8 @@ impl NotificationManager {
         let client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
 
         let ui_state = UiState::default();
-        let searcher_address = "http://0.0.0.0:64203".to_string();
 
         Self {
-            history: history::History::new(searcher_address),
             grpc_client: client,
             sender,
             inhibited: false,
@@ -407,23 +404,6 @@ impl NotificationManager {
         self.notifications.extend(new_notifications);
 
         self.update_size();
-    }
-
-    /// Update visible list to show all notifications (up to max_visible)
-    pub fn show_all_notifications(&mut self) {
-        let max_visible = self.config.general.max_visible;
-        let visible_ids: Vec<u32> = self
-            .notifications
-            .iter()
-            .take(max_visible)
-            .map(|n| n.id())
-            .collect();
-        
-        let total_count = self.notifications.len();
-        let prev_count = total_count.saturating_sub(max_visible) as u32;
-        let next_count = 0u32; // No notifications after the visible ones when showing all
-        
-        self.notification_view.update(visible_ids, prev_count, next_count);
     }
 
     pub fn add(&mut self, data: NewNotification) {

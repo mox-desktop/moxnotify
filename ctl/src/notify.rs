@@ -1,6 +1,5 @@
-use serde::Deserialize;
-use std::io::{self, Write};
-use zbus::zvariant::Type;
+use std::io;
+use std::io::Write;
 
 pub enum Event {
     Waiting,
@@ -10,24 +9,13 @@ pub enum Event {
     DismissOne(u32),
     Mute,
     Unmute,
-    ShowHistory,
-    HideHistory,
-    HistoryState,
     Inhibit,
     Uninhibit,
     InhibitState,
-    ToggleHistory,
     ToggleInhibit,
     ToggleMute,
     MuteState,
     SetOutput(Option<String>),
-}
-
-#[derive(Default, PartialEq, Clone, Copy, Type, Deserialize)]
-pub enum History {
-    #[default]
-    Hidden,
-    Shown,
 }
 
 #[zbus::proxy(
@@ -59,12 +47,6 @@ trait Notify {
     async fn unmute(&self) -> zbus::Result<()>;
 
     async fn muted(&self) -> zbus::Result<bool>;
-
-    async fn show_history(&self) -> zbus::Result<()>;
-
-    async fn hide_history(&self) -> zbus::Result<()>;
-
-    async fn history(&self) -> zbus::Result<History>;
 
     async fn inhibit(&self) -> zbus::Result<()>;
 
@@ -124,19 +106,6 @@ pub async fn emit(event: Event) -> zbus::Result<()> {
                 writeln!(out, "unmuted")?;
             }
         }
-        Event::ShowHistory => notify.show_history().await?,
-        Event::HideHistory => notify.hide_history().await?,
-        Event::ToggleHistory => {
-            if notify.history().await? == History::Shown {
-                notify.hide_history().await?;
-            } else {
-                notify.show_history().await?;
-            }
-        }
-        Event::HistoryState => match notify.history().await? {
-            History::Shown => writeln!(out, "shown")?,
-            History::Hidden => writeln!(out, "hidden")?,
-        },
         Event::Inhibit => notify.inhibit().await?,
         Event::Uninhibit => notify.uninhibit().await?,
         Event::ToggleInhibit => {

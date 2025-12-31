@@ -5,7 +5,7 @@ pub mod moxnotify {
 }
 
 use moxnotify::types::NewNotification;
-use redis::TypedCommands;
+use redis::AsyncTypedCommands;
 use redis::streams::StreamReadOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -71,19 +71,29 @@ async fn main() -> anyhow::Result<()> {
     let hints = schema.get_field("hints").unwrap();
 
     let client = redis::Client::open(&*config.redis.address)?;
-    let mut con = client.get_connection()?;
+    let mut con = client.get_multiplexed_async_connection().await?;
+    let mut read_pending = false;
 
     loop {
-        if let Some(streams) = con.xread_options(
+        // Alternate between reading pending messages ("0") and new messages (">")
+        // This ensures we don't miss messages that were delivered but not ACKed
+        let stream_id = if read_pending { "0" } else { ">" };
+        read_pending = !read_pending;
+
+        if let Ok(Some(streams)) = AsyncTypedCommands::xread_options(
+            &mut con,
             &["moxnotify:notify"],
-            &[">"],
+            &[stream_id],
             &StreamReadOptions::default()
                 .group("indexer-group", "indexer-1")
-                .block(0),
-        )? && let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify")
+                .block(if stream_id == ">" { 100 } else { 0 }), // Block only when reading new messages
+        )
+        .await
         {
-            stream_key.ids.iter().for_each(|stream_id| {
-                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification") {
+            if let Some(stream_key) = streams.keys.iter().find(|sk| sk.key == "moxnotify:notify") {
+                for stream_id in stream_key.ids.iter() {
+                    if let Some(redis::Value::BulkString(json)) = stream_id.map.get("notification")
+                    {
                         let notification =
                             serde_json::from_str::<NewNotification>(str::from_utf8(json).unwrap())
                                 .unwrap();
@@ -119,11 +129,24 @@ async fn main() -> anyhow::Result<()> {
 
                         index_writer.add_document(doc).unwrap();
 
-                        con.xack("moxnotify:notify", "indexer-group", &[stream_id.id.as_str()])
-                            .unwrap();
                         index_writer.commit().unwrap();
                     }
-                });
+
+                    if let Err(e) = AsyncTypedCommands::xack(
+                        &mut con,
+                        "moxnotify:notify",
+                        "indexer-group",
+                        &[stream_id.id.as_str()],
+                    )
+                    .await
+                    {
+                        log::error!("Failed to ACK message: {}", e);
+                    }
+                }
+            }
+        } else if stream_id == ">" {
+            // No new messages available, yield to avoid busy-waiting
+            tokio::task::yield_now().await;
         }
     }
 }

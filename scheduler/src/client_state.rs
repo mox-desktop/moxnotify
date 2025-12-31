@@ -1,4 +1,4 @@
-use redis::Commands;
+use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -25,11 +25,11 @@ impl Default for ClientState {
 }
 
 pub struct ClientStateManager {
-    redis_con: Arc<Mutex<redis::Connection>>,
+    redis_con: Arc<Mutex<redis::aio::MultiplexedConnection>>,
 }
 
 impl ClientStateManager {
-    pub fn new(redis_con: redis::Connection) -> Self {
+    pub fn new(redis_con: redis::aio::MultiplexedConnection) -> Self {
         Self {
             redis_con: Arc::new(Mutex::new(redis_con)),
         }
@@ -43,7 +43,7 @@ impl ClientStateManager {
         let mut con = self.redis_con.lock().await;
         let key = Self::client_key(client_id);
 
-        match con.hgetall::<&str, HashMap<String, String>>(&key) {
+        match con.hgetall::<&str>(&key).await {
             Ok(hash_data) => {
                 if hash_data.is_empty() {
                     log::debug!(
@@ -113,31 +113,35 @@ impl ClientStateManager {
         let mut success = true;
 
         if let Some(selected_id) = state.selected_id {
-            if let Err(e) =
-                con.hset::<&str, &str, &str, usize>(&key, "selected_id", &selected_id.to_string())
+            if let Err(e) = con
+                .hset::<&str, &str, &str>(&key, "selected_id", &selected_id.to_string())
+                .await
             {
                 log::warn!("Failed to save selected_id for client {}: {}", client_id, e);
                 success = false;
             }
         } else {
             // Remove selected_id if None
-            let _ = con.hdel::<&str, &str, usize>(&key, "selected_id");
+            let _ = con.hdel::<&str, &str>(&key, "selected_id").await;
         }
 
-        if let Err(e) =
-            con.hset::<&str, &str, &str, usize>(&key, "range_start", &state.range_start.to_string())
+        if let Err(e) = con
+            .hset::<&str, &str, &str>(&key, "range_start", &state.range_start.to_string())
+            .await
         {
             log::warn!("Failed to save range_start for client {}: {}", client_id, e);
             success = false;
         }
-        if let Err(e) =
-            con.hset::<&str, &str, &str, usize>(&key, "range_end", &state.range_end.to_string())
+        if let Err(e) = con
+            .hset::<&str, &str, &str>(&key, "range_end", &state.range_end.to_string())
+            .await
         {
             log::warn!("Failed to save range_end for client {}: {}", client_id, e);
             success = false;
         }
-        if let Err(e) =
-            con.hset::<&str, &str, &str, usize>(&key, "max_visible", &state.max_visible.to_string())
+        if let Err(e) = con
+            .hset::<&str, &str, &str>(&key, "max_visible", &state.max_visible.to_string())
+            .await
         {
             log::warn!("Failed to save max_visible for client {}: {}", client_id, e);
             success = false;
@@ -145,8 +149,9 @@ impl ClientStateManager {
 
         let prev_visible_ids_json =
             serde_json::to_string(&state.prev_visible_ids).unwrap_or_else(|_| "[]".to_string());
-        if let Err(e) =
-            con.hset::<&str, &str, &str, usize>(&key, "prev_visible_ids", &prev_visible_ids_json)
+        if let Err(e) = con
+            .hset::<&str, &str, &str>(&key, "prev_visible_ids", &prev_visible_ids_json)
+            .await
         {
             log::warn!(
                 "Failed to save prev_visible_ids for client {}: {}",
@@ -158,7 +163,7 @@ impl ClientStateManager {
 
         if success {
             // Set TTL of 1 hour for client state (auto-cleanup if client disconnects)
-            let _ = con.expire::<&str, usize>(&key, 3600);
+            let _ = con.expire::<&str>(&key, 3600).await;
             log::debug!("Saved state for client {}", client_id);
         }
     }
@@ -167,7 +172,7 @@ impl ClientStateManager {
         let mut con = self.redis_con.lock().await;
         let key = Self::client_key(client_id);
 
-        match con.del::<&str, usize>(&key) {
+        match con.del::<&str>(&key).await {
             Ok(_) => {
                 log::debug!("Deleted state for client {}", client_id);
             }
@@ -177,5 +182,3 @@ impl ClientStateManager {
         }
     }
 }
-
-use std::collections::HashMap;

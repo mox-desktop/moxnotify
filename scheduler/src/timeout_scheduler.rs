@@ -1,4 +1,4 @@
-use redis::Commands;
+use redis::AsyncTypedCommands;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{
@@ -17,12 +17,12 @@ const POP_EXPIRED_TIMERS_SCRIPT: &str = r#"
 
 pub struct TimeoutScheduler {
     sender: broadcast::Sender<(u32, String)>,
-    redis_con: Arc<Mutex<redis::Connection>>,
+    redis_con: Arc<Mutex<redis::aio::MultiplexedConnection>>,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl TimeoutScheduler {
-    pub fn new(redis_con: redis::Connection) -> Self {
+    pub fn new(redis_con: redis::aio::MultiplexedConnection) -> Self {
         let (sender, _) = broadcast::channel(32);
         let (global_pause, _) = watch::channel(false);
         let redis_con = Arc::new(Mutex::new(redis_con));
@@ -67,7 +67,7 @@ impl TimeoutScheduler {
     }
 
     async fn process_expired_timers(
-        redis_con: &Arc<Mutex<redis::Connection>>,
+        redis_con: &Arc<Mutex<redis::aio::MultiplexedConnection>>,
         sender: &broadcast::Sender<(u32, String)>,
         pop_script: &redis::Script,
     ) {
@@ -78,18 +78,12 @@ impl TimeoutScheduler {
 
         let mut con = redis_con.lock().await;
 
-        let expired_timers: Result<Vec<String>, _> = pop_script
+        let expired_timers: Vec<String> = pop_script
             .key("moxnotify:timers")
             .arg(now_ms)
-            .invoke(&mut *con);
-
-        let expired_timers = match expired_timers {
-            Ok(timers) => timers,
-            Err(e) => {
-                log::error!("Failed to pop expired timers from Redis: {}", e);
-                return;
-            }
-        };
+            .invoke_async::<Vec<String>>(&mut *con)
+            .await
+            .unwrap();
 
         if expired_timers.is_empty() {
             return;
@@ -100,17 +94,18 @@ impl TimeoutScheduler {
         for timer_id_str in expired_timers {
             if let Ok(id) = timer_id_str.parse::<u32>() {
                 let timer_key = format!("moxnotify:timer:{}", id);
-                let uuid: Option<String> = match con.hget(&timer_key, "uuid") {
-                    Ok(uuid) => uuid,
-                    Err(e) => {
-                        log::warn!("Failed to get UUID for timer {}: {}", id, e);
-                        let _ = con.del::<_, ()>(&timer_key);
-                        continue;
-                    }
-                };
+                let uuid: Option<String> =
+                    match AsyncTypedCommands::hget(&mut *con, &timer_key, "uuid").await {
+                        Ok(uuid) => uuid,
+                        Err(e) => {
+                            log::warn!("Failed to get UUID for timer {}: {}", id, e);
+                            let _ = AsyncTypedCommands::del::<&str>(&mut *con, &timer_key).await;
+                            continue;
+                        }
+                    };
 
                 if let Some(uuid) = uuid {
-                    let _ = con.del::<_, ()>(&timer_key);
+                    let _ = AsyncTypedCommands::del::<&str>(&mut *con, &timer_key).await;
 
                     if let Err(e) = sender.send((id, uuid)) {
                         log::warn!("Failed to send timer expiration event: {}", e);
@@ -135,27 +130,30 @@ impl TimeoutScheduler {
         let timer_id_str = id.to_string();
         let timer_key = format!("moxnotify:timer:{}", id);
 
-        let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
-        let _ = con.del::<_, ()>(&timer_key);
+        let _: Result<usize, _> =
+            AsyncTypedCommands::zrem(&mut *con, "moxnotify:timers", &timer_id_str).await;
+        let _ = AsyncTypedCommands::del::<&str>(&mut *con, &timer_key).await;
 
-        let zadd_result: Result<usize, _> = redis::cmd("ZADD")
-            .arg("moxnotify:timers")
-            .arg(expiration_ms)
-            .arg(&timer_id_str)
-            .query(&mut *con);
+        let zadd_result: Result<usize, _> =
+            AsyncTypedCommands::zadd(&mut *con, "moxnotify:timers", &timer_id_str, expiration_ms)
+                .await;
 
         if let Err(e) = zadd_result {
             log::error!("Failed to add timer {} to Redis: {}", id, e);
             return;
         }
 
-        if let Err(e) = con.hset_multiple::<_, _, _, ()>(
+        if let Err(e) = AsyncTypedCommands::hset_multiple::<&str, &str, String>(
+            &mut *con,
             &timer_key,
             &[("id", id.to_string()), ("uuid", uuid.clone())],
-        ) {
+        )
+        .await
+        {
             log::error!("Failed to store timer metadata for {}: {}", id, e);
             // Clean up the timer entry if metadata storage failed
-            let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
+            let _: Result<usize, _> =
+                AsyncTypedCommands::zrem(&mut *con, "moxnotify:timers", &timer_id_str).await;
             return;
         }
 
@@ -175,8 +173,9 @@ impl TimeoutScheduler {
         let timer_id_str = id.to_string();
         let timer_key = format!("moxnotify:timer:{}", id);
 
-        let _: Result<usize, _> = con.zrem("moxnotify:timers", &timer_id_str);
-        let _ = con.del::<_, ()>(&timer_key);
+        let _: Result<usize, _> =
+            AsyncTypedCommands::zrem(&mut *con, "moxnotify:timers", &timer_id_str).await;
+        let _ = AsyncTypedCommands::del::<&str>(&mut *con, &timer_key).await;
 
         log::debug!("Stopped timer for notification {}", id);
     }

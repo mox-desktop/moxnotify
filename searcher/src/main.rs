@@ -173,10 +173,13 @@ async fn search(
             sort_by,
             sort_order
         );
-        match searcher.search(
+
+        let res = searcher.search(
             &query,
             &TopDocs::with_limit(limit).order_by_u64_field(sort_by, sort_order),
-        ) {
+        );
+
+        match res {
             Ok(results) => results.into_iter().map(|(_, addr)| addr).collect(),
             Err(e) => {
                 log::error!("Search failed: {}", e);
@@ -198,21 +201,9 @@ async fn search(
 
     let docs: Vec<serde_json::Value> = top_docs
         .into_iter()
-        .filter_map(|doc_addr| match searcher.doc::<TantivyDocument>(doc_addr) {
-            Ok(tantivy_doc) => {
-                match serde_json::from_str::<serde_json::Value>(&tantivy_doc.to_json(&state.schema))
-                {
-                    Ok(json_value) => Some(json_value),
-                    Err(e) => {
-                        log::warn!("Failed to serialize document: {}", e);
-                        None
-                    }
-                }
-            }
-            Err(e) => {
-                log::warn!("Failed to retrieve document: {}", e);
-                None
-            }
+        .filter_map(|doc_addr| {
+            let doc = searcher.doc::<TantivyDocument>(doc_addr).unwrap();
+            serde_json::from_str::<serde_json::Value>(&doc.to_json(&state.schema)).ok()
         })
         .collect();
 

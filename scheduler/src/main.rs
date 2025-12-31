@@ -23,7 +23,7 @@ use moxnotify::client::{
     ViewportNavigationRequest, ViewportNavigationResponse,
 };
 use moxnotify::types::{CloseNotification, CloseReason, NewNotification, NotificationClosed};
-use redis::TypedCommands;
+use redis::AsyncTypedCommands;
 use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
 use std::pin::Pin;
@@ -36,19 +36,24 @@ use view_range::ViewRange;
 #[derive(Clone)]
 struct Scheduler {
     timeouts: Arc<TimeoutScheduler>,
-    redis_con: Arc<Mutex<redis::Connection>>,
+    redis_con: Arc<Mutex<redis::aio::MultiplexedConnection>>,
     redis_client: redis::Client,
     state_manager: Arc<ClientStateManager>,
 }
 
 impl Scheduler {
-    fn new(redis_con: redis::Connection, redis_client: redis::Client) -> Self {
+    async fn new(
+        redis_con: redis::aio::MultiplexedConnection,
+        redis_client: redis::Client,
+    ) -> Self {
         let timeout_redis_con = redis_client
-            .get_connection()
+            .get_multiplexed_async_connection()
+            .await
             .expect("Failed to get Redis connection for timeout scheduler");
 
         let state_redis_con = redis_client
-            .get_connection()
+            .get_multiplexed_async_connection()
+            .await
             .expect("Failed to get Redis connection for state manager");
 
         Self {
@@ -62,7 +67,10 @@ impl Scheduler {
     async fn get_active_notifications(&self) -> HashMap<u32, NewNotification> {
         let mut con = self.redis_con.lock().await;
 
-        let hash_data: HashMap<String, String> = con.hgetall("moxnotify:active").unwrap();
+        let hash_data: HashMap<String, String> =
+            AsyncTypedCommands::hgetall(&mut *con, "moxnotify:active")
+                .await
+                .unwrap();
 
         let mut active_notifications = HashMap::new();
         for (id_str, json) in hash_data {
@@ -251,109 +259,93 @@ impl ClientService for Scheduler {
 
                 loop {
                     tokio::select! {
-                        notification = notification_rx.recv() => {
-                            match notification {
-                                Some(notification) => {
-                                    let active_count = {
-                                        let mut redis_con = redis_con.lock().await;
-                                        let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
-                                        hash_data.len()
-                                    };
+                        Some(notification) = notification_rx.recv() => {
+                            let active_count = {
+                                let mut redis_con = redis_con.lock().await;
+                                let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").await.unwrap_or_default();
+                                hash_data.len()
+                            };
 
-                                    view_range.show_tail(active_count);
-                                    log::debug!("notify, range: {}", view_range);
+                            view_range.show_tail(active_count);
+                            log::debug!("notify, range: {}", view_range);
 
-                                    let active_notifications = scheduler.get_active_notifications().await;
-                                    let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
-                                    notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-                                    let focused_ids: Vec<u32> = notifications_vec
-                                        .iter()
-                                        .skip(view_range.start())
-                                        .take(view_range.width())
-                                        .map(|n| n.id)
-                                        .collect();
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(view_range.start())
+                                .take(view_range.width())
+                                .map(|n| n.id)
+                                .collect();
 
-                                    scheduler.start_timers_for_newly_visible(
-                                        &notifications_vec,
-                                        &focused_ids,
-                                        &mut local_prev_visible_ids,
-                                    ).await;
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                                &mut local_prev_visible_ids,
+                            ).await;
 
-                                    let state = ClientState {
-                                        selected_id: local_selected_id,
-                                        range_start: view_range.start(),
-                                        range_end: view_range.end(),
-                                        max_visible: view_range.max_visible(),
-                                        prev_visible_ids: local_prev_visible_ids.clone(),
-                                    };
-                                    state_manager.save_state(&client_id_clone, &state).await;
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
 
-                                    let message = NotificationMessage {
-                                        message: Some(notification_message::Message::Notification(notification))
-                                    };
+                            let message = NotificationMessage {
+                                message: Some(notification_message::Message::Notification(notification))
+                            };
 
-                                    if tx.send(Ok(message)).await.is_err() {
-                                        log::info!("Client disconnected: {:?}", remote_addr);
-                                        break;
-                                    }
-                                }
-                                None => {
-                                    log::info!("Notification Pub/Sub channel closed for client: {:?}", remote_addr);
-                                    break;
-                                }
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
                             }
                         }
-                        close_notification = close_notification_rx.recv() => {
-                            match close_notification {
-                                Some(close_notification) => {
-                                    let message = NotificationMessage {
-                                        message: Some(notification_message::Message::CloseNotification(close_notification))
-                                    };
+                        Some(close_notification) = close_notification_rx.recv() => {
+                            let message = NotificationMessage {
+                                message: Some(notification_message::Message::CloseNotification(close_notification))
+                            };
 
-                                    if tx.send(Ok(message)).await.is_err() {
-                                        log::info!("Client disconnected: {:?}", remote_addr);
-                                        break;
-                                    }
-
-                                    let mut redis_con = redis_con.lock().await;
-                                    let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
-                                    let remaining_count = hash_data.len();
-                                    drop(redis_con);
-
-                                    view_range.show_tail(remaining_count);
-
-                                    let active_notifications = scheduler.get_active_notifications().await;
-                                    let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
-                                    notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-
-                                    let focused_ids: Vec<u32> = notifications_vec
-                                        .iter()
-                                        .skip(view_range.start())
-                                        .take(view_range.width())
-                                        .map(|n| n.id)
-                                        .collect();
-
-                                    scheduler.start_timers_for_newly_visible(
-                                        &notifications_vec,
-                                        &focused_ids,
-                                        &mut local_prev_visible_ids,
-                                    ).await;
-
-                                    let state = ClientState {
-                                        selected_id: local_selected_id,
-                                        range_start: view_range.start(),
-                                        range_end: view_range.end(),
-                                        max_visible: view_range.max_visible(),
-                                        prev_visible_ids: local_prev_visible_ids.clone(),
-                                    };
-                                    state_manager.save_state(&client_id_clone, &state).await;
-                                }
-                                None => {
-                                    log::info!("CloseNotification Pub/Sub channel closed for client: {:?}", remote_addr);
-                                    break;
-                                }
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
                             }
+
+                            let mut redis_con = redis_con.lock().await;
+                            let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").await.unwrap_or_default();
+                            let remaining_count = hash_data.len();
+                            drop(redis_con);
+
+                            view_range.show_tail(remaining_count);
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(view_range.start())
+                                .take(view_range.width())
+                                .map(|n| n.id)
+                                .collect();
+
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                                &mut local_prev_visible_ids,
+                            ).await;
+
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
                         }
                         Ok((id, uuid)) = receiver.recv() => {
                             let message = NotificationMessage {
@@ -388,19 +380,22 @@ impl ClientService for Scheduler {
                             };
 
                             let json = serde_json::to_string(&closed).unwrap();
-                            if let Err(e) = redis_con.xadd(
+                            if let Err(e) = AsyncTypedCommands::xadd(
+                                &mut *redis_con,
                                 "moxnotify:notification_closed",
                                 "*",
                                 &[("notification", json.as_str())],
-                            ) {
+                            )
+                            .await
+                            {
                                 log::error!("Failed to write notification_closed to Redis: {}", e);
                             }
 
-                            if let Err(e) = redis_con.hdel("moxnotify:active", id.to_string().as_str()) {
+                            if let Err(e) = AsyncTypedCommands::hdel(&mut *redis_con, "moxnotify:active", id.to_string().as_str()).await {
                                 log::warn!("Failed to remove notification from active HASH: {}", e);
                             }
 
-                            let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").unwrap_or_default();
+                            let hash_data: HashMap<String, String> = AsyncTypedCommands::hgetall(&mut *redis_con, "moxnotify:active").await.unwrap_or_default();
                             let remaining_count = hash_data.len();
                             drop(redis_con);
 
@@ -433,6 +428,7 @@ impl ClientService for Scheduler {
                             };
                             state_manager.save_state(&client_id_clone, &state).await;
                         }
+                        else => {}
                     }
                 }
 
@@ -507,16 +503,21 @@ impl ClientService for Scheduler {
 
         let mut con = self.redis_con.lock().await;
         let json = serde_json::to_string(&closed).unwrap();
-        if let Err(e) = con.xadd(
+        if let Err(e) = AsyncTypedCommands::xadd(
+            &mut *con,
             "moxnotify:notification_closed",
             "*",
             &[("notification", json.as_str())],
-        ) {
+        )
+        .await
+        {
             log::error!("Failed to write notification_closed to Redis: {}", e);
         }
 
         let id_str = closed.id.to_string();
-        if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+        if let Err(e) =
+            AsyncTypedCommands::hdel(&mut *con, "moxnotify:active", id_str.as_str()).await
+        {
             log::warn!("Failed to remove notification from active HASH: {}", e);
         }
         drop(con);
@@ -566,11 +567,14 @@ impl ClientService for Scheduler {
 
         let mut con = self.redis_con.lock().await;
         let json = serde_json::to_string(&invoked).unwrap();
-        if let Err(e) = con.xadd(
+        if let Err(e) = AsyncTypedCommands::xadd(
+            &mut *con,
             "moxnotify:action_invoked",
             "*",
             &[("action", json.as_str())],
-        ) {
+        )
+        .await
+        {
             log::error!("Failed to write action_invoked to Redis: {}", e);
         }
 
@@ -807,9 +811,9 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Connecting to Redis and subscribing to notifications...");
 
     let client = redis::Client::open(&*config.redis.address)?;
-    let write_con = client.get_connection()?;
-    let read_con = client.get_connection()?;
-    let scheduler = Scheduler::new(write_con, client.clone());
+    let write_con = client.get_multiplexed_async_connection().await?;
+    let read_con = client.get_multiplexed_async_connection().await?;
+    let scheduler = Scheduler::new(write_con, client.clone()).await;
     let timeouts = Arc::clone(&scheduler.timeouts);
 
     let server_addr = config.scheduler.address.parse()?;
@@ -826,17 +830,20 @@ async fn main() -> anyhow::Result<()> {
 
     let mut con = read_con;
     loop {
-        if let Some(streams) = con.xread_options(
+        if let Ok(Some(streams)) = AsyncTypedCommands::xread_options(
+            &mut con,
             &["moxnotify:notify", "moxnotify:close_notification"],
             &[">", ">"],
             &StreamReadOptions::default()
                 .group("scheduler-group", "scheduler-1")
                 .block(0),
-        )? {
+        )
+        .await
+        {
             for stream_key in &streams.keys {
-                match stream_key.key.as_str() {
-                    "moxnotify:notify" => {
-                        for stream_id in &stream_key.ids {
+                for stream_id in &stream_key.ids {
+                    match stream_key.key.as_str() {
+                        "moxnotify:notify" => {
                             if let Some(redis::Value::BulkString(json)) =
                                 stream_id.map.get("notification")
                             {
@@ -852,29 +859,23 @@ async fn main() -> anyhow::Result<()> {
                                 );
 
                                 let json = serde_json::to_string(&notification).unwrap();
-                                if let Err(e) = con
-                                    .publish::<&str, &str>("moxnotify:pubsub:notification", &json)
+
+                                if let Err(e) = redis::AsyncCommands::publish::<&str, &str, usize>(
+                                    &mut con,
+                                    "moxnotify:pubsub:notification",
+                                    &json,
+                                )
+                                .await
                                 {
                                     log::error!(
                                         "Failed to publish notification to Redis Pub/Sub: {}",
                                         e
                                     );
-                                } else {
-                                    log::debug!("Published notification to Redis Pub/Sub");
-                                }
-
-                                if let Err(e) = con.xack(
-                                    "moxnotify:notify",
-                                    "scheduler-group",
-                                    &[stream_id.id.as_str()],
-                                ) {
-                                    log::error!("Failed to ACK message: {}", e);
+                                    continue;
                                 }
                             }
                         }
-                    }
-                    "moxnotify:close_notification" => {
-                        for stream_id in &stream_key.ids {
+                        "moxnotify:close_notification" => {
                             if let Some(redis::Value::BulkString(json)) =
                                 stream_id.map.get("close_notification")
                             {
@@ -894,7 +895,8 @@ async fn main() -> anyhow::Result<()> {
                                 });
 
                                 let id_str = close_notification.id.to_string();
-                                if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()) {
+                                if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()).await
+                                {
                                     log::warn!(
                                         "Failed to remove notification from active HASH: {}",
                                         e
@@ -902,30 +904,33 @@ async fn main() -> anyhow::Result<()> {
                                 }
 
                                 let json = serde_json::to_string(&close_notification).unwrap();
-                                if let Err(e) = con.publish::<&str, &str>(
-                                    "moxnotify:pubsub:close_notification",
-                                    &json,
-                                ) {
+                                if let Err(e) = con
+                                    .publish::<&str, &str>(
+                                        "moxnotify:pubsub:close_notification",
+                                        &json,
+                                    )
+                                    .await
+                                {
                                     log::error!(
                                         "Failed to publish close_notification to Redis Pub/Sub: {}",
                                         e
                                     );
-                                } else {
-                                    log::debug!("Published close_notification to Redis Pub/Sub");
-                                }
-
-                                if let Err(e) = con.xack(
-                                    "moxnotify:close_notification",
-                                    "scheduler-group",
-                                    &[stream_id.id.as_str()],
-                                ) {
-                                    log::error!("Failed to ACK message: {e}");
+                                    continue;
                                 }
                             }
                         }
+                        _ => unreachable!(),
                     }
-                    _ => {
-                        log::warn!("Received message from unknown stream: {}", stream_key.key);
+
+                    if let Err(e) = AsyncTypedCommands::xack(
+                        &mut con,
+                        stream_key.key.as_str(),
+                        "scheduler-group",
+                        &[stream_id.id.as_str()],
+                    )
+                    .await
+                    {
+                        log::error!("Failed to ACK message: {}", e);
                     }
                 }
             }

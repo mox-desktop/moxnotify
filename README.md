@@ -15,7 +15,6 @@ https://github.com/user-attachments/assets/1996d46c-85cc-4d47-bcf1-5088a58d2192
 - Fully implements [FreeDesktop Notifications Specification](https://specifications.freedesktop.org/notification-spec/latest/)
 - Hardware accelerated
 - Notification sound support
-- Notification history
 
 ## Configuration
 
