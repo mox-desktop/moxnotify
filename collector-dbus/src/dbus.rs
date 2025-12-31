@@ -5,13 +5,9 @@ use crate::moxnotify::types::{
 };
 use crate::{EmitEvent, Event};
 use chrono::offset::Local;
-#[cfg(not(debug_assertions))]
-use futures_lite::stream::StreamExt;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-#[cfg(not(debug_assertions))]
-use zbus::fdo::DBusProxy;
 use zbus::{fdo::RequestNameFlags, object_server::SignalEmitter, zvariant::Str};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -276,12 +272,7 @@ pub async fn serve(
     if let Err(e) = conn
         .request_name_with_flags(
             "org.freedesktop.Notifications",
-            // If in release mode, exit if well-known name is already taken
-            #[cfg(not(debug_assertions))]
-            (RequestNameFlags::DoNotQueue | RequestNameFlags::AllowReplacement),
-            // If in debug profile, replace already existing daemon
-            #[cfg(debug_assertions)]
-            RequestNameFlags::ReplaceExisting.into(),
+            RequestNameFlags::DoNotQueue.into(),
         )
         .await
     {
@@ -294,74 +285,58 @@ pub async fn serve(
         .interface::<_, NotificationsImpl>("/org/freedesktop/Notifications")
         .await?;
 
-    #[cfg(not(debug_assertions))]
-    let acquired_stream = DBusProxy::new(&conn).await?.receive_name_lost().await?;
-    #[cfg(not(debug_assertions))]
-    tokio::spawn(async move {
-        let mut acquired_stream = acquired_stream;
-        if acquired_stream.next().await.is_some() {
-            log::info!("Request to ReplaceExisting on org.freedesktop.Notification received");
-            std::process::exit(0);
-        }
-    });
+    loop {
+        match emit_receiver.recv().await {
+            Ok(EmitEvent::ActionInvoked(action)) => {
+                log::info!(
+                    "{} action invoked for notification with ID: {}.",
+                    action.action_key,
+                    action.id
+                );
 
-    tokio::spawn(async move {
-        let uuid = uuid;
-        loop {
-            match emit_receiver.recv().await {
-                Ok(EmitEvent::ActionInvoked(action)) => {
+                _ = NotificationsImpl::activation_token(
+                    iface.signal_emitter(),
+                    action.id,
+                    &action.token,
+                )
+                .await;
+
+                _ = NotificationsImpl::action_invoked(
+                    iface.signal_emitter(),
+                    action.id,
+                    &action.action_key,
+                )
+                .await;
+            }
+            Ok(EmitEvent::NotificationClosed(closed)) => {
+                let reason = match closed.reason() {
+                    CloseReason::ReasonExpired => 1,
+                    CloseReason::ReasonDismissedByUser => 2,
+                    CloseReason::ReasonCloseNotificationCall => 3,
+                    CloseReason::ReasonUnknown => 4,
+                };
+
+                if closed.uuid == uuid {
                     log::info!(
-                        "{} action invoked for notification with ID: {}.",
-                        action.action_key,
-                        action.id
+                        "Notification with ID: {} was closed. Reason: {:?}",
+                        closed.id,
+                        closed.reason()
                     );
 
-                    _ = NotificationsImpl::activation_token(
+                    _ = NotificationsImpl::notification_closed(
                         iface.signal_emitter(),
-                        action.id,
-                        &action.token,
+                        closed.id,
+                        reason,
                     )
                     .await;
-
-                    _ = NotificationsImpl::action_invoked(
-                        iface.signal_emitter(),
-                        action.id,
-                        &action.action_key,
-                    )
-                    .await;
+                } else {
+                    log::debug!(
+                        "Notification with ID: {} was closed but uuid doesn't match, ignoring.",
+                        closed.id,
+                    );
                 }
-                Ok(EmitEvent::NotificationClosed(closed)) => {
-                    let reason = match closed.reason() {
-                        CloseReason::ReasonExpired => 1,
-                        CloseReason::ReasonDismissedByUser => 2,
-                        CloseReason::ReasonCloseNotificationCall => 3,
-                        CloseReason::ReasonUnknown => 4,
-                    };
-
-                    if closed.uuid == uuid {
-                        log::info!(
-                            "Notification with ID: {} was closed. Reason: {:?}",
-                            closed.id,
-                            closed.reason()
-                        );
-
-                        _ = NotificationsImpl::notification_closed(
-                            iface.signal_emitter(),
-                            closed.id,
-                            reason,
-                        )
-                        .await;
-                    } else {
-                        log::debug!(
-                            "Notification with ID: {} was closed but uuid doesn't match, ignoring.",
-                            closed.id,
-                        );
-                    }
-                }
-                _ => {}
             }
+            _ => {}
         }
-    });
-
-    Ok(())
+    }
 }

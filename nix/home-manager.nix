@@ -178,6 +178,15 @@ in
       };
     };
 
+    xdg.dataFile = lib.mkIf cfg.collector.enable {
+      "dbus-1/services/pl.mox.notify.service".text = ''
+        [D-BUS Service]
+        Name=org.freedesktop.Notifications
+        Exec=${cfg.package}/bin/moxnotify-collector
+        SystemdService=moxnotify-collector.service
+      '';
+    };
+
     systemd.user.services = {
       moxnotify-control-plane = lib.mkIf cfg.controlPlane.enable {
         Unit = {
@@ -190,6 +199,7 @@ in
           Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
+          RefuseManualStart = false;
         };
 
         Service = {
@@ -226,8 +236,6 @@ in
           ExecStart = "${cfg.package}/bin/moxnotify-collector";
           Restart = "on-failure";
         };
-
-        Install.WantedBy = [ "graphical-session.target" ];
       };
 
       moxnotify-scheduler = lib.mkIf cfg.scheduler.enable {
@@ -243,6 +251,7 @@ in
           Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
+          RefuseManualStart = false;
         };
 
         Service = {
@@ -261,7 +270,7 @@ in
             ]
             ++ [ "moxnotify-scheduler.service" ];
           Requires = [ "moxnotify-scheduler.service" ];
-          PartOf = [ "graphical-session.target" ];
+          RefuseManualStart = false;
         };
 
         Service = {
@@ -285,6 +294,7 @@ in
           Requires = lib.optionals cfg.valkey.enable [
             "moxnotify-valkey.service"
           ];
+          RefuseManualStart = false;
         };
 
         Service = {
@@ -295,7 +305,10 @@ in
       };
 
       moxnotify-valkey = lib.mkIf cfg.valkey.enable {
-        Unit.Description = "Moxnotify Redis";
+        Unit = {
+          Description = "Moxnotify Redis";
+          RefuseManualStart = false;
+        };
 
         Service = {
           Type = "simple";
@@ -308,6 +321,7 @@ in
         Unit = {
           Description = "Moxnotify Searcher - Notification search service";
           ConditionPathExists = "${config.xdg.dataHome}/moxnotify";
+          RefuseManualStart = false;
         };
 
         Service = {
@@ -320,8 +334,8 @@ in
       moxnotify-webui = lib.mkIf cfg.webui.enable {
         Unit = {
           Description = "Run moxnotify webui";
-          Wants = [ "graphical-session.target" ];
           After = [ "graphical-session.target" ];
+          RefuseManualStart = false;
         };
 
         Service = {
