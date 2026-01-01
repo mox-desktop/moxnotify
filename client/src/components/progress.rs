@@ -1,11 +1,14 @@
-use crate::Urgency;
+use config::client::Urgency;
 use crate::components;
 use crate::components::{Bounds, Component};
-use crate::config;
-use crate::config::border::BorderRadius;
-use crate::config::{Insets, Size};
+use config::client;
+use config::client::border::BorderRadius;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
+
+const PROGRESS_HEIGHT: f32 = 20.0;
+const PROGRESS_MARGIN_TOP: f32 = 10.0;
+const PROGRESS_BORDER_SIZE: f32 = 1.0;
 
 pub struct Progress {
     context: components::Context,
@@ -16,7 +19,7 @@ pub struct Progress {
 }
 
 impl Component for Progress {
-    type Style = config::Progress;
+    type Style = client::Progress;
 
     fn get_context(&self) -> &components::Context {
         &self.context
@@ -27,42 +30,18 @@ impl Component for Progress {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
-        let element_width = style.progress.width.resolve(self.width);
+        let element_width = self.width;
         let remaining_space = self.width - element_width;
 
-        let (resolved_ml, _) = match (
-            style.progress.margin.left.is_auto(),
-            style.progress.margin.right.is_auto(),
-        ) {
-            (true, true) => {
-                let margin = remaining_space / 2.0;
-                (margin, margin)
-            }
-            (true, false) => {
-                let mr = style.progress.margin.right.resolve(0.);
-                (remaining_space, mr)
-            }
-            _ => (
-                style.progress.margin.left.resolve(0.),
-                style.progress.margin.right.resolve(0.),
-            ),
-        };
+        let ml = remaining_space / 2.;
 
-        let x_position = self.x + resolved_ml;
+        let x_position = self.x + ml;
 
         Bounds {
             x: x_position,
             y: self.y,
             width: element_width,
-            height: style.progress.height
-                + style.progress.margin.top
-                + style.progress.margin.bottom,
+            height: PROGRESS_HEIGHT + PROGRESS_MARGIN_TOP,
         }
     }
 
@@ -74,36 +53,14 @@ impl Component for Progress {
     fn get_render_bounds(&self) -> Bounds {
         let bounds = self.get_bounds();
 
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
-
         let remaining_space = self.width - bounds.width;
-        let (margin_left, _) = match (
-            style.progress.margin.left.is_auto(),
-            style.progress.margin.right.is_auto(),
-        ) {
-            (true, true) => {
-                let margin = remaining_space / 2.0;
-                (margin, margin)
-            }
-            (true, false) => {
-                let mr = style.progress.margin.right.resolve(0.);
-                (remaining_space, mr)
-            }
-            _ => (
-                style.progress.margin.left.resolve(0.),
-                style.progress.margin.right.resolve(0.),
-            ),
-        };
+        let ml = remaining_space / 2.;
 
         Bounds {
-            x: bounds.x + margin_left,
-            y: bounds.y + style.progress.margin.top,
-            width: bounds.width - margin_left - style.progress.margin.right,
-            height: bounds.height - style.progress.margin.top - style.progress.margin.bottom,
+            x: bounds.x + ml,
+            y: bounds.y + PROGRESS_MARGIN_TOP,
+            width: bounds.width - ml,
+            height: bounds.height - PROGRESS_MARGIN_TOP,
         }
     }
 
@@ -123,12 +80,9 @@ impl Component for Progress {
 
         if complete_width > 0.0 {
             let border_size = if self.value < 100 {
-                Insets {
-                    right: Size::Value(0.),
-                    ..style.border.size
-                }
+                [PROGRESS_BORDER_SIZE, 0.0, PROGRESS_BORDER_SIZE, PROGRESS_BORDER_SIZE]
             } else {
-                style.border.size
+                [PROGRESS_BORDER_SIZE; 4]
             };
 
             let border_radius = if self.value < 100 {
@@ -146,7 +100,7 @@ impl Component for Progress {
                 rect_size: [complete_width, extents.height],
                 rect_color: style.complete_color.color(urgency),
                 border_radius: border_radius.into(),
-                border_size: border_size.into(),
+                border_size,
                 border_color: style.border.color.color(urgency),
                 scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                 depth: 0.8,
@@ -158,12 +112,9 @@ impl Component for Progress {
 
             if incomplete_width > 0.0 {
                 let border_size = if self.value > 0 {
-                    Insets {
-                        left: Size::Value(0.),
-                        ..style.border.size
-                    }
+                    [0.0, PROGRESS_BORDER_SIZE, PROGRESS_BORDER_SIZE, PROGRESS_BORDER_SIZE]
                 } else {
-                    style.border.size
+                    [PROGRESS_BORDER_SIZE; 4]
                 };
 
                 let border_radius = if self.value > 0 {
@@ -181,7 +132,7 @@ impl Component for Progress {
                     rect_size: [incomplete_width, extents.height],
                     rect_color: style.incomplete_color.color(urgency),
                     border_radius: border_radius.into(),
-                    border_size: border_size.into(),
+                    border_size,
                     border_color: style.border.color.color(urgency),
                     scale: self.get_ui_state().scale.load(Ordering::Relaxed),
                     depth: 0.8,

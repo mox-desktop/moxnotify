@@ -11,7 +11,6 @@ pub mod moxnotify {
 
 mod audio;
 pub mod components;
-mod config;
 mod dbus;
 mod grpc;
 mod input;
@@ -20,14 +19,14 @@ mod rendering;
 pub mod utils;
 mod wayland;
 
-use crate::config::keymaps;
 use crate::utils::wait;
 use audio::Audio;
 use calloop::EventLoop;
 use calloop_wayland_source::WaylandSource;
 use clap::Parser;
 use components::notification::NotificationId;
-use config::Config;
+use config::client::ClientConfig as Config;
+use config::client::keymaps;
 use glyphon::FontSystem;
 use input::Seat;
 use manager::NotificationManager;
@@ -86,23 +85,18 @@ pub struct Moxnotify {
 }
 
 impl Moxnotify {
-    async fn new<T>(
+    async fn new(
         conn: &Connection,
         qh: QueueHandle<Moxnotify>,
         globals: GlobalList,
         loop_handle: calloop::LoopHandle<'static, Self>,
         emit_sender: broadcast::Sender<EmitEvent>,
         event_sender: calloop::channel::Sender<Event>,
-        config_path: Option<T>,
-    ) -> anyhow::Result<Self>
-    where
-        T: AsRef<Path>,
-    {
+        config: Arc<Config>,
+    ) -> anyhow::Result<Self> {
         let layer_shell = globals.bind(&qh, 1..=5, ())?;
         let compositor = globals.bind::<wl_compositor::WlCompositor, _, _>(&qh, 1..=6, ())?;
         let seat = Seat::new(&qh, &globals)?;
-
-        let config = Arc::new(Config::load(config_path)?);
 
         let wgpu_state = wgpu_state::WgpuState::new(conn).await?;
 
@@ -500,11 +494,12 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::new().filter("MOXNOTIFY_LOG"))
-        .filter_level(log::LevelFilter::Off)
-        .filter_module("client", log::LevelFilter::max())
-        .init();
     let cli = Cli::parse();
+
+    let config = config::Config::load(cli.config.as_ref().map(|p| p.as_ref()));
+    env_logger::Builder::new()
+        .filter(Some("client"), config.client.log_level.into())
+        .init();
 
     let conn = Connection::connect_to_env().expect("Failed to connect to Wayland");
     let (globals, event_queue) = registry_queue_init(&conn)?;
@@ -520,7 +515,7 @@ async fn main() -> anyhow::Result<()> {
         event_loop.handle(),
         emit_sender.clone(),
         event_sender.clone(),
-        cli.config,
+        Arc::new(config.client),
     )
     .await?;
 

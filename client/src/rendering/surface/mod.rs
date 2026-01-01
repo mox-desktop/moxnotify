@@ -1,12 +1,10 @@
 pub mod wgpu_surface;
 
-use crate::{
-    Moxnotify, Output,
-    config::{self, Anchor, Config},
-    manager::NotificationManager,
-    utils::buffers,
-    wgpu_state,
-};
+use crate::{Moxnotify, Output};
+use crate::manager::NotificationManager;
+use crate::utils::buffers;
+use crate::wgpu_state;
+use config::client::{Anchor, ClientConfig as Config, Layer};
 use glyphon::FontSystem;
 use moxui::viewport;
 use std::{
@@ -65,10 +63,10 @@ impl Surface {
             &wl_surface,
             output.map(|o| &o.wl_output),
             match config.general.layer {
-                config::Layer::Top => zwlr_layer_shell_v1::Layer::Top,
-                config::Layer::Background => zwlr_layer_shell_v1::Layer::Background,
-                config::Layer::Bottom => zwlr_layer_shell_v1::Layer::Bottom,
-                config::Layer::Overlay => zwlr_layer_shell_v1::Layer::Overlay,
+                Layer::Top => zwlr_layer_shell_v1::Layer::Top,
+                Layer::Background => zwlr_layer_shell_v1::Layer::Background,
+                Layer::Bottom => zwlr_layer_shell_v1::Layer::Bottom,
+                Layer::Overlay => zwlr_layer_shell_v1::Layer::Overlay,
             },
             "moxnotify".into(),
             qh,
@@ -104,11 +102,12 @@ impl Surface {
             }
             Anchor::CenterLeft => zwlr_layer_surface_v1::Anchor::Left,
         });
+        let margin = &config.general.margin;
         layer_surface.set_margin(
-            config.general.margin.top.resolve(0.) as i32,
-            config.general.margin.right.resolve(0.) as i32,
-            config.general.margin.bottom.resolve(0.) as i32,
-            config.general.margin.left.resolve(0.) as i32,
+            margin.top as i32,
+            margin.right as i32,
+            margin.bottom as i32,
+            margin.left as i32,
         );
         layer_surface.set_exclusive_zone(-1);
 

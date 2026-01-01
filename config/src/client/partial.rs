@@ -1,5 +1,4 @@
-use super::Size;
-use crate::config::color::{Color, parse_hex};
+use crate::client::color::{Color, parse_hex};
 use serde::{
     Deserialize, Deserializer,
     de::{self, MapAccess, Visitor},
@@ -9,16 +8,8 @@ use std::{fmt, str::FromStr, sync::Arc};
 #[derive(Deserialize, Default, Clone)]
 pub struct PartialStyle {
     pub background: Option<PartialColor>,
-    pub min_width: Option<Size>,
-    pub width: Option<Size>,
-    pub max_width: Option<Size>,
-    pub min_height: Option<Size>,
-    pub height: Option<Size>,
-    pub max_height: Option<Size>,
     pub font: Option<PartialFont>,
     pub border: Option<PartialBorder>,
-    pub margin: Option<PartialInsets>,
-    pub padding: Option<PartialInsets>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -103,14 +94,14 @@ pub struct PartialFont {
 
 #[derive(Default, Clone, Copy)]
 pub struct PartialInsets {
-    pub left: Option<Size>,
-    pub right: Option<Size>,
-    pub top: Option<Size>,
-    pub bottom: Option<Size>,
+    pub left: Option<f32>,
+    pub right: Option<f32>,
+    pub top: Option<f32>,
+    pub bottom: Option<f32>,
 }
 
 impl PartialInsets {
-    pub fn size(value: Size) -> Self {
+    pub fn size(value: f32) -> Self {
         Self {
             left: Some(value),
             right: Some(value),
@@ -139,7 +130,7 @@ impl<'de> Deserialize<'de> for PartialInsets {
                 E: serde::de::Error,
             {
                 if v == "auto" {
-                    Ok(PartialInsets::size(Size::Auto))
+                    Ok(PartialInsets::size(0.))
                 } else {
                     Err(serde::de::Error::invalid_value(
                         serde::de::Unexpected::Str(v),
@@ -149,23 +140,23 @@ impl<'de> Deserialize<'de> for PartialInsets {
             }
 
             fn visit_f32<E>(self, v: f32) -> Result<Self::Value, E> {
-                Ok(PartialInsets::size(Size::Value(v)))
+                Ok(PartialInsets::size(v))
             }
 
             fn visit_i32<E>(self, v: i32) -> Result<Self::Value, E> {
-                Ok(PartialInsets::size(Size::Value(v as f32)))
+                Ok(PartialInsets::size(v as f32))
             }
 
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> {
-                Ok(PartialInsets::size(Size::Value(v as f32)))
+                Ok(PartialInsets::size(v as f32))
             }
 
             fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E> {
-                Ok(PartialInsets::size(Size::Value(v as f32)))
+                Ok(PartialInsets::size(v as f32))
             }
 
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
-                Ok(PartialInsets::size(Size::Value(v as f32)))
+                Ok(PartialInsets::size(v as f32))
             }
 
             fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>

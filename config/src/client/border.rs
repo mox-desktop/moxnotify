@@ -1,5 +1,5 @@
 use super::{
-    Insets, Size,
+    Insets,
     color::Color,
     partial::{PartialBorder, PartialBorderRadius},
 };
@@ -29,10 +29,10 @@ impl Default for Border {
     fn default() -> Self {
         Self {
             size: Insets {
-                left: Size::Value(1.),
-                right: Size::Value(1.),
-                top: Size::Value(1.),
-                bottom: Size::Value(1.),
+                left: 1.,
+                right: 1.,
+                top: 1.,
+                bottom: 1.,
             },
             radius: BorderRadius::default(),
             color: Color {

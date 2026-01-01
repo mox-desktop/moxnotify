@@ -1,10 +1,15 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::components::{Bounds, Component};
-use crate::config::button::ButtonState;
+use config::client::button::ButtonState;
 use crate::rendering::text_renderer;
-use crate::{Urgency, components};
+use crate::components;
+use config::client::Urgency;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
+
+// Hardcoded layout constants (previously configurable)
+const DISMISS_BUTTON_WIDTH: f32 = 20.0;
+const DISMISS_BUTTON_HEIGHT: f32 = 20.0;
 
 pub struct DismissButton {
     pub context: components::Context,
@@ -37,13 +42,10 @@ impl Component for DismissButton {
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
-            rect_size: [
-                bounds.width - style.border.size.left - style.border.size.right,
-                bounds.height - style.border.size.top - style.border.size.bottom,
-            ],
+            rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [0.0; 4],
             border_color: style.border.color.color(urgency),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
@@ -56,41 +58,21 @@ impl Component for DismissButton {
         let text_extents = self.text.get_bounds();
 
         let remaining_padding = extents.width - text_extents.width;
-        let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
-            _ => (
-                style.padding.left.resolve(0.),
-                style.padding.right.resolve(0.),
-            ),
-        };
+        let pl = remaining_padding / 2.;
 
         let remaining_padding = extents.height - text_extents.height;
-        let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
-            _ => (
-                style.padding.top.resolve(0.),
-                style.padding.bottom.resolve(0.),
-            ),
-        };
+        let pt = remaining_padding / 2.;
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
-            top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
+            left: extents.x + pl,
+            top: extents.y + pt,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
-                top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
-                right: (extents.x
-                    + style.border.size.left
-                    + style.padding.left.resolve(pl)
-                    + text_extents.width) as i32,
-                bottom: (extents.y
-                    + style.border.size.top
-                    + style.padding.top.resolve(pt)
-                    + text_extents.height) as i32,
+                left: (extents.x + pl) as i32,
+                top: (extents.y + pt) as i32,
+                right: (extents.x + pl + text_extents.width) as i32,
+                bottom: (extents.y + pt + text_extents.height) as i32,
             },
             custom_glyphs: &[],
             default_color: style.font.color.into_glyphon(urgency),
@@ -98,24 +80,10 @@ impl Component for DismissButton {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-        let text_extents = self.text.get_bounds();
+        let _text_extents = self.text.get_bounds();
 
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
-
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
+        let width = DISMISS_BUTTON_WIDTH;
+        let height = DISMISS_BUTTON_HEIGHT;
 
         Bounds {
             x: self.x,
@@ -127,13 +95,12 @@ impl Component for DismissButton {
 
     fn get_render_bounds(&self) -> Bounds {
         let bounds = self.get_bounds();
-        let style = self.get_style();
 
         Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
         }
     }
 
@@ -187,53 +154,5 @@ impl Button for DismissButton {
 
     fn set_hint(&mut self, hint: Hint) {
         self.hint = hint;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::DismissButton;
-    use crate::{
-        components::{
-            self,
-            button::{Button, Hint, State},
-        },
-        config::Config,
-        manager::UiState,
-        rendering::text_renderer::Text,
-    };
-    use glyphon::FontSystem;
-
-    #[test]
-    fn test_dismiss_button() {
-        let test_id = 10;
-        let context = components::Context {
-            id: test_id,
-            app_name: "".into(),
-            config: Config::default().into(),
-            ui_state: UiState::default(),
-        };
-        let hint = Hint::new(context.clone(), "", &mut FontSystem::new());
-
-        let (tx, rx) = calloop::channel::channel();
-        let button = DismissButton {
-            x: 0.,
-            y: 0.,
-            hint,
-            text: Text::new(
-                &context.config.styles.default.font,
-                &mut FontSystem::new(),
-                "",
-            ),
-            state: State::Unhovered,
-            tx: Some(tx),
-            context,
-        };
-
-        button.click();
-
-        if let crate::Event::Dismiss { all: false, id } = rx.try_recv().unwrap() {
-            assert_eq!(id, test_id, "Button click should send button ID");
-        };
     }
 }

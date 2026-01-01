@@ -4,19 +4,20 @@ pub mod notification;
 pub mod progress;
 pub mod text;
 
-use crate::Urgency;
-use crate::config::{Config, StyleState};
+use config::client::Urgency;
+use config::client::{ClientConfig as Config, StyleState};
 use crate::manager::UiState;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Context {
     pub id: u32,
     pub app_name: String,
     pub config: Arc<Config>,
     pub ui_state: UiState,
+    pub urgency: Urgency,
 }
 
 pub enum Data<'a> {
@@ -55,11 +56,9 @@ pub trait Component {
     }
 
     fn get_notification_style(&self) -> &StyleState {
-        self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected.load(Ordering::Relaxed)
-                && self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id(),
-        )
+        let focused = self.get_ui_state().selected.load(Ordering::Relaxed)
+            && self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id();
+        self.get_config().find_style(self.get_context().urgency, focused)
     }
 
     fn get_style(&self) -> &Self::Style;

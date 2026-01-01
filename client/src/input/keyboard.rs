@@ -1,7 +1,7 @@
 use crate::CloseReason;
 use crate::Moxnotify;
-use crate::config::keymaps;
-use crate::config::keymaps::{Key, KeyAction, KeyWithModifiers, Keys, Modifiers};
+use config::client::keymaps;
+use config::client::keymaps::{KeyAction, KeyWithModifiers, Keys, Modifiers};
 use calloop::RegistrationToken;
 use calloop::timer::{TimeoutAction, Timer};
 use std::sync::atomic::Ordering;
@@ -25,7 +25,7 @@ pub struct Keyboard {
 
 #[derive(Default)]
 pub struct RepeatInfo {
-    pub key: Option<Key>,
+    pub key: Option<config::client::keymaps::Key>,
     rate: i32,
     delay: i32,
     registration_token: Option<RegistrationToken>,
@@ -133,7 +133,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                     wl_keyboard::KeyState::Released => {
                         state.seat.keyboard.repeat.key = None;
                         if let Some(xkb_state) = state.seat.keyboard.xkb.state.as_ref()
-                            && let Some(key) = Key::from_keycode(xkb_state, keycode.into())
+                            && let Some(key) = config::client::keymaps::Key::from_keycode(xkb_state, keycode.into())
                         {
                             let key_with_modifiers = KeyWithModifiers {
                                 key,
@@ -152,7 +152,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                     }
                     wl_keyboard::KeyState::Pressed => {
                         if let Some(xkb_state) = state.seat.keyboard.xkb.state.as_ref() {
-                            let key = Key::from_keycode(xkb_state, keycode.into());
+                            let key = config::client::keymaps::Key::from_keycode(xkb_state, keycode.into());
                             state.seat.keyboard.repeat.key = key;
                             if let Some(key) = key {
                                 let key_with_modifiers = KeyWithModifiers {
@@ -177,7 +177,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for Moxnotify {
                                     .loop_handle
                                     .insert_source(timer, move |_, (), moxnotify| {
                                         if let Some(key) = moxnotify.seat.keyboard.repeat.key {
-                                            let key_with_modifiers = KeyWithModifiers {
+                                            let key_with_modifiers = config::client::keymaps::KeyWithModifiers {
                                                 key,
                                                 modifiers: moxnotify.seat.keyboard.modifiers,
                                             };

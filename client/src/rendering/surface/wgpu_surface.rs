@@ -1,5 +1,5 @@
+use config::client::ClientConfig as Config;
 use crate::{
-    config::Config,
     rendering::text_renderer,
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,

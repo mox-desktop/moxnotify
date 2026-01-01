@@ -1,9 +1,11 @@
-pub mod loader;
+pub mod client;
 pub mod types;
 
-use loader::load_config;
+use client::ClientConfig;
 use serde::Deserialize;
+use std::path::PathBuf;
 use std::time::Duration;
+use tvix_serde::from_str;
 use types::{LogLevel, Timeout};
 
 #[derive(Deserialize, Default)]
@@ -21,6 +23,8 @@ pub struct Config {
     pub searcher: SearcherConfig,
     #[serde(default)]
     pub janitor: JanitorConfig,
+    #[serde(default)]
+    pub client: ClientConfig,
     #[serde(default)]
     pub redis: Redis,
 }
@@ -227,8 +231,54 @@ fn default_log_level() -> LogLevel {
     LogLevel::default()
 }
 
+pub fn xdg_config_dir() -> anyhow::Result<PathBuf> {
+    std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .map_err(Into::into)
+}
+
 impl Config {
     pub fn load(path: Option<&std::path::Path>) -> Self {
-        load_config(path)
+        let nix_code = if let Some(p) = path {
+            match std::fs::read_to_string(p) {
+                Ok(content) => content,
+                Err(e) => {
+                    log::error!("Failed to read config file: {e}");
+                    return Self::default();
+                }
+            }
+        } else {
+            match xdg_config_dir() {
+                Ok(base) => {
+                    let candidates = [
+                        base.join("mox/moxnotify/default.nix"),
+                        base.join("mox/moxnotify.nix"),
+                    ];
+                    match candidates
+                        .iter()
+                        .find_map(|p| std::fs::read_to_string(p).ok())
+                    {
+                        Some(content) => content,
+                        None => {
+                            log::warn!("Config file not found");
+                            return Self::default();
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to determine config directory: {e}");
+                    return Self::default();
+                }
+            }
+        };
+
+        match from_str(&nix_code) {
+            Ok(config) => config,
+            Err(e) => {
+                log::error!("{e}");
+                Self::default()
+            }
+        }
     }
 }

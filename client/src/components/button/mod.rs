@@ -3,16 +3,13 @@ mod anchor;
 mod dismiss;
 
 use super::text::body;
-use crate::Urgency;
-use crate::{
-    components::{self, Bounds, Component, Data},
-    config::{
-        self,
-        button::ButtonState,
-        keymaps::{self},
-    },
-    moxnotify::types::Action,
-    rendering::text_renderer,
+use config::client::Urgency;
+use crate::components::{self, Bounds, Component, Data};
+use crate::moxnotify::types::Action;
+use crate::rendering::text_renderer;
+use config::client::{
+    button::ButtonState,
+    keymaps::{self},
 };
 use action::ActionButton;
 use anchor::AnchorButton;
@@ -93,15 +90,12 @@ impl ButtonManager<NotReady> {
     }
 
     pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
-        let font = &self
-            .context
-            .config
-            .styles
-            .default
-            .buttons
-            .dismiss
-            .default
-            .font;
+        let urgency_styles = match self.context.urgency {
+            Urgency::Low => &self.context.config.styles.urgency_low,
+            Urgency::Normal => &self.context.config.styles.urgency_normal,
+            Urgency::Critical => &self.context.config.styles.urgency_critical,
+        };
+        let font = &urgency_styles.unfocused.buttons.dismiss.default.font;
         let text = text_renderer::Text::new(font, font_system, "X");
 
         let button = DismissButton {
@@ -319,14 +313,12 @@ impl<S> ButtonManager<S> {
             return self;
         }
 
-        let font = &self
-            .context
-            .config
-            .styles
-            .default
-            .buttons
-            .action
-            .default
+        let urgency_styles = match self.context.urgency {
+            Urgency::Low => &self.context.config.styles.urgency_low,
+            Urgency::Normal => &self.context.config.styles.urgency_normal,
+            Urgency::Critical => &self.context.config.styles.urgency_critical,
+        };
+        let font = &urgency_styles.unfocused.buttons.action.default
             .font;
 
         self.buttons.extend(anchors.iter().map(|anchor| {
@@ -360,15 +352,12 @@ impl<S> ButtonManager<S> {
             .iter()
             .cloned()
             .map(|action| {
-                let font = &self
-                    .context
-                    .config
-                    .styles
-                    .default
-                    .buttons
-                    .action
-                    .default
-                    .font;
+                let urgency_styles = match self.context.urgency {
+                    Urgency::Low => &self.context.config.styles.urgency_low,
+                    Urgency::Normal => &self.context.config.styles.urgency_normal,
+                    Urgency::Critical => &self.context.config.styles.urgency_critical,
+                };
+                let font = &urgency_styles.unfocused.buttons.action.default.font;
                 let text = text_renderer::Text::new(font, font_system, &action.label);
 
                 Box::new(ActionButton {
@@ -420,7 +409,7 @@ impl Hint {
         Self {
             combination: combination.as_ref().into(),
             text: text_renderer::Text::new(
-                &context.config.styles.default.font,
+                &context.config.styles.urgency_normal.unfocused.font,
                 font_system,
                 combination.as_ref(),
             ),
@@ -432,35 +421,33 @@ impl Hint {
 }
 
 impl Component for Hint {
-    type Style = config::Hint;
+    type Style = config::client::Hint;
 
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
     fn get_style(&self) -> &Self::Style {
-        &self.context.config.styles.hover.hint
+        let urgency_styles = match self.context.urgency {
+            Urgency::Low => &self.context.config.styles.urgency_low,
+            Urgency::Normal => &self.context.config.styles.urgency_normal,
+            Urgency::Critical => &self.context.config.styles.urgency_critical,
+        };
+        &urgency_styles.focused.hint
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-        let text_extents = self.text.get_bounds();
+        let _text_extents = self.text.get_bounds();
 
-        let width = style.width.resolve(text_extents.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
+        // Hardcoded hint layout constants
+        const HINT_WIDTH: f32 = 15.0;
+        const HINT_HEIGHT: f32 = 20.0;
+        const HINT_BORDER_SIZE: f32 = 0.0;
+        let width = HINT_WIDTH
+            + HINT_BORDER_SIZE * 2.0;
 
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
+        let height = HINT_HEIGHT
+            + HINT_BORDER_SIZE * 2.0;
 
         Bounds {
             x: self.x - width / 2.,
@@ -472,18 +459,21 @@ impl Component for Hint {
 
     fn get_render_bounds(&self) -> Bounds {
         let bounds = self.get_bounds();
-        let style = self.get_style();
-
         Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
         }
     }
 
     fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let style = &self.context.config.styles.hover.hint;
+        let urgency_styles = match self.context.urgency {
+            Urgency::Low => &self.context.config.styles.urgency_low,
+            Urgency::Normal => &self.context.config.styles.urgency_normal,
+            Urgency::Critical => &self.context.config.styles.urgency_critical,
+        };
+        let style = &urgency_styles.focused.hint;
         let bounds = self.get_render_bounds();
 
         vec![shape_renderer::ShapeInstance {
@@ -491,7 +481,7 @@ impl Component for Hint {
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [0.0; 4],
             border_color: style.border.color.color(urgency),
             scale: self.context.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.7,
@@ -508,35 +498,27 @@ impl Component for Hint {
         let text_extents = self.text.get_bounds();
         let bounds = self.get_render_bounds();
 
-        let remaining_padding = style.width.resolve(text_extents.width) - text_extents.width;
-        let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
-            _ => (
-                style.padding.left.resolve(0.),
-                style.padding.right.resolve(0.),
-            ),
-        };
-        let remaining_padding = style.height.resolve(text_extents.height) - text_extents.height;
-        let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
-            _ => (
-                style.padding.top.resolve(0.),
-                style.padding.bottom.resolve(0.),
-            ),
-        };
+        // Hardcoded hint layout constants
+        const HINT_WIDTH: f32 = 15.0;
+        const HINT_HEIGHT: f32 = 20.0;
+        let remaining_padding = HINT_WIDTH - text_extents.width;
+        let pl = remaining_padding / 2.0;
+        let _pr = remaining_padding / 2.0;
+
+        let remaining_padding = HINT_HEIGHT - text_extents.height;
+        let pt = remaining_padding / 2.0;
+        let _pb = remaining_padding / 2.0;
 
         vec![TextArea {
             buffer: &self.text.buffer,
-            left: bounds.x + style.padding.left.resolve(pl),
-            top: bounds.y + style.padding.top.resolve(pt),
+            left: bounds.x + pl,
+            top: bounds.y + pt,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (bounds.x + style.padding.left.resolve(pl)) as i32,
-                top: (bounds.y + style.padding.top.resolve(pt)) as i32,
-                right: (bounds.x + style.padding.left.resolve(pl) + bounds.width) as i32,
-                bottom: (bounds.y + style.padding.top.resolve(pt) + bounds.height) as i32,
+                left: (bounds.x + pl) as i32,
+                top: (bounds.y + pt) as i32,
+                right: (bounds.x + pl + bounds.width) as i32,
+                bottom: (bounds.y + pt + bounds.height) as i32,
             },
             default_color: style.font.color.into_glyphon(urgency),
             custom_glyphs: &[],
