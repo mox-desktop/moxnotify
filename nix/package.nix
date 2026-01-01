@@ -95,6 +95,7 @@ rustPlatform.buildRustPackage {
         "collector-dbus"
         "control_plane"
         "indexer"
+        "janitor"
         "proto"
         "scheduler"
         "searcher"
@@ -131,6 +132,7 @@ rustPlatform.buildRustPackage {
     install -Dm755 target/release/collector-dbus $out/bin/moxnotify-collector
     install -Dm755 target/release/control_plane $out/bin/moxnotify-control-plane
     install -Dm755 target/release/indexer $out/bin/moxnotify-indexer
+    install -Dm755 target/release/janitor $out/bin/moxnotify-janitor
     install -Dm755 target/release/scheduler $out/bin/moxnotify-scheduler
     install -Dm755 target/release/searcher $out/bin/moxnotify-searcher
     install -Dm755 target/release/ctl $out/bin/moxnotifyctl

@@ -14,4 +14,3 @@ zbus = { version = "5.12.0", default-features = false, features = ["tokio"] }
 anyhow = { version = "1.0.95", default-features = false }
 clap = { version = "4.5.27", features = ["derive"] }
 tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
-serde = { version = "1.0.219", default-features = false }

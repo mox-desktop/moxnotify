@@ -12,6 +12,7 @@ use tantivy::query::{BooleanQuery, Occur, QueryParser, RangeQuery};
 use tantivy::{
     DateTime, DocAddress, Index, IndexReader, Order, ReloadPolicy, Term, doc, schema::*,
 };
+use tower_http::cors::CorsLayer;
 
 fn path() -> PathBuf {
     let path = std::env::var("XDG_DATA_HOME")
@@ -74,6 +75,13 @@ async fn main() -> tantivy::Result<()> {
 
     let app = Router::new()
         .route("/api/search", post(search))
+        .layer(
+            CorsLayer::new()
+                .allow_origin(tower_http::cors::Any)
+                .allow_methods(tower_http::cors::Any)
+                .allow_headers(tower_http::cors::Any)
+                .allow_credentials(false)
+        )
         .with_state(state);
 
     log::info!("Starting searcher server on {}", config.searcher.address);

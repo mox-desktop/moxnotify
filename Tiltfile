@@ -45,6 +45,13 @@ local_resource(
 )
 
 local_resource(
+    'run-janitor',
+    cmd='cargo build --bin janitor',
+    serve_cmd='cargo run --bin janitor',
+    resource_deps=['run-indexer']
+)
+
+local_resource(
     'run-webui',
     cmd='pnpm --dir webui i',
     serve_cmd='pnpm --dir webui dev',

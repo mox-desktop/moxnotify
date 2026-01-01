@@ -116,6 +116,17 @@ in
         description = "Configuration for searcher";
       };
     };
+    janitor = {
+      enable = lib.mkOption {
+        type = types.bool;
+        default = cfg.enable;
+      };
+      settings = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+        description = "Configuration for janitor";
+      };
+    };
     collector = {
       enable = lib.mkOption {
         type = types.bool;
@@ -175,6 +186,7 @@ in
         indexer = cfg.indexer.settings;
         searcher = cfg.searcher.settings;
         scheduler = cfg.scheduler.settings;
+        janitor = cfg.janitor.settings;
       };
     };
 
@@ -322,12 +334,38 @@ in
           Description = "Moxnotify Searcher - Notification search service";
           ConditionPathExists = "${config.xdg.dataHome}/moxnotify";
           RefuseManualStart = false;
+          PartOf = [ ];
+          After = [ ];
         };
 
         Service = {
           Type = "simple";
           ExecStart = "${cfg.package}/bin/moxnotify-searcher";
           Restart = "on-failure";
+        };
+
+        Install = {
+          WantedBy = [ "default.target" ];
+        };
+      };
+
+      moxnotify-janitor = lib.mkIf cfg.janitor.enable {
+        Unit = {
+          Description = "Moxnotify Janitor - Notification cleanup service";
+          ConditionPathExists = "${config.xdg.dataHome}/moxnotify";
+          RefuseManualStart = false;
+          PartOf = [ ];
+          After = [ ];
+        };
+
+        Service = {
+          Type = "simple";
+          ExecStart = "${cfg.package}/bin/moxnotify-janitor";
+          Restart = "on-failure";
+        };
+
+        Install = {
+          WantedBy = [ "default.target" ];
         };
       };
 
@@ -336,6 +374,7 @@ in
           Description = "Run moxnotify webui";
           After = [ "graphical-session.target" ];
           RefuseManualStart = false;
+          PartOf = [ ];
         };
 
         Service = {
@@ -351,6 +390,10 @@ in
               PATH="$PATH:${p}"
               ${pkgs.pnpm}/bin/pnpm --dir ${cfg.package}/share/moxnotify/webui start -H "${toString cfg.webui.hostname}" -p "${toString cfg.webui.port}"
             ''}/bin/run-moxnotify-webui";
+        };
+
+        Install = {
+          WantedBy = [ "default.target" ];
         };
       };
 

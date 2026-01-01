@@ -8,6 +8,7 @@ members = [
   "searcher",
   "scheduler",
   "config",
+  "janitor",
 ]
 resolver = "2"
 
