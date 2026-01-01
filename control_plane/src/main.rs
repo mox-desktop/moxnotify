@@ -150,8 +150,11 @@ impl CollectorService for ControlPlaneService {
 
                                     let mut con = con.lock().await;
                                     let json = serde_json::to_string(&notification).unwrap();
-                                    AsyncTypedCommands::xadd(&mut *con, "moxnotify:notify", "*", &[("notification", json.as_str())]).await
-                                        .unwrap();
+                                    if let Err(e) = AsyncTypedCommands::xadd(&mut *con, "moxnotify:notify", "*", &[("notification", json.as_str())]).await {
+                                        log::error!("Failed to add notification to Redis stream: {}", e);
+                                        drop(con);
+                                        continue;
+                                    }
 
                                     let id_str = notification.id.to_string();
                                     if let Err(e) =
@@ -170,13 +173,16 @@ impl CollectorService for ControlPlaneService {
 
                                     let mut con = con.lock().await;
                                     let json = serde_json::to_string(&close).unwrap();
-                                    AsyncTypedCommands::xadd(
+                                    if let Err(e) = AsyncTypedCommands::xadd(
                                         &mut *con,
                                         "moxnotify:close_notification",
                                         "*",
                                         &[("close_notification", json.as_str())],
-                                    ).await
-                                    .unwrap();
+                                    ).await {
+                                        log::error!("Failed to add close_notification to Redis stream: {}", e);
+                                        drop(con);
+                                        continue;
+                                    }
 
                                     let id_str = close.id.to_string();
                                     if let Err(e) = AsyncTypedCommands::hdel(&mut *con, "moxnotify:active", id_str.as_str()).await {
@@ -265,9 +271,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let client = redis::Client::open(&*config.redis.address).unwrap();
-    let mut con = client.get_multiplexed_async_connection().await?;
+    let write_con = client.get_multiplexed_async_connection().await?;
+    let read_con = client.get_multiplexed_async_connection().await?;
+    let pub_con = client.get_multiplexed_async_connection().await?;
 
-    let service = ControlPlaneService::try_new(con.clone(), client.clone()).await?;
+    let service = ControlPlaneService::try_new(write_con, client.clone()).await?;
 
     tokio::spawn(async move {
         Server::builder()
@@ -282,14 +290,23 @@ async fn main() -> anyhow::Result<()> {
         );
     });
 
+    let mut read_con_mut = read_con;
+    let mut pub_con_mut = pub_con;
+    let mut read_pending = false;
+
     loop {
+        // Alternate between reading pending messages ("0") and new messages (">")
+        // This ensures we don't miss messages that were delivered but not ACKed
+        let stream_ids = if read_pending { ["0", "0"] } else { [">", ">"] };
+        read_pending = !read_pending;
+
         if let Ok(Some(streams)) = AsyncTypedCommands::xread_options(
-            &mut con,
+            &mut read_con_mut,
             &["moxnotify:action_invoked", "moxnotify:notification_closed"],
-            &["0", "0"],
+            &stream_ids,
             &StreamReadOptions::default()
                 .group("control-plane-group", "control-plane")
-                .block(0),
+                .block(if stream_ids[0] == ">" { 100 } else { 0 }),
         )
         .await
         {
@@ -316,7 +333,7 @@ async fn main() -> anyhow::Result<()> {
                                 );
 
                                 if let Err(e) = redis::AsyncCommands::publish::<&str, &str, usize>(
-                                    &mut con,
+                                    &mut pub_con_mut,
                                     "moxnotify:pubsub:action_invoked",
                                     json,
                                 )
@@ -354,7 +371,7 @@ async fn main() -> anyhow::Result<()> {
                                 );
 
                                 if let Err(e) = redis::AsyncCommands::publish::<&str, &str, usize>(
-                                    &mut con,
+                                    &mut pub_con_mut,
                                     "moxnotify:pubsub:notification_closed",
                                     json,
                                 )
@@ -376,7 +393,7 @@ async fn main() -> anyhow::Result<()> {
                     }
 
                     if let Err(ack_err) = AsyncTypedCommands::xack(
-                        &mut con,
+                        &mut read_con_mut,
                         stream_key.key.as_str(),
                         "control-plane-group",
                         &[stream_id.id.as_str()],
