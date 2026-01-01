@@ -1,0 +1,476 @@
+use super::Text;
+use super::markup::{Parser, Tag};
+use crate::Urgency;
+use crate::components;
+use crate::components::{Bounds, Component, Data};
+use crate::config;
+use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
+use moxui::shape_renderer;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+
+#[derive(Debug)]
+pub struct Anchor {
+    pub href: Arc<str>,
+    pub line: usize,
+    pub start: usize,
+    pub end: usize,
+    pub bounds: Bounds,
+}
+
+impl Anchor {
+    #[must_use]
+    pub fn get_bounds(&self) -> Bounds {
+        self.bounds.clone()
+    }
+}
+
+pub struct Body {
+    context: components::Context,
+    pub anchors: Vec<Arc<Anchor>>,
+    pub buffer: Buffer,
+    x: f32,
+    y: f32,
+}
+
+fn parse_color(value: &str) -> Option<glyphon::Color> {
+    let value = value.trim();
+    match value.to_lowercase().as_str() {
+        "black" => return Some(glyphon::Color::rgba(0, 0, 0, 255)),
+        "white" => return Some(glyphon::Color::rgba(255, 255, 255, 255)),
+        "red" => return Some(glyphon::Color::rgba(255, 0, 0, 255)),
+        "green" => return Some(glyphon::Color::rgba(0, 128, 0, 255)),
+        "blue" => return Some(glyphon::Color::rgba(0, 0, 255, 255)),
+        "yellow" => return Some(glyphon::Color::rgba(255, 255, 0, 255)),
+        "purple" => return Some(glyphon::Color::rgba(128, 0, 128, 255)),
+        "cyan" => return Some(glyphon::Color::rgba(0, 255, 255, 255)),
+        "magenta" => return Some(glyphon::Color::rgba(255, 0, 255, 255)),
+        _ => {}
+    }
+
+    if let Some(hex) = value.strip_prefix('#') {
+        match hex.len() {
+            3 => {
+                if let (Some(r), Some(g), Some(b)) = (
+                    u8::from_str_radix(&hex[0..1], 16).ok(),
+                    u8::from_str_radix(&hex[1..2], 16).ok(),
+                    u8::from_str_radix(&hex[2..3], 16).ok(),
+                ) {
+                    return Some(glyphon::Color::rgba(r * 17, g * 17, b * 17, 255));
+                }
+            }
+            4 => {
+                if let (Some(r), Some(g), Some(b), Some(a)) = (
+                    u8::from_str_radix(&hex[0..1], 16).ok(),
+                    u8::from_str_radix(&hex[1..2], 16).ok(),
+                    u8::from_str_radix(&hex[2..3], 16).ok(),
+                    u8::from_str_radix(&hex[3..4], 16).ok(),
+                ) {
+                    return Some(glyphon::Color::rgba(r * 17, g * 17, b * 17, a * 17));
+                }
+            }
+            6 => {
+                if let (Some(r), Some(g), Some(b)) = (
+                    u8::from_str_radix(&hex[0..2], 16).ok(),
+                    u8::from_str_radix(&hex[2..4], 16).ok(),
+                    u8::from_str_radix(&hex[4..6], 16).ok(),
+                ) {
+                    return Some(glyphon::Color::rgba(r, g, b, 255));
+                }
+            }
+            8 => {
+                if let (Some(r), Some(g), Some(b), Some(a)) = (
+                    u8::from_str_radix(&hex[0..2], 16).ok(),
+                    u8::from_str_radix(&hex[2..4], 16).ok(),
+                    u8::from_str_radix(&hex[4..6], 16).ok(),
+                    u8::from_str_radix(&hex[6..8], 16).ok(),
+                ) {
+                    return Some(glyphon::Color::rgba(r, g, b, a));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if value.starts_with("rgb(") && value.ends_with(')') {
+        let rgb = &value[4..value.len() - 1];
+        let parts: Vec<&str> = rgb.split(',').map(str::trim).collect();
+        if parts.len() == 3
+            && let (Some(r), Some(g), Some(b)) = (
+                parts[0].parse::<u8>().ok(),
+                parts[1].parse::<u8>().ok(),
+                parts[2].parse::<u8>().ok(),
+            )
+        {
+            return Some(glyphon::Color::rgba(r, g, b, 255));
+        }
+    } else if value.starts_with("rgba(") && value.ends_with(')') {
+        let rgba = &value[5..value.len() - 1];
+        let parts: Vec<&str> = rgba.split(',').map(str::trim).collect();
+        if parts.len() == 4
+            && let (Some(r), Some(g), Some(b), Some(a)) = (
+                parts[0].parse::<u8>().ok(),
+                parts[1].parse::<u8>().ok(),
+                parts[2].parse::<u8>().ok(),
+                (parts[3].parse::<f32>().ok().map(|a| (a * 255.0) as u8)),
+            )
+        {
+            return Some(glyphon::Color::rgba(r, g, b, a));
+        }
+    }
+
+    None
+}
+
+impl Text for Body {
+    fn set_size(&mut self, font_system: &mut FontSystem, width: Option<f32>, height: Option<f32>) {
+        self.buffer.set_size(font_system, width, height);
+    }
+
+    fn set_text<T>(&mut self, font_system: &mut FontSystem, text: T)
+    where
+        T: AsRef<str>,
+    {
+        let family = Arc::clone(&self.get_style().family);
+
+        let attrs = Attrs::new()
+            .metadata(0.7_f32.to_bits() as usize)
+            .family(glyphon::Family::Name(&family));
+
+        let mut anchors = Vec::new();
+
+        let mut parser = Parser::new(text.as_ref().to_string());
+        let body = parser.parse();
+        let spans = body
+            .iter()
+            .map(|tag| match tag {
+                Tag::Bold(text) => (text.as_str(), attrs.clone().weight(Weight::BOLD)),
+                Tag::Italic(text) => (text.as_str(), attrs.clone().style(Style::Italic)),
+                Tag::Underline(text) => (text.as_str(), attrs.clone()),
+                Tag::Image { alt, src: _ } => (alt.as_str(), attrs.clone()),
+                Tag::Anchor {
+                    href,
+                    text,
+                    position,
+                } => {
+                    let anchor = Anchor {
+                        href: href.as_str().into(),
+                        line: position.line,
+                        start: position.column,
+                        end: position.column + text.len() - 1,
+                        bounds: Bounds::default(),
+                    };
+                    anchors.push(anchor);
+                    (text.as_str(), attrs.clone().color(Color::rgb(0, 0, 255)))
+                }
+                Tag::Span { text, attributes } => {
+                    let mut attrs = attrs.clone();
+                    attributes
+                        .iter()
+                        .for_each(|(key, value)| match key.as_str() {
+                            "font_desc" => {}
+                            "font_family" | "face" => {
+                                attrs = attrs.clone().family(Family::Name(value));
+                            }
+
+                            "font_size" | "size" => {
+                                if let Ok(value) = value.parse::<f32>() {
+                                    let dpi = 96.0;
+                                    let font_size = value * dpi / 72.0;
+                                    attrs = attrs
+                                        .clone()
+                                        .metrics(glyphon::Metrics::new(font_size, font_size * 1.2));
+                                }
+                            }
+                            "letter_spacing" => {
+                                if let Ok(spacing) = value.parse::<f32>() {
+                                    attrs = attrs.clone().letter_spacing(spacing);
+                                }
+                            }
+                            "rise" | "baseline_shift" => {}
+                            "line_height" => {
+                                if let Ok(height) = value.parse::<f32>() {
+                                    let current_metrics = self.buffer.metrics();
+                                    attrs = attrs.clone().metrics(glyphon::Metrics::new(
+                                        current_metrics.font_size,
+                                        height,
+                                    ));
+                                }
+                            }
+
+                            "font_style" | "style" => match value.as_ref() {
+                                "normal" => attrs = attrs.clone().style(Style::Normal),
+                                "oblique" => attrs = attrs.clone().style(Style::Oblique),
+                                "italic" => attrs = attrs.clone().style(Style::Italic),
+                                _ => {}
+                            },
+                            "font_weight" | "weight" => {
+                                if value == "bold" {
+                                    attrs = attrs.clone().weight(Weight::BOLD);
+                                } else if value == "normal" {
+                                    attrs = attrs.clone().weight(Weight::NORMAL);
+                                } else if let Ok(weight_value) = value.parse::<u16>() {
+                                    let weight = match weight_value {
+                                        100 => Weight::THIN,
+                                        200 => Weight::EXTRA_LIGHT,
+                                        300 => Weight::LIGHT,
+                                        500 => Weight::MEDIUM,
+                                        600 => Weight::SEMIBOLD,
+                                        700 => Weight::BOLD,
+                                        800 => Weight::EXTRA_BOLD,
+                                        900 => Weight::BLACK,
+                                        _ => Weight::NORMAL,
+                                    };
+                                    attrs = attrs.clone().weight(weight);
+                                }
+                            }
+                            "font_variant" | "variant" => match value.as_ref() {
+                                "normal" => {}
+                                "small-caps" => {}
+                                _ => {}
+                            },
+                            "font_stretch" | "stretch" => match value.as_ref() {
+                                "ultra-condensed" => {
+                                    attrs = attrs.clone().stretch(Stretch::UltraCondensed);
+                                }
+                                "extra-condensed" => {
+                                    attrs = attrs.clone().stretch(Stretch::ExtraCondensed);
+                                }
+                                "condensed" => attrs = attrs.clone().stretch(Stretch::Condensed),
+                                "semi-condensed" => {
+                                    attrs = attrs.clone().stretch(Stretch::SemiCondensed);
+                                }
+                                "normal" => attrs = attrs.clone().stretch(Stretch::Normal),
+                                "semi-expanded" => {
+                                    attrs = attrs.clone().stretch(Stretch::SemiExpanded);
+                                }
+                                "expanded" => attrs = attrs.clone().stretch(Stretch::Expanded),
+                                "extra-expanded" => {
+                                    attrs = attrs.clone().stretch(Stretch::ExtraExpanded);
+                                }
+                                "ultra-expanded" => {
+                                    attrs = attrs.clone().stretch(Stretch::UltraExpanded);
+                                }
+                                _ => {}
+                            },
+                            "text_transform" => match value.as_ref() {
+                                "none" => {}
+                                "lowercase" => {}
+                                "uppercase" => {}
+                                "capitalize" => {}
+                                _ => {}
+                            },
+
+                            "font_features" => {
+                                // OpenType font features
+                                // attrs = attrs.clone().font_features(value)
+                            }
+                            "font_variations" => {}
+
+                            "foreground" | "fgcolor" | "color" => {
+                                if let Some(color) = parse_color(value) {
+                                    attrs = attrs.clone().color(color);
+                                }
+                            }
+                            "background" | "bgcolor" => {}
+                            "alpha" => {}
+                            "foreground_alpha" | "fgalpha" => {}
+                            "background_alpha" | "bgalpha" => {}
+
+                            "strikethrough" => {}
+                            "strikethrough_color" => {}
+                            "underline" => {}
+                            "underline_color" => {}
+                            "overline" => {}
+                            "overline_color" => {}
+
+                            "gravity" => match value.as_ref() {
+                                "south" => {}
+                                "east" => {}
+                                "north" => {}
+                                "west" => {}
+                                "auto" => {}
+                                _ => {}
+                            },
+                            "gravity_hint" => match value.as_ref() {
+                                "natural" => {}
+                                "strong" => {}
+                                "line" => {}
+                                _ => {}
+                            },
+                            "fallback" => {}
+                            "lang" => {}
+                            "insert_hyphens" | "allow_breaks" | "insert" | "allow" => {}
+                            "wrap" => {}
+                            "show" => {}
+
+                            _ => {}
+                        });
+                    (text.as_str(), attrs.clone())
+                }
+                Tag::Text(text) => (text.as_str(), attrs.clone()),
+            })
+            .collect::<Vec<_>>();
+
+        self.buffer
+            .set_rich_text(font_system, spans, &attrs, Shaping::Advanced, None);
+
+        for anchor in anchors.iter_mut() {
+            if let Some(line) = self.buffer.layout_runs().nth(anchor.line) {
+                let first = line.glyphs.get(anchor.start);
+                let last = line.glyphs.get(anchor.end);
+
+                if let (Some(first), Some(last)) = (first, last) {
+                    anchor.bounds = Bounds {
+                        x: first.x,
+                        y: line.line_top,
+                        width: last.x + last.w,
+                        height: line.line_height,
+                    };
+                }
+            }
+        }
+
+        self.anchors = anchors.into_iter().map(Arc::new).collect();
+    }
+}
+
+impl Component for Body {
+    type Style = config::text::Body;
+
+    fn get_context(&self) -> &components::Context {
+        &self.context
+    }
+
+    fn get_style(&self) -> &Self::Style {
+        &self.get_notification_style().body
+    }
+
+    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+        let style = self.get_style();
+        let bounds = self.get_render_bounds();
+
+        vec![shape_renderer::ShapeInstance {
+            rect_pos: [bounds.x, bounds.y],
+            rect_size: [bounds.width, bounds.height],
+            rect_color: style.background.color(urgency),
+            border_radius: style.border.radius.into(),
+            border_size: style.border.size.into(),
+            border_color: style.border.color.color(urgency),
+            scale: self.context.ui_state.scale.load(Ordering::Relaxed),
+            depth: 0.8,
+        }]
+    }
+
+    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+        let style = self.get_style();
+        let render_bounds = self.get_render_bounds();
+
+        let content_width = render_bounds.width
+            - style.border.size.left
+            - style.border.size.right
+            - style.padding.left
+            - style.padding.right;
+
+        let content_height = render_bounds.height
+            - style.border.size.top
+            - style.border.size.bottom
+            - style.padding.top
+            - style.padding.bottom;
+
+        let left = render_bounds.x + style.border.size.left + style.padding.left;
+        let top = render_bounds.y + style.border.size.top + style.padding.top;
+
+        vec![glyphon::TextArea {
+            buffer: &self.buffer,
+            left,
+            top,
+            scale: self.context.ui_state.scale.load(Ordering::Relaxed),
+            bounds: glyphon::TextBounds {
+                left: left as i32,
+                top: top as i32,
+                right: (left + content_width) as i32,
+                bottom: (top + content_height) as i32,
+            },
+            default_color: style.color.into_glyphon(urgency),
+            custom_glyphs: &[],
+        }]
+    }
+
+    fn get_textures(&self) -> Vec<moxui::texture_renderer::TextureArea<'_>> {
+        Vec::new()
+    }
+
+    fn get_bounds(&self) -> Bounds {
+        let style = self.get_style();
+        let (width, total_lines) = self
+            .buffer
+            .layout_runs()
+            .fold((0.0, 0.0), |(width, total_lines), run| {
+                (run.line_w.max(width), total_lines + 1.0)
+            });
+
+        Bounds {
+            x: self.x,
+            y: self.y,
+            width: width
+                + style.margin.left
+                + style.margin.right
+                + style.padding.left
+                + style.padding.right
+                + style.border.size.left
+                + style.border.size.right,
+            height: total_lines * self.buffer.metrics().line_height
+                + style.margin.top
+                + style.margin.bottom
+                + style.padding.top
+                + style.padding.bottom
+                + style.border.size.top
+                + style.border.size.bottom,
+        }
+    }
+
+    fn get_render_bounds(&self) -> Bounds {
+        let style = self.get_style();
+        let bounds = self.get_bounds();
+        Bounds {
+            x: bounds.x + style.margin.left,
+            y: bounds.y + style.margin.top,
+            width: bounds.width - style.margin.left - style.margin.right,
+            height: bounds.height - style.margin.top - style.margin.bottom,
+        }
+    }
+
+    fn set_position(&mut self, x: f32, y: f32) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fn get_data(&self, urgency: Urgency) -> Vec<Data<'_>> {
+        self.get_instances(urgency)
+            .into_iter()
+            .map(Data::Instance)
+            .chain(self.get_text_areas(urgency).into_iter().map(Data::TextArea))
+            .collect()
+    }
+}
+
+impl Body {
+    pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
+        let dpi = 96.0;
+        let font_size = context.config.styles.default.font.size * dpi / 72.0;
+        let mut buffer = Buffer::new(
+            font_system,
+            glyphon::Metrics::new(font_size, font_size * 1.2),
+        );
+        buffer.shape_until_scroll(font_system, true);
+
+        Self {
+            context,
+            buffer,
+            x: 0.,
+            y: 0.,
+            anchors: Vec::new(),
+        }
+    }
+}

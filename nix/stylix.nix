@@ -19,7 +19,7 @@ in
   options.stylix.targets.moxnotify.enable = config.lib.stylix.mkEnableTarget "moxnotify" true;
 
   config = lib.mkIf (config.stylix.enable && config.stylix.targets.moxnotify.enable) {
-    services.moxnotify.settings = {
+    services.moxnotify.client.settings = {
       styles = [
         {
           selector = "*";

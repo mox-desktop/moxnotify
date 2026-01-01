@@ -1,0 +1,84 @@
+syntax = "proto3";
+package moxnotify.types;
+
+enum Urgency {
+  URGENCY_LOW = 0;
+  URGENCY_NORMAL = 1;
+  URGENCY_CRITICAL = 2;
+}
+
+enum CloseReason {
+  REASON_EXPIRED = 0;
+  REASON_DISMISSED_BY_USER = 1;
+  REASON_CLOSE_NOTIFICATION_CALL = 2;
+  REASON_UNKNOWN = 3;
+}
+
+message Action {
+  string key = 1;
+  string label = 2;
+}
+
+message ImageData {
+  uint32 width = 1;
+  uint32 height = 2;
+  int32 rowstride = 3;
+  bool has_alpha = 4;
+  int32 bits_per_sample = 5;
+  int32 channels = 6;
+  bytes data = 7;
+}
+
+message Image {
+  oneof image {
+    string name = 1;
+    string file_path = 2;
+    ImageData data = 3;
+  }
+}
+
+message NotificationHints {
+  bool action_icons = 1;
+  optional string category = 2;
+  optional int32 value = 3;
+  optional string desktop_entry = 4;
+  bool resident = 5;
+  optional string sound_file = 6;
+  optional string sound_name = 7;
+  bool suppress_sound = 8;
+  bool transient = 9;
+  int32 x = 10;
+  optional int32 y = 11;
+  Urgency urgency = 12;
+  optional Image image = 13;
+}
+
+message CloseNotification {
+  uint32 id = 1;
+}
+
+message NotificationClosed {
+  uint32 id = 1;
+  CloseReason reason = 2;
+  string uuid = 3;
+}
+
+message ActionInvoked {
+  uint32 id = 1;
+  string action_key = 2;
+  string token = 3;
+  string uuid = 4;
+}
+
+message NewNotification {
+  uint32 id = 1;
+  string app_name = 2;
+  optional string app_icon = 3;
+  string summary = 4;
+  string body = 5;
+  int32 timeout = 6;
+  repeated Action actions = 7;
+  NotificationHints hints = 8;
+  int64 timestamp = 9;
+  string uuid = 10;
+}

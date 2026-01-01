@@ -1,0 +1,64 @@
+syntax = "proto3";
+package moxnotify.client;
+
+import "types.proto";
+
+service ClientService {
+    rpc Notify (ClientNotifyRequest) returns (stream NotificationMessage);
+    rpc NotificationClosed (ClientNotificationClosedRequest) returns (ClientNotificationClosedResponse);
+    rpc ActionInvoked (ClientActionInvokedRequest) returns (ClientActionInvokedResponse);
+    rpc NavigateViewport (ViewportNavigationRequest) returns (ViewportNavigationResponse);
+    rpc GetViewport (GetViewportRequest) returns (ViewportNavigationResponse);
+    rpc RestartTimers (RestartTimersRequest) returns (RestartTimersResponse);
+    rpc StopTimers (StopTimersRequest) returns (StopTimersResponse);
+}
+
+message NotificationMessage {
+    oneof message {
+        moxnotify.types.NewNotification notification = 1;
+        moxnotify.types.CloseNotification close_notification = 2;
+    }
+}
+
+message ClientNotifyRequest {
+    uint32 max_visible = 1;
+}
+
+message ClientNotificationClosedRequest {
+    moxnotify.types.NotificationClosed notification_closed = 1;
+}
+
+message ClientNotificationClosedResponse {}
+
+message ClientActionInvokedRequest {
+    moxnotify.types.ActionInvoked action_invoked = 1;    
+}
+
+message ClientActionInvokedResponse {}
+
+message ViewportNavigationRequest {
+    enum Direction {
+        NEXT = 0;
+        PREV = 1;
+        FIRST = 2;
+        LAST = 3;
+    }
+    Direction direction = 1;
+}
+
+message GetViewportRequest {}
+
+message ViewportNavigationResponse {
+    repeated uint32 focused_ids = 1;
+    uint32 before_count = 2;
+    uint32 after_count = 3;
+    optional uint32 selected_id = 4;
+}
+
+message StopTimersRequest {}
+
+message StopTimersResponse {}
+
+message RestartTimersRequest {}
+
+message RestartTimersResponse {}

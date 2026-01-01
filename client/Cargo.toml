@@ -1,0 +1,66 @@
+[package]
+name = "client"
+description.workspace = true
+readme.workspace = true
+version.workspace = true
+edition.workspace = true
+categories.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+calloop = { version = "0.14.2", features = ["executor"] }
+calloop-wayland-source = "0.4.0"
+env_logger = { version = "0.11.6", default-features = false }
+mlua = { version = "0.10.3", features = ["lua54", "serialize"] }
+serde = { version = "1.0.217", features = ["rc"], default-features = false }
+wayland-client = "0.31.11"
+wayland-protocols = { version = "0.32.5", features = ["staging", "unstable"] }
+futures-lite = { version = "2.6.0", default-features = false }
+zbus = { version = "5.5.0", features = ["tokio"], default-features = false }
+tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
+clap = { version = "4.5.27", features = ["derive"] }
+bytemuck = "1.19.0"
+wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
+raw-window-handle = "0.6.2"
+anyhow = { version = "1.0.95", default-features = false }
+xkbcommon = "0.8.0"
+image = { version = "0.25.6", default-features = false, features = [
+  "jpeg",
+  "ico",
+  "webp",
+  "rayon",
+] }
+fast_image_resize = "5.1.1"
+freedesktop-icons = "0.4.0"
+symphonia = { version = "0.5.4", features = [
+  "wav",
+  "pcm",
+  "mp3",
+  "vorbis",
+  "ogg",
+], default-features = false }
+freedesktop-sound = "0.1.0"
+serde_json = "1.0.140"
+log = "0.4.27"
+resvg = { version = "0.45.1", default-features = false }
+tiny-skia = { version = "0.11.4", default-features = false }
+atomic_float = { version = "1.1.0", default-features = false }
+wgpu = { version = "28.0.0", features = [
+  "wgsl",
+  "vulkan",
+  "gles",
+  "strict_asserts",
+], default-features = false }
+moxui = { git = "https://forgejo.r0chd.pl/mox-desktop/moxui.git", rev = "62b8a312e13d7a6159a3cee3678b0b577cc5a910" }
+libspa-sys = "0.9.2"
+pipewire = "0.9.2"
+tonic = "0.14.2"
+tonic-prost = "0.14.2"
+prost = "0.14.1"
+wayland-backend = { version = "0.3.7", features = ["client_system"] }
+glyphon = "0.10.0"
+
+[build-dependencies]
+tonic-prost-build = "0.14.2"

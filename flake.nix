@@ -1,5 +1,5 @@
 {
-  inputs.tooling.url = "github:mox-desktop/tooling";
+  inputs.tooling.url = "git+https://forgejo.r0chd.pl/mox-desktop/tooling.git";
 
   outputs =
     { self, tooling, ... }:
@@ -25,6 +25,12 @@
                 libclang
                 libGL
                 egl-wayland
+                protobuf
+                pnpm
+                nodejs_25
+                tilt
+                valkey
+                protols
                 ;
             };
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath finalAttrs.buildInputs;
@@ -40,6 +46,7 @@
             rustc = pkgs.rustToolchain;
           };
         };
+        webui = pkgs.callPackage ./nix/webui.nix { };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });
 

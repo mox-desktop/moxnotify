@@ -1,0 +1,20 @@
+[package]
+name = "config"
+description.workspace = true
+readme.workspace = true
+version.workspace = true
+edition.workspace = true
+categories.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+serde = { version = "1.0.217", features = [
+  "derive",
+  "rc",
+], default-features = false }
+log = "0.4.27"
+anyhow = { version = "1.0.95", default-features = false }
+humantime = "2.1"
+tvix_serde = { git = "https://code.tvl.fyi/depot.git", rev = "a17a8928c6193fc758393a22bd9e71b8439ebfd3", package = "tvix-serde" }

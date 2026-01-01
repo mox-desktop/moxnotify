@@ -1,0 +1,22 @@
+syntax = "proto3";
+package moxnotify.collector;
+
+import "types.proto";
+
+service CollectorService {
+  rpc Notifications (stream CollectorMessage) returns (stream CollectorResponse);
+}
+
+message CollectorMessage {
+  oneof message {
+    moxnotify.types.NewNotification new_notification = 1;
+    moxnotify.types.CloseNotification close_notification = 2;
+  }
+}
+
+message CollectorResponse {
+  oneof message {
+    moxnotify.types.ActionInvoked action_invoked = 1;
+    moxnotify.types.NotificationClosed notification_closed = 2;
+  }
+}

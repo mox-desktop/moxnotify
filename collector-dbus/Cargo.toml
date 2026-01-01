@@ -1,0 +1,36 @@
+[package]
+name = "collector-dbus"
+description.workspace = true
+readme.workspace = true
+version.workspace = true
+edition.workspace = true
+categories.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+
+[dependencies]
+env_logger = { version = "0.11.6", default-features = false }
+serde = { version = "1.0.217", features = ["rc"], default-features = false }
+zbus = { version = "5.5.0", features = ["tokio"], default-features = false }
+tokio = { version = "1.45.0", features = ["macros", "rt-multi-thread", "sync"] }
+tokio-stream = "0.1"
+anyhow = { version = "1.0.95", default-features = false }
+log = "0.4.27"
+tonic = "0.14.2"
+url = { version = "2.5.4", default-features = false }
+image = { version = "0.25.6", default-features = false, features = [
+  "jpeg",
+  "ico",
+  "webp",
+  "rayon",
+  "serde",
+] }
+tonic-prost = "0.14.2"
+prost = "0.14.1"
+chrono = "0.4.42"
+uuid = { version = "1.19.0", features = ["v4"] }
+config = { path = "../config" }
+
+[build-dependencies]
+tonic-prost-build = "0.14.2"

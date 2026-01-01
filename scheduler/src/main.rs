@@ -1,0 +1,939 @@
+pub mod moxnotify {
+    pub mod types {
+        tonic::include_proto!("moxnotify.types");
+    }
+    pub mod client {
+        tonic::include_proto!("moxnotify.client");
+    }
+}
+
+mod client_state;
+mod timeout_scheduler;
+mod view_range;
+
+use crate::client_state::{ClientState, ClientStateManager};
+use crate::moxnotify::client::notification_message;
+use crate::timeout_scheduler::TimeoutScheduler;
+use moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
+use moxnotify::client::viewport_navigation_request::Direction;
+use moxnotify::client::{
+    ClientActionInvokedRequest, ClientActionInvokedResponse, ClientNotificationClosedRequest,
+    ClientNotificationClosedResponse, ClientNotifyRequest, GetViewportRequest, NotificationMessage,
+    RestartTimersRequest, RestartTimersResponse, StopTimersRequest, StopTimersResponse,
+    ViewportNavigationRequest, ViewportNavigationResponse,
+};
+use moxnotify::types::{CloseNotification, CloseReason, NewNotification, NotificationClosed};
+use redis::AsyncTypedCommands;
+use redis::streams::StreamReadOptions;
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Arc;
+use tokio::sync::{Mutex, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::{Request, Response, Status, transport::Server};
+use view_range::ViewRange;
+
+#[derive(Clone)]
+struct Scheduler {
+    timeouts: Arc<TimeoutScheduler>,
+    redis_con: Arc<Mutex<redis::aio::MultiplexedConnection>>,
+    redis_client: redis::Client,
+    state_manager: Arc<ClientStateManager>,
+}
+
+impl Scheduler {
+    async fn new(
+        redis_con: redis::aio::MultiplexedConnection,
+        redis_client: redis::Client,
+    ) -> Self {
+        let timeout_redis_con = redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("Failed to get Redis connection for timeout scheduler");
+
+        let state_redis_con = redis_client
+            .get_multiplexed_async_connection()
+            .await
+            .expect("Failed to get Redis connection for state manager");
+
+        Self {
+            timeouts: Arc::new(TimeoutScheduler::new(timeout_redis_con)),
+            redis_con: Arc::new(Mutex::new(redis_con)),
+            redis_client,
+            state_manager: Arc::new(ClientStateManager::new(state_redis_con)),
+        }
+    }
+
+    async fn get_active_notifications(&self) -> HashMap<u32, NewNotification> {
+        let mut con = self.redis_con.lock().await;
+
+        let hash_data: HashMap<String, String> =
+            AsyncTypedCommands::hgetall(&mut *con, "moxnotify:active")
+                .await
+                .unwrap();
+
+        let mut active_notifications = HashMap::new();
+        for (id_str, json) in hash_data {
+            if let Ok(id) = id_str.parse::<u32>() {
+                if let Ok(notification) = serde_json::from_str::<NewNotification>(&json) {
+                    active_notifications.insert(id, notification);
+                } else {
+                    log::warn!(
+                        "Failed to parse notification JSON for id {}: {}",
+                        id_str,
+                        json
+                    );
+                }
+            } else {
+                log::warn!("Failed to parse notification ID: {}", id_str);
+            }
+        }
+
+        active_notifications
+    }
+
+    async fn start_timers_for_newly_visible(
+        &self,
+        notifications: &[&NewNotification],
+        current_visible_ids: &[u32],
+        prev_visible_ids: &mut Vec<u32>,
+    ) {
+        let newly_visible: Vec<u32> = current_visible_ids
+            .iter()
+            .filter(|id| !prev_visible_ids.contains(id))
+            .copied()
+            .collect();
+
+        if newly_visible.is_empty() {
+            return;
+        }
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in notifications.iter() {
+            if !newly_visible.contains(&notification.id) {
+                continue;
+            }
+
+            let timeout_ms = notification.timeout;
+            // Timeout == 0 means that notification never expires
+            // Timeout == -1 means that timeout should be chosen by notifications server
+            // but we handle it in collectors
+            if timeout_ms > 0 {
+                let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                log::debug!(
+                    "Starting timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
+                timeouts
+                    .start_timer(notification.id, notification.uuid.clone(), duration)
+                    .await;
+            }
+        }
+
+        *prev_visible_ids = current_visible_ids.to_vec();
+    }
+}
+
+#[tonic::async_trait]
+impl ClientService for Scheduler {
+    type NotifyStream = Pin<
+        Box<
+            dyn tonic::codegen::tokio_stream::Stream<Item = Result<NotificationMessage, Status>>
+                + Send
+                + 'static,
+        >,
+    >;
+
+    async fn notify(
+        &self,
+        request: Request<ClientNotifyRequest>,
+    ) -> Result<Response<Self::NotifyStream>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let req = request.into_inner();
+
+        let client_id = format!("{:?}", remote_addr);
+        log::info!(
+            "New client connection from: {} (client_id: {})",
+            remote_addr,
+            client_id
+        );
+
+        let state_manager = Arc::clone(&self.state_manager);
+        let mut client_state = state_manager.load_state(&client_id).await;
+
+        client_state.max_visible = req.max_visible as usize;
+
+        if client_state.range_end == 0 {
+            client_state.range_end = req.max_visible as usize;
+        }
+
+        state_manager.save_state(&client_id, &client_state).await;
+
+        let notification_sub_client = self.redis_client.clone();
+        let close_notification_sub_client = self.redis_client.clone();
+        let (notification_tx, mut notification_rx) = mpsc::channel(128);
+        let (close_notification_tx, mut close_notification_rx) = mpsc::channel(128);
+
+        tokio::spawn(async move {
+            let notification_tx = notification_tx;
+            tokio::task::spawn_blocking(move || {
+                if let Ok(mut con) = notification_sub_client.get_connection() {
+                    let mut pubsub = con.as_pubsub();
+                    if pubsub.subscribe("moxnotify:pubsub:notification").is_ok() {
+                        while let Ok(msg) = pubsub.get_message() {
+                            if let Ok(payload) = msg.get_payload::<String>()
+                                && let Ok(notification) =
+                                    serde_json::from_str::<NewNotification>(&payload)
+                                && notification_tx.blocking_send(notification).is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            .ok();
+        });
+
+        tokio::spawn(async move {
+            let close_notification_tx = close_notification_tx;
+            tokio::task::spawn_blocking(move || {
+                if let Ok(mut con) = close_notification_sub_client.get_connection() {
+                    let mut pubsub = con.as_pubsub();
+                    if pubsub
+                        .subscribe("moxnotify:pubsub:close_notification")
+                        .is_ok()
+                    {
+                        while let Ok(msg) = pubsub.get_message() {
+                            if let Ok(payload) = msg.get_payload::<String>()
+                                && let Ok(close_notification) =
+                                    serde_json::from_str::<CloseNotification>(&payload)
+                                && close_notification_tx
+                                    .blocking_send(close_notification)
+                                    .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    }
+                }
+            })
+            .await
+            .ok();
+        });
+
+        let (tx, stream_rx) = mpsc::channel(128);
+
+        let active_notifications = self.get_active_notifications().await;
+
+        let notifications = {
+            let mut notifications: Vec<NewNotification> =
+                active_notifications.into_values().collect::<Vec<_>>();
+            notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+            Arc::new(notifications)
+        };
+
+        {
+            let tx = tx.clone();
+            let scheduler = self.clone();
+            let state_manager = Arc::clone(&self.state_manager);
+            let client_id_clone = client_id.clone();
+
+            let redis_con = Arc::clone(&self.redis_con);
+            let timeouts = Arc::clone(&self.timeouts);
+
+            let mut view_range = ViewRange {
+                max_visible: client_state.max_visible,
+                start: client_state.range_start,
+                end: client_state.range_end,
+            };
+            let mut local_selected_id = client_state.selected_id;
+            let mut local_prev_visible_ids = client_state.prev_visible_ids.clone();
+
+            tokio::spawn(async move {
+                let mut receiver = timeouts.receiver();
+                let redis_con = redis_con;
+
+                loop {
+                    tokio::select! {
+                        Some(notification) = notification_rx.recv() => {
+                            let active_count = {
+                                let mut redis_con = redis_con.lock().await;
+                                let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").await.unwrap_or_default();
+                                hash_data.len()
+                            };
+
+                            view_range.show_tail(active_count);
+                            log::debug!("notify, range: {}", view_range);
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(view_range.start())
+                                .take(view_range.width())
+                                .map(|n| n.id)
+                                .collect();
+
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                                &mut local_prev_visible_ids,
+                            ).await;
+
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
+
+                            let message = NotificationMessage {
+                                message: Some(notification_message::Message::Notification(notification))
+                            };
+
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
+                            }
+                        }
+                        Some(close_notification) = close_notification_rx.recv() => {
+                            let message = NotificationMessage {
+                                message: Some(notification_message::Message::CloseNotification(close_notification))
+                            };
+
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
+                            }
+
+                            let mut redis_con = redis_con.lock().await;
+                            let hash_data: HashMap<String, String> = redis_con.hgetall("moxnotify:active").await.unwrap_or_default();
+                            let remaining_count = hash_data.len();
+                            drop(redis_con);
+
+                            view_range.show_tail(remaining_count);
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(view_range.start())
+                                .take(view_range.width())
+                                .map(|n| n.id)
+                                .collect();
+
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                                &mut local_prev_visible_ids,
+                            ).await;
+
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
+                        }
+                        Ok((id, uuid)) = receiver.recv() => {
+                            let message = NotificationMessage {
+                                message: Some(notification_message::Message::CloseNotification(CloseNotification { id }))
+                            };
+
+                            if tx.send(Ok(message)).await.is_err() {
+                                log::info!("Client disconnected: {:?}", remote_addr);
+                                break;
+                            }
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            if let Some(selected) = local_selected_id
+                                && selected == id
+                                && let Some(pos) = notifications_vec.iter().position(|n| n.id == selected)
+                            {
+                                local_selected_id = pos
+                                    .checked_sub(1)
+                                    .or_else(|| pos.checked_add(1).filter(|&i| i < notifications_vec.len()))
+                                    .and_then(|idx| notifications_vec.get(idx).map(|n| n.id));
+                            }
+
+                            let mut redis_con = redis_con.lock().await;
+
+                            let closed = NotificationClosed {
+                                id,
+                                reason: CloseReason::ReasonExpired as i32,
+                                uuid,
+                            };
+
+                            let json = serde_json::to_string(&closed).unwrap();
+                            if let Err(e) = AsyncTypedCommands::xadd(
+                                &mut *redis_con,
+                                "moxnotify:notification_closed",
+                                "*",
+                                &[("notification", json.as_str())],
+                            )
+                            .await
+                            {
+                                log::error!("Failed to write notification_closed to Redis: {}", e);
+                            }
+
+                            if let Err(e) = AsyncTypedCommands::hdel(&mut *redis_con, "moxnotify:active", id.to_string().as_str()).await {
+                                log::warn!("Failed to remove notification from active HASH: {}", e);
+                            }
+
+                            let hash_data: HashMap<String, String> = AsyncTypedCommands::hgetall(&mut *redis_con, "moxnotify:active").await.unwrap_or_default();
+                            let remaining_count = hash_data.len();
+                            drop(redis_con);
+
+                            view_range.show_tail(remaining_count);
+                            log::debug!("Notification {id} expired, range: {}", view_range);
+
+                            let active_notifications = scheduler.get_active_notifications().await;
+                            let mut notifications_vec: Vec<&NewNotification> = active_notifications.values().collect();
+                            notifications_vec.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+                            let focused_ids: Vec<u32> = notifications_vec
+                                .iter()
+                                .skip(view_range.start())
+                                .take(view_range.width())
+                                .map(|n| n.id)
+                                .collect();
+
+                            scheduler.start_timers_for_newly_visible(
+                                &notifications_vec,
+                                &focused_ids,
+                                &mut local_prev_visible_ids,
+                            ).await;
+
+                            let state = ClientState {
+                                selected_id: local_selected_id,
+                                range_start: view_range.start(),
+                                range_end: view_range.end(),
+                                max_visible: view_range.max_visible(),
+                                prev_visible_ids: local_prev_visible_ids.clone(),
+                            };
+                            state_manager.save_state(&client_id_clone, &state).await;
+                        }
+                        else => {}
+                    }
+                }
+
+                state_manager.delete_state(&client_id_clone).await;
+            });
+        }
+
+        let mut initial_view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        initial_view_range.show_tail(notifications.len());
+        let state = ClientState {
+            selected_id: client_state.selected_id,
+            range_start: initial_view_range.start(),
+            range_end: initial_view_range.end(),
+            max_visible: client_state.max_visible,
+            prev_visible_ids: client_state.prev_visible_ids.clone(),
+        };
+        self.state_manager.save_state(&client_id, &state).await;
+
+        for notification in notifications.iter().rev() {
+            let message = NotificationMessage {
+                message: Some(notification_message::Message::Notification(
+                    notification.to_owned(),
+                )),
+            };
+
+            if tx.send(Ok(message)).await.is_err() {
+                log::info!("Client disconnected during initial sync: {:?}", remote_addr);
+                break;
+            }
+        }
+
+        let output_stream: Self::NotifyStream = Box::pin(ReceiverStream::new(stream_rx));
+        Ok(Response::new(output_stream))
+    }
+
+    async fn notification_closed(
+        &self,
+        request: Request<ClientNotificationClosedRequest>,
+    ) -> Result<Response<ClientNotificationClosedResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
+        let closed = request.into_inner().notification_closed.unwrap();
+        log::info!(
+            "Received notification_closed request: id: {}, reason: {:?}, client: {}",
+            closed.id,
+            closed.reason(),
+            client_id
+        );
+
+        self.timeouts.stop(closed.id).await;
+
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let mut client_state = self.state_manager.load_state(&client_id).await;
+
+        if let Some(selected) = client_state.selected_id
+            && selected == closed.id
+            && let Some(pos) = notifications.iter().position(|n| n.id == selected)
+        {
+            client_state.selected_id = pos
+                .checked_sub(1)
+                .or_else(|| pos.checked_add(1).filter(|&i| i < notifications.len()))
+                .and_then(|idx| notifications.get(idx).map(|n| n.id));
+        }
+
+        let mut con = self.redis_con.lock().await;
+        let json = serde_json::to_string(&closed).unwrap();
+        if let Err(e) = AsyncTypedCommands::xadd(
+            &mut *con,
+            "moxnotify:notification_closed",
+            "*",
+            &[("notification", json.as_str())],
+        )
+        .await
+        {
+            log::error!("Failed to write notification_closed to Redis: {}", e);
+        }
+
+        let id_str = closed.id.to_string();
+        if let Err(e) =
+            AsyncTypedCommands::hdel(&mut *con, "moxnotify:active", id_str.as_str()).await
+        {
+            log::warn!("Failed to remove notification from active HASH: {}", e);
+        }
+        drop(con);
+
+        let mut view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        view_range.scroll_down_clamped(notifications.len());
+
+        let focused_ids: Vec<u32> = notifications
+            .iter()
+            .skip(view_range.start())
+            .take(view_range.width())
+            .map(|n| n.id)
+            .collect();
+
+        log::debug!("notification_closed, range: {}", view_range);
+
+        self.start_timers_for_newly_visible(
+            &notifications,
+            &focused_ids,
+            &mut client_state.prev_visible_ids,
+        )
+        .await;
+
+        client_state.range_start = view_range.start();
+        client_state.range_end = view_range.end();
+        self.state_manager
+            .save_state(&client_id, &client_state)
+            .await;
+
+        Ok(Response::new(ClientNotificationClosedResponse {}))
+    }
+
+    async fn action_invoked(
+        &self,
+        request: Request<ClientActionInvokedRequest>,
+    ) -> Result<Response<ClientActionInvokedResponse>, Status> {
+        let invoked = request.into_inner().action_invoked.unwrap();
+        log::info!(
+            "Received action_invoked request: id: {}, key: {}",
+            invoked.id,
+            invoked.action_key
+        );
+
+        let mut con = self.redis_con.lock().await;
+        let json = serde_json::to_string(&invoked).unwrap();
+        if let Err(e) = AsyncTypedCommands::xadd(
+            &mut *con,
+            "moxnotify:action_invoked",
+            "*",
+            &[("action", json.as_str())],
+        )
+        .await
+        {
+            log::error!("Failed to write action_invoked to Redis: {}", e);
+        }
+
+        Ok(Response::new(ClientActionInvokedResponse {}))
+    }
+
+    async fn navigate_viewport(
+        &self,
+        request: Request<ViewportNavigationRequest>,
+    ) -> Result<Response<ViewportNavigationResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
+        let req = request.into_inner();
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let mut client_state = self.state_manager.load_state(&client_id).await;
+        let mut view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+        let mut selected_id = client_state.selected_id;
+        match Direction::try_from(req.direction).unwrap() {
+            Direction::Prev => {
+                if let Some(selected) = selected_id
+                    && let Some(pos) = notifications.iter().position(|n| n.id == selected)
+                {
+                    let idx = pos
+                        .checked_add(1)
+                        .filter(|&i| i < notifications.len())
+                        .unwrap_or(0);
+
+                    selected_id = notifications.get(idx).map(|n| n.id);
+
+                    view_range.ensure_visible_down(idx);
+                } else if let Some(first) = notifications.first() {
+                    selected_id = Some(first.id);
+
+                    view_range.show_tail(notifications.len());
+                }
+                log::debug!("Direction::Prev, range: {}", view_range);
+            }
+            Direction::Next => {
+                if let Some(selected) = selected_id
+                    && let Some(pos) = notifications.iter().position(|n| n.id == selected)
+                {
+                    let idx = pos.checked_sub(1).unwrap_or(notifications.len() - 1);
+
+                    selected_id = notifications.get(idx).map(|n| n.id);
+
+                    view_range.ensure_visible_up(idx, notifications.len());
+                } else if let Some(last) = notifications.last() {
+                    selected_id = Some(last.id);
+
+                    view_range.show_head();
+                }
+                log::debug!("Direction::Next, range: {}", view_range);
+            }
+            Direction::First => {
+                selected_id = notifications.last().map(|n| n.id);
+                view_range.show_tail(notifications.len());
+                log::debug!("Direction::First, range: {}", view_range);
+            }
+            Direction::Last => {
+                selected_id = notifications.first().map(|n| n.id);
+                view_range.show_head();
+                log::debug!("Direction::Last, range: {}", view_range);
+            }
+        }
+
+        let focused_ids: Vec<u32> = notifications
+            .iter()
+            .skip(view_range.start())
+            .take(view_range.width())
+            .map(|n| n.id)
+            .collect();
+
+        let selected_id_val = selected_id;
+        self.start_timers_for_newly_visible(
+            &notifications,
+            &focused_ids,
+            &mut client_state.prev_visible_ids,
+        )
+        .await;
+
+        client_state.selected_id = selected_id_val;
+        client_state.range_start = view_range.start();
+        client_state.range_end = view_range.end();
+        self.state_manager
+            .save_state(&client_id, &client_state)
+            .await;
+
+        Ok(Response::new(ViewportNavigationResponse {
+            focused_ids,
+            before_count: notifications.len().saturating_sub(view_range.end()) as u32,
+            after_count: view_range.start() as u32,
+            selected_id: selected_id_val,
+        }))
+    }
+
+    async fn get_viewport(
+        &self,
+        request: Request<GetViewportRequest>,
+    ) -> Result<Response<ViewportNavigationResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+
+        let focused_ids = notifications
+            .iter()
+            .skip(view_range.start())
+            .take(view_range.width())
+            .map(|n| n.id)
+            .collect();
+
+        Ok(Response::new(ViewportNavigationResponse {
+            focused_ids,
+            before_count: notifications.len().saturating_sub(view_range.end()) as u32,
+            after_count: view_range.start() as u32,
+            selected_id: client_state.selected_id,
+        }))
+    }
+
+    async fn restart_timers(
+        &self,
+        request: Request<RestartTimersRequest>,
+    ) -> Result<Response<RestartTimersResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+
+        let visible_notifications: Vec<&NewNotification> = notifications
+            .iter()
+            .skip(view_range.start())
+            .take(view_range.width())
+            .copied()
+            .collect();
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in visible_notifications {
+            let timeout_ms = notification.timeout;
+            // Timeout == 0 means that notification never expires
+            // Timeout == -1 means that timeout should be chosen by notifications server
+            // but we handle it in collectors
+            if timeout_ms > 0 {
+                let duration = std::time::Duration::from_millis(timeout_ms as u64);
+                log::debug!(
+                    "Stopping timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
+                timeouts
+                    .start_timer(notification.id, notification.uuid.clone(), duration)
+                    .await;
+            }
+        }
+
+        Ok(Response::new(RestartTimersResponse {}))
+    }
+
+    async fn stop_timers(
+        &self,
+        request: Request<StopTimersRequest>,
+    ) -> Result<Response<StopTimersResponse>, Status> {
+        let remote_addr = request.remote_addr().unwrap();
+        let client_id = format!("{:?}", remote_addr);
+        let active_notifications = self.get_active_notifications().await;
+
+        let mut notifications: Vec<&NewNotification> = active_notifications.values().collect();
+        notifications.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        let client_state = self.state_manager.load_state(&client_id).await;
+        let view_range = ViewRange {
+            max_visible: client_state.max_visible,
+            start: client_state.range_start,
+            end: client_state.range_end,
+        };
+
+        let visible_notifications: Vec<&NewNotification> = notifications
+            .iter()
+            .skip(view_range.start())
+            .take(view_range.width())
+            .copied()
+            .collect();
+
+        let timeouts = Arc::clone(&self.timeouts);
+        for notification in visible_notifications {
+            let timeout_ms = notification.timeout;
+            if timeout_ms > 0 {
+                log::debug!(
+                    "Stopping timer for notification, id: {}, timeout: {}",
+                    notification.id,
+                    notification.timeout
+                );
+                timeouts.stop(notification.id).await;
+            }
+        }
+
+        Ok(Response::new(StopTimersResponse {}))
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let config = Arc::new(config::Config::load(None));
+
+    env_logger::Builder::new()
+        .filter(Some("scheduler"), config.indexer.log_level.into())
+        .init();
+
+    log::info!("Connecting to Redis and subscribing to notifications...");
+
+    let client = redis::Client::open(&*config.redis.address)?;
+    let write_con = client.get_multiplexed_async_connection().await?;
+    let read_con = client.get_multiplexed_async_connection().await?;
+    let scheduler = Scheduler::new(write_con, client.clone()).await;
+    let timeouts = Arc::clone(&scheduler.timeouts);
+
+    let server_addr = config.scheduler.address.parse()?;
+    tokio::spawn(async move {
+        log::info!("Scheduler server listening on {}", server_addr);
+        Server::builder()
+            .add_service(ClientServiceServer::new(scheduler))
+            .serve(server_addr)
+            .await
+            .expect("Server failed to start");
+    });
+
+    log::info!("Subscribed to notifications from Redis stream");
+
+    let mut con = read_con;
+    loop {
+        if let Ok(Some(streams)) = AsyncTypedCommands::xread_options(
+            &mut con,
+            &["moxnotify:notify", "moxnotify:close_notification"],
+            &[">", ">"],
+            &StreamReadOptions::default()
+                .group("scheduler-group", "scheduler-1")
+                .block(0),
+        )
+        .await
+        {
+            for stream_key in &streams.keys {
+                for stream_id in &stream_key.ids {
+                    match stream_key.key.as_str() {
+                        "moxnotify:notify" => {
+                            if let Some(redis::Value::BulkString(json)) =
+                                stream_id.map.get("notification")
+                            {
+                                let json = std::str::from_utf8(json).unwrap();
+                                let notification: NewNotification =
+                                    serde_json::from_str(json).unwrap();
+
+                                log::info!(
+                                    "Scheduling notification: id={}, app_name='{}', summary='{}'",
+                                    notification.id,
+                                    notification.app_name,
+                                    notification.summary
+                                );
+
+                                let json = serde_json::to_string(&notification).unwrap();
+
+                                if let Err(e) = redis::AsyncCommands::publish::<&str, &str, usize>(
+                                    &mut con,
+                                    "moxnotify:pubsub:notification",
+                                    &json,
+                                )
+                                .await
+                                {
+                                    log::error!(
+                                        "Failed to publish notification to Redis Pub/Sub: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                        "moxnotify:close_notification" => {
+                            if let Some(redis::Value::BulkString(json)) =
+                                stream_id.map.get("close_notification")
+                            {
+                                let json = std::str::from_utf8(json).unwrap();
+                                let close_notification: CloseNotification =
+                                    serde_json::from_str(json).unwrap();
+
+                                log::info!(
+                                    "Broadcasting close_notification to clients: id={}",
+                                    close_notification.id
+                                );
+
+                                let timeouts = Arc::clone(&timeouts);
+                                let id = close_notification.id;
+                                tokio::spawn(async move {
+                                    timeouts.stop(id).await;
+                                });
+
+                                let id_str = close_notification.id.to_string();
+                                if let Err(e) = con.hdel("moxnotify:active", id_str.as_str()).await
+                                {
+                                    log::warn!(
+                                        "Failed to remove notification from active HASH: {}",
+                                        e
+                                    );
+                                }
+
+                                let json = serde_json::to_string(&close_notification).unwrap();
+                                if let Err(e) = con
+                                    .publish::<&str, &str>(
+                                        "moxnotify:pubsub:close_notification",
+                                        &json,
+                                    )
+                                    .await
+                                {
+                                    log::error!(
+                                        "Failed to publish close_notification to Redis Pub/Sub: {}",
+                                        e
+                                    );
+                                    continue;
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+
+                    if let Err(e) = AsyncTypedCommands::xack(
+                        &mut con,
+                        stream_key.key.as_str(),
+                        "scheduler-group",
+                        &[stream_id.id.as_str()],
+                    )
+                    .await
+                    {
+                        log::error!("Failed to ACK message: {}", e);
+                    }
+                }
+            }
+        }
+    }
+}

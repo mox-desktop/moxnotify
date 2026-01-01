@@ -1,4 +1,4 @@
 [D-BUS Service]
 Name=org.freedesktop.Notifications
-Exec=@bindir@/moxnotify
-SystemdService=moxnotify.service
+Exec=@bindir@/moxnotify-collector
+SystemdService=moxnotify-collector.service

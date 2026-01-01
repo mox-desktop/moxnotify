@@ -1,5 +1,15 @@
 [workspace]
-members = ["daemon", "ctl"]
+members = [
+  "client",
+  "ctl",
+  "collector-dbus",
+  "control_plane",
+  "indexer",
+  "searcher",
+  "scheduler",
+  "config",
+  "janitor",
+]
 resolver = "2"
 
 [profile.release]
@@ -18,8 +28,7 @@ categories = [
   "multimedia",
 ]
 edition = "2024"
-homepage = "https://pipewire.org"
-license = "MIT"
+license = "GPLv3"
 repository = "https://github.com/mox-desktop/moxnotify"
 version = "0.1.0"
 description = "Feature-rich hardware-accelerated keyboard driven Wayland notification daemon."
