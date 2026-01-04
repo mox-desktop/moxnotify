@@ -1,0 +1,77 @@
+* {
+  font-family: DejaVu Sans;
+  font-size: 10px;
+  color: #ffffff;
+}
+
+.notification.low * {
+  border-color: #a6e3a1;
+}
+
+.notification.normal * {
+  border-color: #cba6f7;
+}
+
+.notification.critical * {
+  border-color: #f38ba8;
+}
+
+.notification.critical,
+.notification.critical .next_counter,
+.notification.critical .prev_counter,
+.notification.critical .hints,
+.notification.critical .summary {
+  background-color: #16161e;
+}
+
+.notification.normal,
+.notification.normal .next_counter,
+.notification.normal .prev_counter,
+.notification.normal .hints,
+.notification.normal .summary {
+  background-color: #16161e;
+}
+
+.notification.low,
+.notification.low .next_counter,
+.notification.low .prev_counter,
+.notification.low .hints,
+.notification.low .summary {
+  background-color: #1a1b26;
+}
+
+.notification:hover {
+  background-color: #2f3549;
+}
+
+.notification.critical .action:hover {
+  background-color: #f38ba8;
+}
+
+.notification.normal .action:hover {
+  background-color: #444444;
+}
+
+.notification.low .action:hover {
+  background-color: #444444;
+}
+
+.notification.low .progress {
+  background-color: #444444;
+}
+
+.notification.normal .progress {
+  background-color: #444444;
+}
+
+.notification.critical .progress {
+  background-color: #f38ba8;
+}
+
+.dismiss {
+  color: #00000000;
+}
+
+.dismiss:hover {
+  color: #000000;
+}

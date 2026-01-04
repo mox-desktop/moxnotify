@@ -1,8 +1,8 @@
 use super::Text;
-use crate::Urgency;
+use config::client::Urgency;
 use crate::components;
 use crate::components::{Bounds, Component, Data};
-use crate::config;
+use config::client;
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
@@ -43,7 +43,7 @@ impl Text for Summary {
 }
 
 impl Component for Summary {
-    type Style = config::text::Summary;
+    type Style = client::text::Summary;
 
     fn get_context(&self) -> &components::Context {
         &self.context
@@ -62,7 +62,7 @@ impl Component for Summary {
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [0.0; 4],
             border_color: style.border.color.color(urgency),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
@@ -73,20 +73,10 @@ impl Component for Summary {
         let style = self.get_style();
         let bounds = self.get_render_bounds();
 
-        let content_width = bounds.width
-            - style.border.size.left
-            - style.border.size.right
-            - style.padding.left
-            - style.padding.right;
-
-        let content_height = bounds.height
-            - style.border.size.top
-            - style.border.size.bottom
-            - style.padding.top
-            - style.padding.bottom;
-
-        let left = bounds.x + style.border.size.left + style.padding.left;
-        let top = bounds.y + style.border.size.top + style.padding.top;
+        let content_width = bounds.width;
+        let content_height = bounds.height;
+        let left = bounds.x;
+        let top = bounds.y;
 
         vec![glyphon::TextArea {
             buffer: &self.buffer,
@@ -109,7 +99,6 @@ impl Component for Summary {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
         let (width, total_lines) = self
             .buffer
             .layout_runs()
@@ -129,31 +118,18 @@ impl Component for Summary {
         Bounds {
             x: self.x,
             y: self.y,
-            width: width
-                + style.margin.left
-                + style.margin.right
-                + style.padding.left
-                + style.padding.right
-                + style.border.size.left
-                + style.border.size.right,
-            height: total_lines * self.buffer.metrics().line_height
-                + style.margin.top
-                + style.margin.bottom
-                + style.padding.top
-                + style.padding.bottom
-                + style.border.size.top
-                + style.border.size.bottom,
+            width,
+            height: total_lines * self.buffer.metrics().line_height,
         }
     }
 
     fn get_render_bounds(&self) -> Bounds {
-        let style = self.get_style();
         let bounds = self.get_bounds();
         Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
+            x: bounds.x,
+            y: bounds.y,
+            width: bounds.width,
+            height: bounds.height,
         }
     }
 
@@ -174,7 +150,7 @@ impl Component for Summary {
 impl Summary {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size = context.config.styles.default.font.size * dpi / 72.0;
+        let font_size = context.config.styles.urgency_normal.unfocused.font.size * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),
@@ -198,7 +174,7 @@ mod tests {
             self,
             text::{Text, summary::Summary},
         },
-        config::Config,
+        config::client::ClientConfig as Config,
         manager::UiState,
     };
     use glyphon::FontSystem;
@@ -213,6 +189,7 @@ mod tests {
             config: Arc::new(Config::default()),
             app_name: "".into(),
             ui_state: UiState::default(),
+            urgency: Urgency::Normal,
         };
         let mut summary = Summary::new(context, &mut font_system);
 

@@ -13,7 +13,6 @@
                 rust-analyzer-unwrapped
                 nixd
                 pkg-config
-                lua5_4
                 libxkbcommon
                 vulkan-loader
                 vulkan-headers
@@ -46,7 +45,7 @@
             rustc = pkgs.rustToolchain;
           };
         };
-        webui = pkgs.callPackage ./nix/webui.nix { };
+        moxnotify-webui = pkgs.callPackage ./nix/webui.nix { };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });
 
@@ -54,5 +53,15 @@
         moxnotify = import ./nix/home-manager.nix;
         default = self.homeManagerModules.moxnotify;
       };
+
+      overlays.default =
+        final: prev:
+        let
+          inherit (prev.stdenv.hostPlatform) system;
+        in
+        {
+          inherit (self.packages.${system}) moxnotify;
+          inherit (self.packages.${system}) webui;
+        };
     };
 }

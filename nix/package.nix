@@ -2,7 +2,6 @@
   rustPlatform,
   lib,
   pkg-config,
-  lua5_4,
   libxkbcommon,
   wayland,
   vulkan-loader,
@@ -11,64 +10,9 @@
   libGL,
   egl-wayland,
   protobuf,
-  nodejs,
-  pnpm,
-  geist-font,
-  stdenv,
 }:
 let
   cargoToml = fromTOML (builtins.readFile ../Cargo.toml);
-
-  webui = stdenv.mkDerivation {
-    pname = "moxnotify-webui";
-    version = cargoToml.workspace.package.version;
-
-    src = ../webui;
-
-    nativeBuildInputs = [
-      nodejs
-      pnpm.configHook
-    ];
-
-    buildInputs = [
-      geist-font
-    ];
-
-    env = {
-      CI = "true";
-      NIX_BUILD = "1";
-    };
-
-    pnpmDeps = pnpm.fetchDeps {
-      pname = "moxnotify-webui";
-      version = cargoToml.workspace.package.version;
-      src = ../webui;
-      fetcherVersion = 2;
-      hash = "sha256-1HZHSZr85L0EGrf1rTt3nGEOirRLX+sCj51/7hZN3wg=";
-    };
-
-    buildPhase = ''
-      runHook preBuild
-
-      mkdir -p app/fonts
-
-      cp ${geist-font}/share/fonts/opentype/Geist-Regular.otf app/fonts/Geist-Regular.otf
-      cp ${geist-font}/share/fonts/opentype/Geist-Bold.otf app/fonts/Geist-Bold.otf
-      cp ${geist-font}/share/fonts/opentype/GeistMono-Regular.otf app/fonts/GeistMono-Regular.otf
-
-      pnpm run build
-
-      runHook postBuild
-    '';
-
-    installPhase = ''
-      mkdir -p $out
-      cp -r .next $out/.next
-      cp -r public $out/public
-      cp package.json $out/
-      cp -r node_modules $out/node_modules
-    '';
-  };
 in
 rustPlatform.buildRustPackage {
   pname = "moxnotify";
@@ -114,7 +58,6 @@ rustPlatform.buildRustPackage {
   ];
 
   buildInputs = [
-    lua5_4
     libxkbcommon
     wayland
     pipewire
@@ -136,12 +79,6 @@ rustPlatform.buildRustPackage {
     install -Dm755 target/release/scheduler $out/bin/moxnotify-scheduler
     install -Dm755 target/release/searcher $out/bin/moxnotify-searcher
     install -Dm755 target/release/ctl $out/bin/moxnotifyctl
-
-    mkdir -p $out/share/moxnotify/webui
-    cp -r ${webui}/.next $out/share/moxnotify/webui/.next
-    cp -r ${webui}/public $out/share/moxnotify/webui/public
-    cp ${webui}/package.json $out/share/moxnotify/webui/
-    cp -r ${webui}/node_modules $out/share/moxnotify/webui/node_modules
   '';
 
   postFixup = ''

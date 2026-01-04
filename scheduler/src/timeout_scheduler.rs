@@ -151,7 +151,6 @@ impl TimeoutScheduler {
         .await
         {
             log::error!("Failed to store timer metadata for {}: {}", id, e);
-            // Clean up the timer entry if metadata storage failed
             let _: Result<usize, _> =
                 AsyncTypedCommands::zrem(&mut *con, "moxnotify:timers", &timer_id_str).await;
             return;

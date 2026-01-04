@@ -1,3 +1,5 @@
+// notify-send -a "Overengineered Script" -u critical -t 15000 -i dialog-warning -c system -h int:resident:1 -h int:transient:0 -h int:suppress-sound:1 -h string:desktop-entry:terminal -A yes=Yes -A no=No -A later=Later -p -r 999 "Everything Enabled" "This notification uses every feature people might actually notice"
+
 use std::collections::HashMap;
 
 #[derive(Default)]

@@ -1,5 +1,6 @@
+use clap::Parser;
 use std::ops::Bound as StdBound;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::RangeQuery;
@@ -93,9 +94,22 @@ async fn cleanup_old_documents(
     Ok(deleted_count)
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = config::Config::load(None);
+    let cli = Cli::parse();
+
+    let config =
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        });
 
     env_logger::Builder::new()
         .filter(Some("janitor"), config.janitor.log_level.into())

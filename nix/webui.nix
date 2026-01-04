@@ -4,9 +4,12 @@
   nodejs,
   geist-font,
 }:
-stdenv.mkDerivation (finalAttrs: {
+let
+  cargoToml = fromTOML (builtins.readFile ../Cargo.toml);
+in
+stdenv.mkDerivation {
   pname = "moxnotify-webui";
-  version = "0.1.0";
+  version = cargoToml.workspace.package.version;
 
   src = ../webui;
 
@@ -25,7 +28,9 @@ stdenv.mkDerivation (finalAttrs: {
   };
 
   pnpmDeps = pnpm.fetchDeps {
-    inherit (finalAttrs) pname version src;
+    pname = "moxnotify-webui";
+    version = cargoToml.workspace.package.version;
+    src = ../webui;
     fetcherVersion = 2;
     hash = "sha256-1HZHSZr85L0EGrf1rTt3nGEOirRLX+sCj51/7hZN3wg=";
   };
@@ -46,10 +51,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   installPhase = ''
     mkdir -p $out
-
     cp -r .next $out/.next
     cp -r public $out/public
     cp package.json $out/
     cp -r node_modules $out/node_modules
   '';
-})
+}

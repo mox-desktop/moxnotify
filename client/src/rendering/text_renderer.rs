@@ -1,4 +1,5 @@
-use crate::{components::Bounds, config::Font};
+use crate::components::Bounds;
+use config::client::Font;
 use glyphon::{
     Attrs, Buffer, Cache, FontSystem, Shaping, SwashCache, TextArea, TextAtlas, TextRenderer,
     Viewport, Weight,

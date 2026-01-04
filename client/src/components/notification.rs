@@ -7,15 +7,30 @@ use super::text::summary::Summary;
 use super::{Bounds, UiState};
 use crate::components;
 use crate::components::{Component, Data};
-use crate::config::{Size, StyleState};
 use crate::moxnotify::types::NewNotification;
-use crate::{Config, Urgency};
+use config::client::{ClientConfig as Config, StyleState, Urgency};
 use calloop::RegistrationToken;
 use glyphon::FontSystem;
 use moxui::shape_renderer;
 use moxui::texture_renderer;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+
+// Hardcoded layout constants (previously configurable)
+const NOTIFICATION_MARGIN_LEFT: f32 = 5.0;
+const NOTIFICATION_MARGIN_RIGHT: f32 = 5.0;
+const NOTIFICATION_MARGIN_TOP: f32 = 5.0;
+const NOTIFICATION_MARGIN_BOTTOM: f32 = 5.0;
+const NOTIFICATION_PADDING_LEFT: f32 = 10.0;
+const NOTIFICATION_PADDING_RIGHT: f32 = 10.0;
+const NOTIFICATION_PADDING_TOP: f32 = 10.0;
+const NOTIFICATION_PADDING_BOTTOM: f32 = 10.0;
+const NOTIFICATION_WIDTH: f32 = 450.0;
+const PROGRESS_HEIGHT: f32 = 20.0;
+const PROGRESS_MARGIN_TOP: f32 = 10.0;
+
+// Hardcoded border sizes
+const NOTIFICATION_BORDER_SIZE: f32 = 1.0;
 
 pub type NotificationId = u32;
 
@@ -52,37 +67,32 @@ impl Component for Notification {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
-
         Bounds {
             x: 0.,
             y: self.y,
             width: self.width()
-                + style.border.size.left
-                + style.border.size.right
-                + style.padding.left
-                + style.padding.right
-                + style.margin.left
-                + style.margin.right,
+                + NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_LEFT
+                + NOTIFICATION_PADDING_RIGHT
+                + NOTIFICATION_MARGIN_LEFT
+                + NOTIFICATION_MARGIN_RIGHT,
             height: self.height()
-                + style.border.size.top
-                + style.border.size.bottom
-                + style.padding.top
-                + style.padding.bottom
-                + style.margin.top
-                + style.margin.bottom,
+                + NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_TOP
+                + NOTIFICATION_PADDING_BOTTOM
+                + NOTIFICATION_MARGIN_TOP
+                + NOTIFICATION_MARGIN_BOTTOM,
         }
     }
 
     fn get_render_bounds(&self) -> Bounds {
         let extents = self.get_bounds();
-        let style = self.get_style();
 
         Bounds {
-            x: extents.x + style.margin.left + self.x + self.data.hints.as_ref().unwrap().x as f32,
-            y: extents.y + style.margin.top,
-            width: extents.width - style.margin.left - style.margin.right,
-            height: extents.height - style.margin.top - style.margin.bottom,
+            x: extents.x + NOTIFICATION_MARGIN_LEFT + self.x + self.data.hints.as_ref().unwrap().x as f32,
+            y: extents.y + NOTIFICATION_MARGIN_TOP,
+            width: extents.width - NOTIFICATION_MARGIN_LEFT - NOTIFICATION_MARGIN_RIGHT,
+            height: extents.height - NOTIFICATION_MARGIN_TOP - NOTIFICATION_MARGIN_BOTTOM,
         }
     }
 
@@ -93,12 +103,12 @@ impl Component for Notification {
         vec![shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
             rect_size: [
-                extents.width - style.border.size.left - style.border.size.right,
-                extents.height - style.border.size.top - style.border.size.bottom,
+                extents.width - NOTIFICATION_BORDER_SIZE * 2.0,
+                extents.height - NOTIFICATION_BORDER_SIZE * 2.0,
             ],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [NOTIFICATION_BORDER_SIZE; 4],
             border_color: style.border.color.color(urgency),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.9,
@@ -118,11 +128,13 @@ impl Component for Notification {
         self.y = y;
 
         let extents = self.get_render_bounds();
-        let hovered = self.hovered();
-        let style = self.context.config.find_style(&self.data.app_name, hovered);
+        let _hovered = self.hovered();
+        let focused = self.context.ui_state.selected.load(Ordering::Relaxed)
+            && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
+        let style = self.context.config.find_style(self.context.urgency, focused);
 
-        let x_offset = style.border.size.left + style.padding.left;
-        let y_offset = style.border.size.top + style.padding.top;
+        let x_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
+        let y_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_TOP;
 
         // Get action buttons for reuse
         let action_buttons_count = self
@@ -159,10 +171,9 @@ impl Component for Notification {
                 .unwrap_or_default();
 
             let available_height = extents.height
-                - style.border.size.top
-                - style.border.size.bottom
-                - style.padding.top
-                - style.padding.bottom
+                - NOTIFICATION_BORDER_SIZE * 2.0
+                - NOTIFICATION_PADDING_TOP
+                - NOTIFICATION_PADDING_BOTTOM
                 - progress_height
                 - max_action_button_height;
 
@@ -191,27 +202,24 @@ impl Component for Notification {
         // Position progress indicator if present
         if let Some(progress) = self.progress.as_mut() {
             let available_width = extents.width
-                - style.border.size.left
-                - style.border.size.right
-                - style.padding.left
-                - style.padding.right
-                - style.progress.margin.left
-                - style.progress.margin.right;
+                - NOTIFICATION_BORDER_SIZE * 2.0
+                - NOTIFICATION_PADDING_LEFT
+                - NOTIFICATION_PADDING_RIGHT;
 
             progress.set_width(available_width);
 
             let is_selected = self.context.ui_state.selected.load(Ordering::Relaxed)
                 && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-            let selected_style = self
+            let _selected_style = self
                 .context
                 .config
-                .find_style(&self.data.app_name, is_selected);
+                .find_style(self.context.urgency, is_selected);
 
             let progress_x =
-                extents.x + selected_style.border.size.left + selected_style.padding.left;
+                extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
             let progress_y = extents.y + extents.height
-                - selected_style.border.size.bottom
-                - selected_style.padding.bottom
+                - NOTIFICATION_BORDER_SIZE
+                - NOTIFICATION_PADDING_BOTTOM
                 - progress.get_bounds().height;
 
             progress.set_position(progress_x, progress_y);
@@ -227,14 +235,14 @@ impl Component for Notification {
                     .find(|button| button.button_type() == ButtonType::Dismiss)
                     .map(|button| {
                         let dismiss_x = extents.x + extents.width
-                            - style.border.size.right
-                            - style.padding.right
+                            - NOTIFICATION_BORDER_SIZE
+                            - NOTIFICATION_PADDING_RIGHT
                             - button.get_bounds().width;
 
                         let dismiss_y = extents.y
-                            + style.margin.top
-                            + style.border.size.top
-                            + style.padding.top;
+                            + NOTIFICATION_MARGIN_TOP
+                            + NOTIFICATION_BORDER_SIZE
+                            + NOTIFICATION_PADDING_TOP;
 
                         button.set_position(dismiss_x, dismiss_y);
                         button.get_bounds().y + button.get_bounds().height
@@ -246,7 +254,7 @@ impl Component for Notification {
         if let Some(buttons) = self.buttons.as_mut()
             && action_buttons_count > 0
         {
-            let button_style = buttons
+            let _button_style = buttons
                 .buttons()
                 .iter()
                 .find(|button| button.button_type() == ButtonType::Action)
@@ -255,12 +263,14 @@ impl Component for Notification {
                     |button| button.get_style(),
                 );
 
-            let side_padding = style.border.size.left
-                + style.border.size.right
-                + style.padding.left
-                + style.padding.right;
+            let side_padding = NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_LEFT
+                + NOTIFICATION_PADDING_RIGHT;
 
-            let button_margin = button_style.margin.left + button_style.margin.right;
+            // Hardcoded button margin for action buttons
+            const ACTION_BUTTON_MARGIN_LEFT: f32 = 5.0;
+            const ACTION_BUTTON_MARGIN_RIGHT: f32 = 5.0;
+            let button_margin = ACTION_BUTTON_MARGIN_LEFT + ACTION_BUTTON_MARGIN_RIGHT;
             let available_width = extents.width - side_padding - button_margin;
 
             let action_buttons_f32 = action_buttons_count as f32;
@@ -275,8 +285,8 @@ impl Component for Notification {
                 .map(|p| p.get_bounds().height)
                 .unwrap_or_default();
 
-            let base_x = extents.x + style.border.size.left + style.padding.left;
-            let bottom_padding = style.border.size.bottom + style.padding.bottom + progress_height;
+            let base_x = extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
+            let bottom_padding = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_BOTTOM + progress_height;
 
             buttons
                 .buttons_mut()
@@ -372,11 +382,18 @@ impl Notification {
         data: NewNotification,
         ui_state: UiState,
     ) -> Notification {
+        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let urgency: Urgency = match proto_urgency {
+            crate::moxnotify::types::Urgency::Low => Urgency::Low,
+            crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
+            crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
+        };
         let context = components::Context {
             id: data.id,
             app_name: data.app_name.clone(),
             config,
             ui_state,
+            urgency,
         };
 
         Notification {
@@ -403,11 +420,18 @@ impl Notification {
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification {
+        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let urgency: Urgency = match proto_urgency {
+            crate::moxnotify::types::Urgency::Low => Urgency::Low,
+            crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
+            crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
+        };
         let context = components::Context {
             id: data.id,
             app_name: data.app_name.clone(),
             config,
             ui_state,
+            urgency,
         };
 
         let icons = match (
@@ -418,9 +442,15 @@ impl Notification {
             (image, app_icon) => Some(Icons::new(context.clone(), image, app_icon)),
         };
 
+        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let urgency: Urgency = match proto_urgency {
+            crate::moxnotify::types::Urgency::Low => Urgency::Low,
+            crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
+            crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
+        };
         let mut buttons = ButtonManager::new(
             context.clone(),
-            data.hints.as_ref().unwrap().urgency.try_into().unwrap(),
+            urgency,
             sender,
         )
         .add_dismiss(font_system)
@@ -432,7 +462,13 @@ impl Notification {
             .find(|button| button.button_type() == ButtonType::Dismiss)
             .map_or(0.0, |button| button.get_render_bounds().width);
 
-        let style = context.config.find_style(&data.app_name, false);
+        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let urgency: Urgency = match proto_urgency {
+            crate::moxnotify::types::Urgency::Low => Urgency::Low,
+            crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
+            crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
+        };
+        let _style = context.config.find_style(urgency, false);
 
         let body = if data.body.is_empty() {
             None
@@ -442,7 +478,7 @@ impl Notification {
             body.set_size(
                 font_system,
                 Some(
-                    style.width
+                    NOTIFICATION_WIDTH
                         - icons
                             .as_ref()
                             .map(|icons| icons.get_bounds().width)
@@ -465,7 +501,7 @@ impl Notification {
             summary.set_size(
                 font_system,
                 Some(
-                    style.width
+                    NOTIFICATION_WIDTH
                         - icons
                             .as_ref()
                             .map(|icons| icons.get_bounds().width)
@@ -550,22 +586,23 @@ impl Notification {
 
     #[must_use]
     pub fn width(&self) -> f32 {
-        if self.hovered() {
-            self.context.config.styles.hover.width.resolve(0.)
-        } else {
-            self.context.config.styles.default.width.resolve(0.)
-        }
+        NOTIFICATION_WIDTH
     }
 
     #[must_use]
     pub fn urgency(&self) -> Urgency {
-        self.data
+        let proto_urgency: crate::moxnotify::types::Urgency = self.data
             .hints
             .as_ref()
             .unwrap()
             .urgency
             .try_into()
-            .unwrap()
+            .unwrap();
+        match proto_urgency {
+            crate::moxnotify::types::Urgency::Low => Urgency::Low,
+            crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
+            crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
+        }
     }
 
     #[must_use]
@@ -609,7 +646,7 @@ impl Notification {
 impl Notification {
     #[must_use]
     pub fn height(&self) -> f32 {
-        let style = self.get_style();
+        let _style = self.get_style();
 
         let dismiss_button = self
             .buttons
@@ -643,47 +680,33 @@ impl Notification {
             .unwrap_or_default();
 
         let progress = if self.progress.is_some() {
-            style.progress.height + style.progress.margin.top + style.progress.margin.bottom
+            PROGRESS_HEIGHT + PROGRESS_MARGIN_TOP
         } else {
             0.0
         };
 
-        let min_height = match style.min_height {
-            Size::Auto => 0.0,
-            Size::Value(value) => value,
-        };
-
-        let max_height = match style.max_height {
-            Size::Auto => f32::INFINITY,
-            Size::Value(value) => value,
-        };
-
-        match style.height {
-            Size::Value(height) => height.clamp(min_height, max_height),
-            Size::Auto => {
-                let text_height = self
-                    .body
-                    .as_ref()
-                    .map(|body| body.get_bounds().height)
-                    .unwrap_or_default()
-                    + self
-                        .summary
-                        .as_ref()
-                        .map(|summary| summary.get_bounds().height)
-                        .unwrap_or_default()
-                    + progress;
-                let icon_height = self
-                    .icons
-                    .as_ref()
-                    .map(|icons| icons.get_bounds().height)
-                    .unwrap_or_default()
-                    + progress;
-                let base_height = (text_height.max(icon_height).max(dismiss_button)
-                    + action_button.height)
-                    .max(dismiss_button + action_button.height)
-                    + style.padding.bottom;
-                base_height.clamp(min_height, max_height)
-            }
-        }
+        // Height is always Auto (calculated from content)
+        let text_height = self
+            .body
+            .as_ref()
+            .map(|body| body.get_bounds().height)
+            .unwrap_or_default()
+            + self
+                .summary
+                .as_ref()
+                .map(|summary| summary.get_bounds().height)
+                .unwrap_or_default()
+            + progress;
+        let icon_height = self
+            .icons
+            .as_ref()
+            .map(|icons| icons.get_bounds().height)
+            .unwrap_or_default()
+            + progress;
+        
+        (text_height.max(icon_height).max(dismiss_button)
+            + action_button.height)
+            .max(dismiss_button + action_button.height)
+            + NOTIFICATION_PADDING_BOTTOM
     }
 }

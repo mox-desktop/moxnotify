@@ -1,9 +1,10 @@
 use super::{Button, Component, Hint, State};
 use crate::components::Bounds;
 use crate::components::text::body::Anchor;
-use crate::config::button::ButtonState;
+use config::client::button::ButtonState;
 use crate::rendering::text_renderer::Text;
-use crate::{Urgency, components};
+use crate::components;
+use config::client::Urgency;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
@@ -26,7 +27,12 @@ impl Component for AnchorButton {
     }
 
     fn get_style(&self) -> &Self::Style {
-        &self.context.config.styles.hover.buttons.dismiss.default
+        let urgency_styles = match self.context.urgency {
+            Urgency::Low => &self.context.config.styles.urgency_low,
+            Urgency::Normal => &self.context.config.styles.urgency_normal,
+            Urgency::Critical => &self.context.config.styles.urgency_critical,
+        };
+        &urgency_styles.focused.buttons.dismiss.default
     }
 
     fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
@@ -37,7 +43,7 @@ impl Component for AnchorButton {
             rect_size: [bounds.width, bounds.height],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [0.0; 4],
             border_color: style.border.color.color(urgency),
             scale: 0.,
             depth: 0.8,

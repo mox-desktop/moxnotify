@@ -6,8 +6,6 @@ pub struct Summary {
     pub size: f32,
     pub family: Arc<str>,
     pub color: Color,
-    pub margin: Insets,
-    pub padding: Insets,
     pub border: Border,
     pub background: Color,
 }
@@ -24,18 +22,12 @@ impl Summary {
             if let Some(color) = font.color.as_ref() {
                 self.color.apply(color);
             }
-            if let Some(margin) = partial.margin.as_ref() {
-                self.margin.apply(margin);
-            }
-            if let Some(padding) = partial.padding.as_ref() {
-                self.padding.apply(padding);
-            }
-            if let Some(border) = partial.border.as_ref() {
-                self.border.apply(border);
-            }
-            if let Some(background) = partial.background.as_ref() {
-                self.background.apply(background);
-            }
+        }
+        if let Some(border) = partial.border.as_ref() {
+            self.border.apply(border);
+        }
+        if let Some(background) = partial.background.as_ref() {
+            self.background.apply(background);
         }
     }
 }
@@ -46,8 +38,6 @@ impl Default for Summary {
             size: 10.,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
-            margin: Insets::default(),
-            padding: Insets::default(),
             border: Border {
                 size: Insets::default(),
                 ..Default::default()
@@ -62,8 +52,6 @@ pub struct Body {
     pub size: f32,
     pub family: Arc<str>,
     pub color: Color,
-    pub margin: Insets,
-    pub padding: Insets,
     pub border: Border,
     pub background: Color,
 }
@@ -80,18 +68,12 @@ impl Body {
             if let Some(color) = font.color.as_ref() {
                 self.color.apply(color);
             }
-            if let Some(margin) = partial.margin.as_ref() {
-                self.margin.apply(margin);
-            }
-            if let Some(padding) = partial.padding.as_ref() {
-                self.padding.apply(padding);
-            }
-            if let Some(border) = partial.border.as_ref() {
-                self.border.apply(border);
-            }
-            if let Some(background) = partial.background.as_ref() {
-                self.background.apply(background);
-            }
+        }
+        if let Some(border) = partial.border.as_ref() {
+            self.border.apply(border);
+        }
+        if let Some(background) = partial.background.as_ref() {
+            self.background.apply(background);
         }
     }
 }
@@ -102,8 +84,6 @@ impl Default for Body {
             size: 10.,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
-            margin: Insets::default(),
-            padding: Insets::default(),
             border: Border {
                 size: Insets::default(),
                 ..Default::default()

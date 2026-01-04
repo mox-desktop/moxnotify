@@ -1,9 +1,6 @@
-use crate::{
-    Moxnotify,
-    components::notification,
-    config::keymaps::{self},
-    rendering::surface::FocusReason,
-};
+use crate::{Moxnotify, components::notification};
+use crate::rendering::surface::FocusReason;
+use config::client::keymaps::{self};
 use std::sync::atomic::Ordering;
 use wayland_client::{
     Connection, Dispatch, QueueHandle, WEnum, delegate_noop,

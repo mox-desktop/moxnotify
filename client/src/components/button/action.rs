@@ -1,10 +1,17 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::components::{Bounds, Component};
-use crate::config::button::ButtonState;
+use config::client::{button::ButtonState, Urgency};
 use crate::rendering::text_renderer;
-use crate::{Urgency, components};
+use crate::components;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
+
+// Hardcoded layout constants (previously configurable)
+const ACTION_BUTTON_PADDING_TOP: f32 = 5.0;
+const ACTION_BUTTON_PADDING_BOTTOM: f32 = 5.0;
+const ACTION_BUTTON_MARGIN_LEFT: f32 = 5.0;
+const ACTION_BUTTON_MARGIN_RIGHT: f32 = 5.0;
+const ACTION_BUTTON_BORDER_SIZE: f32 = 1.0;
 
 pub struct ActionButton {
     pub context: components::Context,
@@ -33,12 +40,12 @@ impl Component for ActionButton {
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [
-                bounds.width - style.border.size.left - style.border.size.right,
-                bounds.height - style.border.size.top - style.border.size.bottom,
+                bounds.width - ACTION_BUTTON_BORDER_SIZE * 2.0,
+                bounds.height - ACTION_BUTTON_BORDER_SIZE * 2.0,
             ],
             rect_color: style.background.color(urgency),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [ACTION_BUTTON_BORDER_SIZE; 4],
             border_color: style.border.color.color(urgency),
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
@@ -51,41 +58,20 @@ impl Component for ActionButton {
         let text_extents = self.text.get_bounds();
 
         let remaining_padding = extents.width - text_extents.width;
-        let (pl, _) = match (style.padding.left.is_auto(), style.padding.right.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.right.resolve(0.)),
-            _ => (
-                style.padding.left.resolve(0.),
-                style.padding.right.resolve(0.),
-            ),
-        };
-
+        let pl = remaining_padding / 2.;
         let remaining_padding = extents.height - text_extents.height;
-        let (pt, _) = match (style.padding.top.is_auto(), style.padding.bottom.is_auto()) {
-            (true, true) => (remaining_padding / 2., remaining_padding / 2.),
-            (true, false) => (remaining_padding, style.padding.bottom.resolve(0.)),
-            _ => (
-                style.padding.top.resolve(0.),
-                style.padding.bottom.resolve(0.),
-            ),
-        };
+        let pt = remaining_padding / 2.;
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
-            left: extents.x + style.border.size.left + style.padding.left.resolve(pl),
-            top: extents.y + style.border.size.top + style.padding.top.resolve(pt),
+            left: extents.x + ACTION_BUTTON_BORDER_SIZE + pl,
+            top: extents.y + ACTION_BUTTON_BORDER_SIZE + pt,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             bounds: glyphon::TextBounds {
-                left: (extents.x + style.border.size.left + style.padding.left.resolve(pl)) as i32,
-                top: (extents.y + style.border.size.top + style.padding.top.resolve(pt)) as i32,
-                right: (extents.x
-                    + style.border.size.left
-                    + style.padding.left.resolve(pl)
-                    + text_extents.width) as i32,
-                bottom: (extents.y
-                    + style.border.size.top
-                    + style.padding.top.resolve(pt)
-                    + text_extents.height) as i32,
+                left: (extents.x + ACTION_BUTTON_BORDER_SIZE + pl) as i32,
+                top: (extents.y + ACTION_BUTTON_BORDER_SIZE + pt) as i32,
+                right: (extents.x + ACTION_BUTTON_BORDER_SIZE + pl + text_extents.width) as i32,
+                bottom: (extents.y + ACTION_BUTTON_BORDER_SIZE + pt + text_extents.height) as i32,
             },
             custom_glyphs: &[],
             default_color: style.font.color.into_glyphon(urgency),
@@ -102,24 +88,17 @@ impl Component for ActionButton {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
-        let width = style.width.resolve(self.width)
-            + style.border.size.left
-            + style.border.size.right
-            + style.padding.left
-            + style.padding.right
-            + style.margin.left
-            + style.margin.right;
+        let width = self.width
+            + ACTION_BUTTON_BORDER_SIZE * 2.0
+            + ACTION_BUTTON_MARGIN_LEFT
+            + ACTION_BUTTON_MARGIN_RIGHT;
 
-        let height = style.height.resolve(text_extents.height)
-            + style.border.size.top
-            + style.border.size.bottom
-            + style.padding.top
-            + style.padding.bottom
-            + style.margin.top
-            + style.margin.bottom;
+        let height = text_extents.height
+            + ACTION_BUTTON_BORDER_SIZE * 2.0
+            + ACTION_BUTTON_PADDING_TOP
+            + ACTION_BUTTON_PADDING_BOTTOM;
 
         Bounds {
             x: self.x,
@@ -131,13 +110,12 @@ impl Component for ActionButton {
 
     fn get_render_bounds(&self) -> Bounds {
         let bounds = self.get_bounds();
-        let style = self.get_style();
 
         Bounds {
-            x: bounds.x + style.margin.left,
-            y: bounds.y + style.margin.top,
-            width: bounds.width - style.margin.left - style.margin.right,
-            height: bounds.height - style.margin.top - style.margin.bottom,
+            x: bounds.x + ACTION_BUTTON_MARGIN_LEFT,
+            y: bounds.y,
+            width: bounds.width - ACTION_BUTTON_MARGIN_LEFT - ACTION_BUTTON_MARGIN_RIGHT,
+            height: bounds.height,
         }
     }
 

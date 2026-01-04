@@ -1,9 +1,12 @@
 mod notify;
 use clap::{Parser, Subcommand};
+use std::path::Path;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
     #[command(subcommand)]
     command: NotifyCommand,
 }

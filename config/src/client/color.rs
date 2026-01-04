@@ -1,5 +1,5 @@
 use super::partial::PartialColor;
-use crate::Urgency;
+use super::Urgency;
 use serde::de;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};

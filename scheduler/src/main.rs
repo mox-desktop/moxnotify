@@ -14,6 +14,7 @@ mod view_range;
 use crate::client_state::{ClientState, ClientStateManager};
 use crate::moxnotify::client::notification_message;
 use crate::timeout_scheduler::TimeoutScheduler;
+use clap::Parser;
 use moxnotify::client::client_service_server::{ClientService, ClientServiceServer};
 use moxnotify::client::viewport_navigation_request::Direction;
 use moxnotify::client::{
@@ -26,6 +27,7 @@ use moxnotify::types::{CloseNotification, CloseReason, NewNotification, Notifica
 use redis::AsyncTypedCommands;
 use redis::streams::StreamReadOptions;
 use std::collections::HashMap;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
@@ -800,9 +802,23 @@ impl ClientService for Scheduler {
     }
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Arc::new(config::Config::load(None));
+    let cli = Cli::parse();
+
+    let config = Arc::new(
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        }),
+    );
 
     env_logger::Builder::new()
         .filter(Some("scheduler"), config.indexer.log_level.into())

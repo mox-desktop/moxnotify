@@ -1,10 +1,7 @@
 use super::UiState;
-use crate::Urgency;
-use crate::{
-    components::{Component, notification::Notification, text::Text},
-    config::Config,
-    moxnotify::types::{NewNotification, NotificationHints},
-};
+use crate::components::{Component, notification::Notification, text::Text};
+use crate::moxnotify::types::{NewNotification, NotificationHints};
+use config::client::{ClientConfig as Config, Urgency};
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
 use std::{
@@ -119,15 +116,16 @@ impl NotificationView {
 
         let extents = self.prev.get_render_bounds();
         let style = &self.config.styles.prev;
+        const COUNTER_BORDER_SIZE: f32 = 1.0;
         let instance = shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
             rect_size: [
-                total_width - style.border.size.left - style.border.size.right,
-                extents.height - style.border.size.top - style.border.size.bottom,
+                total_width - COUNTER_BORDER_SIZE * 2.0,
+                extents.height - COUNTER_BORDER_SIZE * 2.0,
             ],
             rect_color: style.background.color(Urgency::Low),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [COUNTER_BORDER_SIZE; 4],
             border_color: style.border.color.color(Urgency::Low),
             scale: self.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.9,
@@ -154,15 +152,16 @@ impl NotificationView {
 
         let extents = self.next.get_render_bounds();
         let style = &self.config.styles.prev;
+        const COUNTER_BORDER_SIZE: f32 = 1.0;
         let instance = shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
             rect_size: [
-                total_width - style.border.size.left - style.border.size.right,
-                extents.height - style.border.size.top - style.border.size.bottom,
+                total_width - COUNTER_BORDER_SIZE * 2.0,
+                extents.height - COUNTER_BORDER_SIZE * 2.0,
             ],
             rect_color: style.background.color(Urgency::Low),
             border_radius: style.border.radius.into(),
-            border_size: style.border.size.into(),
+            border_size: [COUNTER_BORDER_SIZE; 4],
             border_color: style.border.color.color(Urgency::Low),
             scale: self.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.9,

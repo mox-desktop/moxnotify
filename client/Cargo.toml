@@ -13,7 +13,6 @@ keywords.workspace = true
 calloop = { version = "0.14.2", features = ["executor"] }
 calloop-wayland-source = "0.4.0"
 env_logger = { version = "0.11.6", default-features = false }
-mlua = { version = "0.10.3", features = ["lua54", "serialize"] }
 serde = { version = "1.0.217", features = ["rc"], default-features = false }
 wayland-client = "0.31.11"
 wayland-protocols = { version = "0.32.5", features = ["staging", "unstable"] }
@@ -61,6 +60,9 @@ tonic-prost = "0.14.2"
 prost = "0.14.1"
 wayland-backend = { version = "0.3.7", features = ["client_system"] }
 glyphon = "0.10.0"
+tvix_serde = { git = "https://code.tvl.fyi/depot.git", rev = "a17a8928c6193fc758393a22bd9e71b8439ebfd3", package = "tvix-serde" }
+config = { path = "../config" }
+simplecss = "0.2.2"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

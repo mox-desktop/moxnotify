@@ -18,115 +18,96 @@ https://github.com/user-attachments/assets/1996d46c-85cc-4d47-bcf1-5088a58d2192
 
 ## Configuration
 
-Moxnotify configuration is written in lua and is located at $XDG_CONFIG_HOME/moxnotify/config.lua or ~/.config/moxnotify/config.lua.
+Moxnotify configuration is written in nix and is located at $XDG_CONFIG_HOME/mox/moxnotify/default.nix or ~/.config/mox/moxnotify.nix
 
 ### Example configuration
 
-```lua
-return {
-  keymaps = {
-    {
-      mode = "n"
-      keys = "d",
-      action = "dismiss_notification",
-    },
-    {
-      mode = "n"
-      keys = "ge",
-      action = "last_notification",
-    }
-  },
-  styles = {
-    {
-      selector = "*",
-      style = {
-        border = {
-          color = {
-            urgency_critical = "#f38ba8",
-            urgency_low = "#a6e3a1",
-            urgency_normal = "#cba6f7"
-          }
-        },
-        font = {
-          color = "#cdd6f4",
-          family = "DejaVu Sans",
-          size = 10
-        }
+```nix
+{
+  client = {
+    keymaps = [
+      {
+        mode = "n";
+        keys = "d";
+        action = "dismiss_notification";
       }
-    },
-    {
-      selector = {
-        "next_counter",
-        "prev_counter",
-        "notification",
-        "hints"
-      },
-      style = {
-        background = {
-          urgency_critical = "#181825FF",
-          urgency_low = "#1e1e2eFF",
-          urgency_normal = "#181825FF"
-        }
+      {
+        mode = "n";
+        keys = "ge";
+        action = "last_notification";
       }
-    },
-    {
-      selector = "notification",
-      state = "hover",
-      style = {
-        background = {
-          urgency_critical = "#313244FF",
-          urgency_low = "#313244FF",
-          urgency_normal = "#313244FF"
-        }
+    ];
+    styles = [
+      {
+        selector = "*";
+        style = {
+          border.color = {
+              urgency_critical = "#f38ba8";
+              urgency_low = "#a6e3a1";
+              urgency_normal = "#cba6f7";
+          };
+          font = {
+            color = "#cdd6f4";
+            family = "DejaVu Sans";
+            size = 10;
+          };
+        };
       }
-    },
-    {
-      selector = "action",
-      state = "hover",
-      style = {
-        background = {
-          urgency_critical = "#f38ba8",
-          urgency_low = "#f2cdcd",
-          urgency_normal = "#f2cdcd"
-        }
+      {
+        selector = [
+          "next_counter"
+          "prev_counter"
+          "notification"
+          "hints"
+        ];
+        style.background = {
+          urgency_critical = "#181825FF";
+          urgency_low = "#1e1e2eFF";
+          urgency_normal = "#181825FF";
+        };
       }
-    },
-    {
-      selector = "progress",
-      style = {
-        background = {
-          urgency_critical = "#f38ba8",
-          urgency_low = "#f2cdcd",
-          urgency_normal = "#f2cdcd"
-        }
+      {
+        selector = "notification";
+        state = "hover";
+        style.background = {
+          urgency_critical = "#313244FF";
+          urgency_low = "#313244FF";
+          urgency_normal = "#313244FF";
+        };
       }
-    },
-    {
-      selector = "dismiss",
-      style = {
-        font = {
-          color = "#00000000"
-        }
+      {
+        selector = "action";
+        state = "hover";
+        style.background = {
+            urgency_critical = "#f38ba8";
+            urgency_low = "#f2cdcd";
+            urgency_normal = "#f2cdcd";
+        };
       }
-    },
-    {
-      selector = "dismiss",
-      state = "container_hover",
-      style = {
-        font = {
-          color = "#000000"
-        }
+      {
+        selector = "progress";
+        style.background = {
+          urgency_critical = "#f38ba8";
+          urgency_low = "#f2cdcd";
+          urgency_normal = "#f2cdcd";
+        };
       }
-    }
-  }
+      {
+        selector = "dismiss";
+        style.font.color = "#00000000";
+      }
+      {
+        selector = "dismiss";
+        state = "container_hover";
+        style.font.color = "#000000";
+      }
+    ];
+  };
 }
 ```
 
 ## Dependencies
 
-- **Lua** 5.4  
 - **Rust**  
-- **dbus**
-- **wayland**  
 - **pipewire**  
-- **vulkan-loader**
+- **vulkan**

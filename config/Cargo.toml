@@ -18,3 +18,11 @@ log = "0.4.27"
 anyhow = { version = "1.0.95", default-features = false }
 humantime = "2.1"
 tvix_serde = { git = "https://code.tvl.fyi/depot.git", rev = "a17a8928c6193fc758393a22bd9e71b8439ebfd3", package = "tvix-serde" }
+xkbcommon = "0.8.0"
+glyphon = "0.10.0"
+tonic-prost = "0.14.2"
+prost = "0.14.1"
+tonic = "0.14.2"
+
+[build-dependencies]
+tonic-prost-build = "0.14.2"

@@ -3,7 +3,7 @@ mod view;
 use crate::components::notification;
 use crate::components::notification::{Notification, NotificationId};
 use crate::components::{Component, Data};
-use crate::config::{Config, keymaps};
+use config::client::{ClientConfig as Config, keymaps};
 use crate::moxnotify::client::client_service_client::ClientServiceClient;
 use crate::moxnotify::client::viewport_navigation_request::Direction;
 use crate::moxnotify::client::{

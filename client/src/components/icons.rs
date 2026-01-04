@@ -1,10 +1,8 @@
-use crate::Urgency;
-use crate::{
-    components::{self, Bounds, Component},
-    config::StyleState,
-    moxnotify::types::Image,
-    utils::image_data::ImageData,
-};
+use config::client::Urgency;
+use crate::components::{self, Bounds, Component};
+use crate::moxnotify::types::Image;
+use crate::utils::image_data::ImageData;
+use config::client::StyleState;
 use moxui::{
     shape_renderer,
     texture_renderer::{self, Buffer, TextureArea, TextureBounds},
@@ -13,7 +11,7 @@ use resvg::usvg;
 use std::{
     collections::BTreeMap,
     path::Path,
-    sync::{LazyLock, Mutex, atomic::Ordering},
+    sync::{LazyLock, Mutex},
 };
 
 use super::Data;
@@ -45,7 +43,6 @@ impl Cache {
     }
 }
 
-#[derive(Default)]
 pub struct Icons {
     icon: Option<ImageData>,
     app_icon: Option<ImageData>,
@@ -121,24 +118,16 @@ impl Component for Icons {
     }
 
     fn get_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
+        let _style = self.get_notification_style();
+
+        // Hardcoded icon layout constants
+        const ICON_MARGIN_LEFT: f32 = 5.0;
+        const ICON_MARGIN_RIGHT: f32 = 10.0;
 
         let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
             (
-                i.width() as f32
-                    + style.icon.padding.right
-                    + style.icon.padding.left
-                    + style.icon.margin.left
-                    + style.icon.margin.right,
-                i.height() as f32
-                    + style.icon.padding.top
-                    + style.icon.padding.bottom
-                    + style.icon.margin.top
-                    + style.icon.margin.bottom,
+                i.width() as f32 + ICON_MARGIN_LEFT + ICON_MARGIN_RIGHT,
+                i.height() as f32,
             )
         });
 
@@ -151,22 +140,19 @@ impl Component for Icons {
     }
 
     fn get_render_bounds(&self) -> Bounds {
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
+        let _style = self.get_notification_style();
 
-        let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
-            (
-                i.width() as f32 + style.icon.padding.right + style.icon.padding.left,
-                i.height() as f32 + style.icon.padding.top + style.icon.padding.bottom,
-            )
-        });
+        // Hardcoded icon layout constants
+        const ICON_MARGIN_LEFT: f32 = 5.0;
+
+        let (width, height) = self
+            .icon
+            .as_ref()
+            .map_or((0., 0.), |i| (i.width() as f32, i.height() as f32));
 
         Bounds {
-            x: self.x + style.icon.margin.left,
-            y: self.y + style.icon.margin.top,
+            x: self.x + ICON_MARGIN_LEFT,
+            y: self.y,
             width,
             height,
         }
@@ -188,11 +174,7 @@ impl Component for Icons {
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
-        let style = self.get_config().find_style(
-            self.get_app_name(),
-            self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
-                && self.get_ui_state().selected.load(Ordering::Relaxed),
-        );
+        let style = self.get_notification_style();
 
         let mut bounds = self.get_render_bounds();
 
@@ -201,8 +183,8 @@ impl Component for Icons {
             buffer.set_bytes(icon.data());
 
             texture_areas.push(TextureArea {
-                left: bounds.x + style.icon.padding.left,
-                top: bounds.y + style.icon.padding.top,
+                left: bounds.x,
+                top: bounds.y,
                 scale: 1.0,
                 rotation: 0.,
                 bounds: TextureBounds {
@@ -225,24 +207,18 @@ impl Component for Icons {
             let app_icon_size = self.get_config().general.app_icon_size as f32;
             texture_areas.push(TextureArea::simple(
                 app_icon.data(),
-                bounds.x + style.icon.padding.left,
-                bounds.y + style.icon.padding.top,
+                bounds.x,
+                bounds.y,
                 app_icon.width() as f32,
                 app_icon.height() as f32,
                 TextureBounds {
                     left: bounds.x as u32,
                     top: bounds.y as u32,
-                    right: (bounds.x
-                        + app_icon_size
-                        + style.icon.padding.left
-                        + style.icon.padding.right) as u32,
-                    bottom: (bounds.y
-                        + app_icon_size
-                        + style.icon.padding.top
-                        + style.icon.padding.bottom) as u32,
+                    right: (bounds.x + app_icon_size) as u32,
+                    bottom: (bounds.y + app_icon_size) as u32,
                 },
                 style.app_icon.border.radius.into(),
-                style.icon.border.size.into(),
+                [0.0; 4],
                 0.8,
             ));
         }
@@ -380,9 +356,10 @@ mod tests {
         };
         let context = components::Context {
             id: 1,
-            config: crate::Config::default().into(),
+            config: Arc::new(config::client::ClientConfig::default()),
             ui_state: crate::manager::UiState::default(),
             app_name: "app".into(),
+            urgency: Urgency::Normal,
         };
         let icons = Icons::new(context, Some(&image), None);
 

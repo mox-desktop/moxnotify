@@ -109,7 +109,6 @@ impl ClientStateManager {
         let mut con = self.redis_con.lock().await;
         let key = Self::client_key(client_id);
 
-        // Use individual hset calls for simplicity
         let mut success = true;
 
         if let Some(selected_id) = state.selected_id {
@@ -121,7 +120,6 @@ impl ClientStateManager {
                 success = false;
             }
         } else {
-            // Remove selected_id if None
             let _ = con.hdel::<&str, &str>(&key, "selected_id").await;
         }
 
@@ -162,7 +160,6 @@ impl ClientStateManager {
         }
 
         if success {
-            // Set TTL of 1 hour for client state (auto-cleanup if client disconnects)
             let _ = con.expire::<&str>(&key, 3600).await;
             log::debug!("Saved state for client {}", client_id);
         }
