@@ -10,6 +10,8 @@ pub mod moxnotify {
 mod dbus;
 mod image_data;
 
+use clap::Parser;
+use std::path::Path;
 use std::sync::Arc;
 
 use moxnotify::collector::CollectorMessage;
@@ -35,9 +37,23 @@ pub enum EmitEvent {
     NotificationClosed(NotificationClosed),
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Arc::new(config::Config::load(None));
+    let cli = Cli::parse();
+
+    let config = Arc::new(
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        }),
+    );
 
     env_logger::Builder::new()
         .filter(Some("collector"), config.collector.log_level.into())

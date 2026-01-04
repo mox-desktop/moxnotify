@@ -9,10 +9,12 @@ pub mod moxnotify {
 
 use crate::moxnotify::collector::{collector_message, collector_response};
 use crate::moxnotify::types::{ActionInvoked, NotificationClosed};
+use clap::Parser;
 use moxnotify::collector::collector_service_server::{CollectorService, CollectorServiceServer};
 use moxnotify::collector::{CollectorMessage, CollectorResponse};
 use redis::AsyncTypedCommands;
 use redis::streams::StreamReadOptions;
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
@@ -262,9 +264,22 @@ impl CollectorService for ControlPlaneService {
     }
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = config::Config::load(None);
+    let cli = Cli::parse();
+
+    let config =
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        });
 
     env_logger::Builder::new()
         .filter(Some("control_plane"), config.control_plane.log_level.into())

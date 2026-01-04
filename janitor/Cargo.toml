@@ -21,3 +21,4 @@ config = { path = "../config" }
 env_logger = { version = "0.11.6", default-features = false }
 log = "0.4.27"
 anyhow = "1.0.100"
+clap = { version = "4.5.27", features = ["derive"] }

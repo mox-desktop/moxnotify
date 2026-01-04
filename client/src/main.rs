@@ -496,10 +496,17 @@ struct Cli {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let config = config::Config::load(cli.config.as_ref().map(|p| p.as_ref()));
+    let config =
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        });
     env_logger::Builder::new()
         .filter(Some("client"), config.client.log_level.into())
         .init();
+
+    let style = simplecss::StyleSheet::parse(&config.client.css);
+    println!("{style:#?}");
 
     let conn = Connection::connect_to_env().expect("Failed to connect to Wayland");
     let (globals, event_queue) = registry_queue_init(&conn)?;

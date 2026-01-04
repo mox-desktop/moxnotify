@@ -62,6 +62,7 @@ wayland-backend = { version = "0.3.7", features = ["client_system"] }
 glyphon = "0.10.0"
 tvix_serde = { git = "https://code.tvl.fyi/depot.git", rev = "a17a8928c6193fc758393a22bd9e71b8439ebfd3", package = "tvix-serde" }
 config = { path = "../config" }
+simplecss = "0.2.2"
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

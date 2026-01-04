@@ -3,9 +3,10 @@ use axum::Router;
 use axum::extract::State;
 use axum::routing::post;
 use chrono::DateTime as ChronoDateTime;
+use clap::Parser;
 use serde::Deserialize;
 use std::ops::Bound as StdBound;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tantivy::collector::TopDocs;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::{BooleanQuery, Occur, QueryParser, RangeQuery};
@@ -37,9 +38,22 @@ struct GlobalState {
     timestamp_field: Field,
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> tantivy::Result<()> {
-    let config = config::Config::load(None);
+    let cli = Cli::parse();
+
+    let config =
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        });
 
     env_logger::Builder::new()
         .filter(Some("searcher"), config.searcher.log_level.into())

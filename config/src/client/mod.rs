@@ -13,6 +13,7 @@ pub mod text;
 
 pub use moxnotify::types::Urgency;
 
+use crate::types::LogLevel;
 use border::{Border, BorderRadius};
 use button::{Button, ButtonState, Buttons};
 use color::Color;
@@ -23,8 +24,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use text::{Body, Summary};
-
-use crate::types::LogLevel;
 
 #[derive(Default, Clone)]
 pub struct SoundFile {
@@ -161,6 +160,7 @@ pub struct ClientConfig {
     pub general: General,
     pub styles: Styles,
     pub keymaps: Keymaps,
+    pub css: String,
     #[serde(default = "default_log_level")]
     pub log_level: LogLevel,
 }

@@ -31,6 +31,7 @@ prost = "0.14.1"
 chrono = "0.4.42"
 uuid = { version = "1.19.0", features = ["v4"] }
 config = { path = "../config" }
+clap = { version = "4.5.27", features = ["derive"] }
 
 [build-dependencies]
 tonic-prost-build = "0.14.2"

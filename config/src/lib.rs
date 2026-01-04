@@ -239,46 +239,27 @@ pub fn xdg_config_dir() -> anyhow::Result<PathBuf> {
 }
 
 impl Config {
-    pub fn load(path: Option<&std::path::Path>) -> Self {
+    pub fn load(path: Option<&std::path::Path>) -> anyhow::Result<Self> {
         let nix_code = if let Some(p) = path {
-            match std::fs::read_to_string(p) {
-                Ok(content) => content,
-                Err(e) => {
-                    log::error!("Failed to read config file: {e}");
-                    return Self::default();
-                }
-            }
+            std::fs::read_to_string(p)?
         } else {
-            match xdg_config_dir() {
-                Ok(base) => {
-                    let candidates = [
-                        base.join("mox/moxnotify/default.nix"),
-                        base.join("mox/moxnotify.nix"),
-                    ];
-                    match candidates
-                        .iter()
-                        .find_map(|p| std::fs::read_to_string(p).ok())
-                    {
-                        Some(content) => content,
-                        None => {
-                            log::warn!("Config file not found");
-                            return Self::default();
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to determine config directory: {e}");
-                    return Self::default();
+            let xdg = xdg_config_dir()?;
+            let candidates = [
+                xdg.join("mox/moxnotify/default.nix"),
+                xdg.join("mox/moxnotify.nix"),
+            ];
+            match candidates
+                .iter()
+                .find_map(|p| std::fs::read_to_string(p).ok())
+            {
+                Some(content) => content,
+                None => {
+                    log::warn!("Config file not found");
+                    return Ok(Self::default());
                 }
             }
         };
 
-        match from_str(&nix_code) {
-            Ok(config) => config,
-            Err(e) => {
-                log::error!("{e}");
-                Self::default()
-            }
-        }
+        from_str(&nix_code).map_err(|e| anyhow::anyhow!("{e}"))
     }
 }

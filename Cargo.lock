@@ -668,6 +668,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "simplecss",
  "symphonia",
  "tiny-skia",
  "tokio",
@@ -715,6 +716,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "clap",
  "config",
  "env_logger",
  "image",
@@ -782,6 +784,7 @@ name = "control_plane"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "config",
  "env_logger",
  "log",
@@ -2018,6 +2021,7 @@ name = "indexer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "config",
  "env_logger",
  "log",
@@ -2121,6 +2125,7 @@ name = "janitor"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "config",
  "env_logger",
  "log",
@@ -3529,6 +3534,7 @@ name = "scheduler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "config",
  "env_logger",
  "log",
@@ -3561,6 +3567,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "chrono",
+ "clap",
  "config",
  "env_logger",
  "log",

@@ -4,10 +4,11 @@ pub mod moxnotify {
     }
 }
 
+use clap::Parser;
 use moxnotify::types::NewNotification;
 use redis::AsyncTypedCommands;
 use redis::streams::StreamReadOptions;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tantivy::directory::MmapDirectory;
 use tantivy::{DateTime, Index, IndexWriter, schema::*};
@@ -27,9 +28,23 @@ fn path() -> PathBuf {
     path
 }
 
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[arg(short, long, value_name = "FILE", help = "Path to the config file")]
+    config: Option<Box<Path>>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Arc::new(config::Config::load(None));
+    let cli = Cli::parse();
+
+    let config = Arc::new(
+        config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
+            log::warn!("{err}");
+            config::Config::default()
+        }),
+    );
 
     env_logger::Builder::new()
         .filter(Some("indexer"), config.indexer.log_level.into())
