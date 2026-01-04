@@ -671,19 +671,4 @@ impl ClientConfig {
             &urgency_styles.unfocused
         }
     }
-
-    pub fn path() -> anyhow::Result<Box<Path>> {
-        let home_dir = std::env::var("HOME").map(PathBuf::from)?;
-        let config_dir = std::env::var("XDG_CONFIG_HOME")
-            .map_or_else(|_| home_dir.join(".config"), PathBuf::from);
-
-        let mox_path = config_dir.join("mox").join("moxnotify").join("config.lua");
-        if mox_path.exists() {
-            return Ok(mox_path.into());
-        }
-
-        let standard_path = config_dir.join("moxnotify").join("config.lua");
-
-        Ok(standard_path.into())
-    }
 }
