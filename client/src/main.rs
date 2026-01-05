@@ -275,7 +275,9 @@ impl Moxnotify {
                     log::debug!("Sound suppressed for notification");
                 } else if let Some(path) = path {
                     log::debug!("Playing notification sound");
-                    self.audio.play(path)?;
+                    if let Err(e) = self.audio.play(&path) {
+                        log::warn!("Failed to play audio file: {}, {e}", path.display());
+                    }
                 }
             }
             Event::CloseNotification(id) => {
@@ -504,9 +506,6 @@ async fn main() -> anyhow::Result<()> {
     env_logger::Builder::new()
         .filter(Some("client"), config.client.log_level.into())
         .init();
-
-    let style = simplecss::StyleSheet::parse(&config.client.css);
-    println!("{style:#?}");
 
     let conn = Connection::connect_to_env().expect("Failed to connect to Wayland");
     let (globals, event_queue) = registry_queue_init(&conn)?;
