@@ -8,15 +8,15 @@ use super::{Bounds, UiState};
 use crate::components;
 use crate::components::{Component, Data};
 use crate::moxnotify::types::NewNotification;
-use config::client::{ClientConfig as Config, StyleState, Urgency};
 use calloop::RegistrationToken;
+use config::client::{ClientConfig as Config, StyleState, Urgency};
 use glyphon::FontSystem;
 use moxui::shape_renderer;
 use moxui::texture_renderer;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use taffy::{TaffyTree, prelude::*};
 
-// Hardcoded layout constants (previously configurable)
 const NOTIFICATION_MARGIN_LEFT: f32 = 5.0;
 const NOTIFICATION_MARGIN_RIGHT: f32 = 5.0;
 const NOTIFICATION_MARGIN_TOP: f32 = 5.0;
@@ -28,8 +28,6 @@ const NOTIFICATION_PADDING_BOTTOM: f32 = 10.0;
 const NOTIFICATION_WIDTH: f32 = 450.0;
 const PROGRESS_HEIGHT: f32 = 20.0;
 const PROGRESS_MARGIN_TOP: f32 = 10.0;
-
-// Hardcoded border sizes
 const NOTIFICATION_BORDER_SIZE: f32 = 1.0;
 
 pub type NotificationId = u32;
@@ -47,6 +45,8 @@ pub struct Notification {
     pub body: Option<Body>,
     pub uuid: String,
     context: components::Context,
+    tree: TaffyTree,
+    node: NodeId,
 }
 
 impl PartialEq for Notification {
@@ -67,21 +67,16 @@ impl Component for Notification {
     }
 
     fn get_bounds(&self) -> Bounds {
+        let layout_result = self
+            .tree
+            .layout(self.node)
+            .expect("Layout computation should succeed");
+
         Bounds {
             x: 0.,
             y: self.y,
-            width: self.width()
-                + NOTIFICATION_BORDER_SIZE * 2.0
-                + NOTIFICATION_PADDING_LEFT
-                + NOTIFICATION_PADDING_RIGHT
-                + NOTIFICATION_MARGIN_LEFT
-                + NOTIFICATION_MARGIN_RIGHT,
-            height: self.height()
-                + NOTIFICATION_BORDER_SIZE * 2.0
-                + NOTIFICATION_PADDING_TOP
-                + NOTIFICATION_PADDING_BOTTOM
-                + NOTIFICATION_MARGIN_TOP
-                + NOTIFICATION_MARGIN_BOTTOM,
+            width: layout_result.size.width,
+            height: layout_result.size.height,
         }
     }
 
@@ -89,7 +84,10 @@ impl Component for Notification {
         let extents = self.get_bounds();
 
         Bounds {
-            x: extents.x + NOTIFICATION_MARGIN_LEFT + self.x + self.data.hints.as_ref().unwrap().x as f32,
+            x: extents.x
+                + NOTIFICATION_MARGIN_LEFT
+                + self.x
+                + self.data.hints.as_ref().unwrap().x as f32,
             y: extents.y + NOTIFICATION_MARGIN_TOP,
             width: extents.width - NOTIFICATION_MARGIN_LEFT - NOTIFICATION_MARGIN_RIGHT,
             height: extents.height - NOTIFICATION_MARGIN_TOP - NOTIFICATION_MARGIN_BOTTOM,
@@ -131,7 +129,10 @@ impl Component for Notification {
         let _hovered = self.hovered();
         let focused = self.context.ui_state.selected.load(Ordering::Relaxed)
             && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-        let style = self.context.config.find_style(self.context.urgency, focused);
+        let style = self
+            .context
+            .config
+            .find_style(self.context.urgency, focused);
 
         let x_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
         let y_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_TOP;
@@ -215,8 +216,7 @@ impl Component for Notification {
                 .config
                 .find_style(self.context.urgency, is_selected);
 
-            let progress_x =
-                extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
+            let progress_x = extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
             let progress_y = extents.y + extents.height
                 - NOTIFICATION_BORDER_SIZE
                 - NOTIFICATION_PADDING_BOTTOM
@@ -286,7 +286,8 @@ impl Component for Notification {
                 .unwrap_or_default();
 
             let base_x = extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
-            let bottom_padding = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_BOTTOM + progress_height;
+            let bottom_padding =
+                NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_BOTTOM + progress_height;
 
             buttons
                 .buttons_mut()
@@ -382,7 +383,8 @@ impl Notification {
         data: NewNotification,
         ui_state: UiState,
     ) -> Notification {
-        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let proto_urgency: crate::moxnotify::types::Urgency =
+            data.hints.as_ref().unwrap().urgency.try_into().unwrap();
         let urgency: Urgency = match proto_urgency {
             crate::moxnotify::types::Urgency::Low => Urgency::Low,
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
@@ -396,7 +398,47 @@ impl Notification {
             urgency,
         };
 
-        Notification {
+        let mut tree = TaffyTree::new();
+        let node = {
+            let total_height = NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_TOP
+                + NOTIFICATION_PADDING_BOTTOM
+                + NOTIFICATION_MARGIN_TOP
+                + NOTIFICATION_MARGIN_BOTTOM;
+
+            let total_width = NOTIFICATION_WIDTH
+                + NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_LEFT
+                + NOTIFICATION_PADDING_RIGHT
+                + NOTIFICATION_MARGIN_LEFT
+                + NOTIFICATION_MARGIN_RIGHT;
+
+            let container_style = Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: Dimension::length(total_width),
+                    height: Dimension::length(total_height),
+                },
+                padding: Rect {
+                    left: LengthPercentage::length(NOTIFICATION_PADDING_LEFT),
+                    right: LengthPercentage::length(NOTIFICATION_PADDING_RIGHT),
+                    top: LengthPercentage::length(NOTIFICATION_PADDING_TOP),
+                    bottom: LengthPercentage::length(NOTIFICATION_PADDING_BOTTOM),
+                },
+                margin: Rect {
+                    left: LengthPercentage::length(NOTIFICATION_MARGIN_LEFT).into(),
+                    right: LengthPercentage::length(NOTIFICATION_MARGIN_RIGHT).into(),
+                    top: LengthPercentage::length(NOTIFICATION_MARGIN_TOP).into(),
+                    bottom: LengthPercentage::length(NOTIFICATION_MARGIN_BOTTOM).into(),
+                },
+                ..Default::default()
+            };
+
+            tree.new_leaf(container_style).unwrap()
+        };
+
+        let mut notification = Notification {
             y: 0.,
             x: 0.,
             hovered: false,
@@ -409,7 +451,11 @@ impl Notification {
             summary: Some(Summary::new(context.clone(), font_system)),
             body: None,
             context,
-        }
+            tree,
+            node,
+        };
+        notification.update_container_layout();
+        notification
     }
 
     #[must_use]
@@ -420,7 +466,8 @@ impl Notification {
         ui_state: UiState,
         sender: Option<calloop::channel::Sender<crate::Event>>,
     ) -> Notification {
-        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let proto_urgency: crate::moxnotify::types::Urgency =
+            data.hints.as_ref().unwrap().urgency.try_into().unwrap();
         let urgency: Urgency = match proto_urgency {
             crate::moxnotify::types::Urgency::Low => Urgency::Low,
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
@@ -442,19 +489,16 @@ impl Notification {
             (image, app_icon) => Some(Icons::new(context.clone(), image, app_icon)),
         };
 
-        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let proto_urgency: crate::moxnotify::types::Urgency =
+            data.hints.as_ref().unwrap().urgency.try_into().unwrap();
         let urgency: Urgency = match proto_urgency {
             crate::moxnotify::types::Urgency::Low => Urgency::Low,
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
             crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
         };
-        let mut buttons = ButtonManager::new(
-            context.clone(),
-            urgency,
-            sender,
-        )
-        .add_dismiss(font_system)
-        .add_actions(&data.actions, font_system, data.uuid.clone());
+        let mut buttons = ButtonManager::new(context.clone(), urgency, sender)
+            .add_dismiss(font_system)
+            .add_actions(&data.actions, font_system, data.uuid.clone());
 
         let dismiss_button = buttons
             .buttons()
@@ -462,7 +506,8 @@ impl Notification {
             .find(|button| button.button_type() == ButtonType::Dismiss)
             .map_or(0.0, |button| button.get_render_bounds().width);
 
-        let proto_urgency: crate::moxnotify::types::Urgency = data.hints.as_ref().unwrap().urgency.try_into().unwrap();
+        let proto_urgency: crate::moxnotify::types::Urgency =
+            data.hints.as_ref().unwrap().urgency.try_into().unwrap();
         let urgency: Urgency = match proto_urgency {
             crate::moxnotify::types::Urgency::Low => Urgency::Low,
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
@@ -514,7 +559,48 @@ impl Notification {
             Some(summary)
         };
 
-        Notification {
+        let mut tree = TaffyTree::new();
+
+        let node = {
+            let total_height = NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_TOP
+                + NOTIFICATION_PADDING_BOTTOM
+                + NOTIFICATION_MARGIN_TOP
+                + NOTIFICATION_MARGIN_BOTTOM;
+
+            let total_width = NOTIFICATION_WIDTH
+                + NOTIFICATION_BORDER_SIZE * 2.0
+                + NOTIFICATION_PADDING_LEFT
+                + NOTIFICATION_PADDING_RIGHT
+                + NOTIFICATION_MARGIN_LEFT
+                + NOTIFICATION_MARGIN_RIGHT;
+
+            let container_style = Style {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: Dimension::length(total_width),
+                    height: Dimension::length(total_height),
+                },
+                padding: Rect {
+                    left: LengthPercentage::length(NOTIFICATION_PADDING_LEFT),
+                    right: LengthPercentage::length(NOTIFICATION_PADDING_RIGHT),
+                    top: LengthPercentage::length(NOTIFICATION_PADDING_TOP),
+                    bottom: LengthPercentage::length(NOTIFICATION_PADDING_BOTTOM),
+                },
+                margin: Rect {
+                    left: LengthPercentage::length(NOTIFICATION_MARGIN_LEFT).into(),
+                    right: LengthPercentage::length(NOTIFICATION_MARGIN_RIGHT).into(),
+                    top: LengthPercentage::length(NOTIFICATION_MARGIN_TOP).into(),
+                    bottom: LengthPercentage::length(NOTIFICATION_MARGIN_BOTTOM).into(),
+                },
+                ..Default::default()
+            };
+
+            tree.new_leaf(container_style).unwrap()
+        };
+
+        let mut notification = Notification {
             summary,
             uuid: data.uuid.clone(),
             progress: data
@@ -532,7 +618,11 @@ impl Notification {
             hovered: false,
             registration_token: None,
             body,
-        }
+            tree,
+            node,
+        };
+        notification.update_container_layout();
+        notification
     }
 
     pub fn replace(
@@ -582,6 +672,9 @@ impl Notification {
         }
 
         self.data = data;
+
+        // Update container layout when content changes
+        self.update_container_layout();
     }
 
     #[must_use]
@@ -591,7 +684,8 @@ impl Notification {
 
     #[must_use]
     pub fn urgency(&self) -> Urgency {
-        let proto_urgency: crate::moxnotify::types::Urgency = self.data
+        let proto_urgency: crate::moxnotify::types::Urgency = self
+            .data
             .hints
             .as_ref()
             .unwrap()
@@ -644,10 +738,59 @@ impl Notification {
 }
 
 impl Notification {
+    fn update_container_layout(&mut self) {
+        let content_height = self.height();
+
+        let total_height = content_height
+            + NOTIFICATION_BORDER_SIZE * 2.0
+            + NOTIFICATION_PADDING_TOP
+            + NOTIFICATION_PADDING_BOTTOM
+            + NOTIFICATION_MARGIN_TOP
+            + NOTIFICATION_MARGIN_BOTTOM;
+
+        let total_width = NOTIFICATION_WIDTH
+            + NOTIFICATION_BORDER_SIZE * 2.0
+            + NOTIFICATION_PADDING_LEFT
+            + NOTIFICATION_PADDING_RIGHT
+            + NOTIFICATION_MARGIN_LEFT
+            + NOTIFICATION_MARGIN_RIGHT;
+
+        let container_style = Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            size: Size {
+                width: Dimension::length(total_width),
+                height: Dimension::length(total_height),
+            },
+            padding: Rect {
+                left: LengthPercentage::length(NOTIFICATION_PADDING_LEFT),
+                right: LengthPercentage::length(NOTIFICATION_PADDING_RIGHT),
+                top: LengthPercentage::length(NOTIFICATION_PADDING_TOP),
+                bottom: LengthPercentage::length(NOTIFICATION_PADDING_BOTTOM),
+            },
+            margin: Rect {
+                left: LengthPercentage::length(NOTIFICATION_MARGIN_LEFT).into(),
+                right: LengthPercentage::length(NOTIFICATION_MARGIN_RIGHT).into(),
+                top: LengthPercentage::length(NOTIFICATION_MARGIN_TOP).into(),
+                bottom: LengthPercentage::length(NOTIFICATION_MARGIN_BOTTOM).into(),
+            },
+            ..Default::default()
+        };
+
+        self.tree.set_style(self.node, container_style).unwrap();
+
+        let available_size = Size {
+            width: AvailableSpace::Definite(total_width),
+            height: AvailableSpace::Definite(total_height),
+        };
+
+        self.tree
+            .compute_layout(self.node, available_size)
+            .expect("Failed to compute Taffy layout");
+    }
+
     #[must_use]
     pub fn height(&self) -> f32 {
-        let _style = self.get_style();
-
         let dismiss_button = self
             .buttons
             .as_ref()
@@ -703,9 +846,8 @@ impl Notification {
             .map(|icons| icons.get_bounds().height)
             .unwrap_or_default()
             + progress;
-        
-        (text_height.max(icon_height).max(dismiss_button)
-            + action_button.height)
+
+        (text_height.max(icon_height).max(dismiss_button) + action_button.height)
             .max(dismiss_button + action_button.height)
             + NOTIFICATION_PADDING_BOTTOM
     }
