@@ -40,7 +40,7 @@ local_resource(
 local_resource(
     'run-client',
     cmd='cargo build --bin client',
-    serve_cmd='MOXNOTIFY_LOG=debug cargo run --bin client',
+    serve_cmd='cargo run --bin client',
     resource_deps=['run-scheduler']
 )
 

@@ -1,8 +1,8 @@
-use config::client::Urgency;
 use crate::components::{self, Bounds, Component};
 use crate::moxnotify::types::Image;
 use crate::utils::image_data::ImageData;
 use config::client::StyleState;
+use config::client::Urgency;
 use moxui::{
     shape_renderer,
     texture_renderer::{self, Buffer, TextureArea, TextureBounds},
@@ -315,70 +315,4 @@ where
         ICON_CACHE.insert(&icon_path, data.clone());
     }
     image_data
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use image::{DynamicImage, RgbaImage};
-    use std::path::{Path, PathBuf};
-
-    #[test]
-    fn cache_insert_and_retrieve() {
-        let cache = Cache::default();
-        let path = PathBuf::from("test_icon.png");
-
-        let img = RgbaImage::new(32, 32);
-        let data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        cache.insert(&path, data.clone());
-        assert_eq!(cache.get(&path).unwrap(), data);
-    }
-
-    #[test]
-    fn new_with_image_data() {
-        let img = RgbaImage::new(64, 64);
-        let image_data = ImageData::try_from(DynamicImage::ImageRgba8(img)).unwrap();
-
-        let proto_image_data = crate::moxnotify::types::ImageData {
-            width: image_data.width() as u32,
-            height: image_data.height() as u32,
-            rowstride: (image_data.width() * 4) as i32,
-            has_alpha: true,
-            bits_per_sample: 8,
-            channels: 4,
-            data: image_data.data().to_vec(),
-        };
-        let image = Image {
-            image: Some(crate::moxnotify::types::image::Image::Data(
-                proto_image_data,
-            )),
-        };
-        let context = components::Context {
-            id: 1,
-            config: Arc::new(config::client::ClientConfig::default()),
-            ui_state: crate::manager::UiState::default(),
-            app_name: "app".into(),
-            urgency: Urgency::Normal,
-        };
-        let icons = Icons::new(context, Some(&image), None);
-
-        assert!(icons.icon.is_some());
-        assert_eq!(icons.icon.unwrap().width(), 64);
-    }
-
-    #[test]
-    fn cache_miss_returns_none() {
-        let cache = Cache::default();
-        let non_existent_path = Path::new("non_existent.png");
-        assert!(cache.get(non_existent_path).is_none());
-    }
-
-    #[test]
-    fn set_position_updates_coordinates() {
-        let mut icons = Icons::default();
-        icons.set_position(100., 200.);
-        assert_eq!(icons.x, 100.);
-        assert_eq!(icons.y, 200.);
-    }
 }

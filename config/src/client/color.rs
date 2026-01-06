@@ -1,5 +1,5 @@
-use super::partial::PartialColor;
 use super::Urgency;
+use super::partial::PartialColor;
 use serde::de;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -153,7 +153,7 @@ pub fn parse_hex<T>(hex: T) -> Result<[u8; 4], String>
 where
     T: AsRef<str>,
 {
-    let hex = hex.as_ref();
+    let hex = hex.as_ref().trim_matches('"').trim();
     if !hex.starts_with('#') {
         return Err("Hex string must start with '#'".to_string());
     }

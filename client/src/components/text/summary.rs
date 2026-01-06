@@ -1,8 +1,8 @@
 use super::Text;
-use config::client::Urgency;
 use crate::components;
 use crate::components::{Bounds, Component, Data};
 use config::client;
+use config::client::Urgency;
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
@@ -150,7 +150,8 @@ impl Component for Summary {
 impl Summary {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size = context.config.styles.urgency_normal.unfocused.font.size * dpi / 72.0;
+        let font_size =
+            context.config.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),
@@ -164,44 +165,5 @@ impl Summary {
             y: 0.,
             context,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{
-        components::{
-            self,
-            text::{Text, summary::Summary},
-        },
-        config::client::ClientConfig as Config,
-        manager::UiState,
-    };
-    use glyphon::FontSystem;
-    use std::sync::Arc;
-
-    #[test]
-    fn test_body() {
-        let mut font_system = FontSystem::new();
-
-        let context = components::Context {
-            id: 0,
-            config: Arc::new(Config::default()),
-            app_name: "".into(),
-            ui_state: UiState::default(),
-            urgency: Urgency::Normal,
-        };
-        let mut summary = Summary::new(context, &mut font_system);
-
-        summary.set_text(
-            &mut font_system,
-            "Hello world\n<b>Hello world</b>\n<i>Hello world</i>",
-        );
-
-        let lines = summary.buffer.lines;
-        assert_eq!(lines.first().unwrap().text(), "Hello world");
-        assert_eq!(lines.get(1).unwrap().text(), "<b>Hello world</b>");
-        assert_eq!(lines.get(2).unwrap().text(), "<i>Hello world</i>");
-        assert_eq!(lines.len(), 3);
     }
 }

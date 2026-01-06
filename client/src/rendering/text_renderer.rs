@@ -8,7 +8,7 @@ use wgpu::{MultisampleState, TextureFormat};
 
 fn create_buffer(font: &Font, font_system: &mut FontSystem, max_width: Option<f32>) -> Buffer {
     let dpi = 96.0;
-    let font_size = font.size * dpi / 72.0;
+    let font_size = font.size as f32 * dpi / 72.0;
     let mut buffer = Buffer::new(
         font_system,
         glyphon::Metrics::new(font_size, font_size * 1.2),

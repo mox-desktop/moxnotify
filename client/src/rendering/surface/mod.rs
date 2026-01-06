@@ -1,9 +1,9 @@
 pub mod wgpu_surface;
 
-use crate::{Moxnotify, Output};
 use crate::manager::NotificationManager;
 use crate::utils::buffers;
 use crate::wgpu_state;
+use crate::{Moxnotify, Output};
 use config::client::{Anchor, ClientConfig as Config, Layer};
 use glyphon::FontSystem;
 use moxui::viewport;

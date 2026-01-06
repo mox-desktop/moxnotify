@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Summary {
-    pub size: f32,
+    pub size: u32,
     pub family: Arc<str>,
     pub color: Color,
     pub border: Border,
@@ -35,7 +35,7 @@ impl Summary {
 impl Default for Summary {
     fn default() -> Self {
         Self {
-            size: 10.,
+            size: 10,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
             border: Border {
@@ -49,7 +49,7 @@ impl Default for Summary {
 
 #[derive(Clone)]
 pub struct Body {
-    pub size: f32,
+    pub size: u32,
     pub family: Arc<str>,
     pub color: Color,
     pub border: Border,
@@ -81,7 +81,7 @@ impl Body {
 impl Default for Body {
     fn default() -> Self {
         Self {
-            size: 10.,
+            size: 10,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
             border: Border {

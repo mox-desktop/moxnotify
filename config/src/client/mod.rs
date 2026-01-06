@@ -25,81 +25,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use text::{Body, Summary};
 
-#[derive(Default, Clone)]
+#[derive(Deserialize, Default, Clone)]
 pub struct SoundFile {
     pub urgency_low: Option<Arc<Path>>,
     pub urgency_normal: Option<Arc<Path>>,
     pub urgency_critical: Option<Arc<Path>>,
-}
-
-impl<'de> Deserialize<'de> for SoundFile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct SoundFileVisitor;
-
-        impl<'de> serde::de::Visitor<'de> for SoundFileVisitor {
-            type Value = SoundFile;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a number or a map")
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(SoundFile {
-                    urgency_low: Some(Path::new(v).into()),
-                    urgency_normal: Some(Path::new(v).into()),
-                    urgency_critical: Some(Path::new(v).into()),
-                })
-            }
-
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(SoundFile {
-                    urgency_low: Some(Path::new(&v).into()),
-                    urgency_normal: Some(Path::new(&v).into()),
-                    urgency_critical: Some(Path::new(&v).into()),
-                })
-            }
-
-            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
-            where
-                M: serde::de::MapAccess<'de>,
-            {
-                let mut urgency_low = None;
-                let mut urgency_normal = None;
-                let mut urgency_critical = None;
-
-                while let Some(key) = map.next_key::<String>()? {
-                    match key.as_str() {
-                        "urgency_low" => urgency_low = Some(map.next_value()?),
-                        "urgency_normal" => urgency_normal = Some(map.next_value()?),
-                        "urgency_critical" => urgency_critical = Some(map.next_value()?),
-                        _ => {
-                            return Err(serde::de::Error::unknown_field(
-                                &key,
-                                &["urgency_low", "urgency_normal", "urgency_critical"],
-                            ));
-                        }
-                    }
-                }
-
-                Ok(SoundFile {
-                    urgency_low,
-                    urgency_normal,
-                    urgency_critical,
-                })
-            }
-        }
-
-        deserializer.deserialize_any(SoundFileVisitor)
-    }
 }
 
 #[derive(Deserialize)]
@@ -212,7 +142,7 @@ impl From<Insets> for [f32; 4] {
 
 #[derive(Clone)]
 pub struct Font {
-    pub size: f32,
+    pub size: u32,
     pub family: Arc<str>,
     pub color: Color,
 }
@@ -234,7 +164,7 @@ impl Font {
 impl Default for Font {
     fn default() -> Self {
         Self {
-            size: 10.,
+            size: 10,
             family: "DejaVu Sans".into(),
             color: Color::rgba([255, 255, 255, 255]),
         }
@@ -397,13 +327,208 @@ impl Default for StyleState {
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Default)]
 pub struct Styles {
     pub urgency_low: UrgencyStyles,
     pub urgency_normal: UrgencyStyles,
     pub urgency_critical: UrgencyStyles,
     pub next: NotificationCounter,
     pub prev: NotificationCounter,
+}
+
+impl<'de> Deserialize<'de> for Styles {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct StyleRule {
+            selector: Selector,
+            #[serde(default)]
+            state: Option<String>,
+            style: PartialStyle,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Selector {
+            Single(String),
+            Multiple(Vec<String>),
+        }
+
+        struct StylesVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for StylesVisitor {
+            type Value = Styles;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a list of style rules or a map with urgency keys")
+            }
+
+            fn visit_seq<S>(self, mut seq: S) -> Result<Self::Value, S::Error>
+            where
+                S: serde::de::SeqAccess<'de>,
+            {
+                let mut styles = Styles::default();
+
+                while let Some(rule) = seq.next_element::<StyleRule>()? {
+                    let selectors = match &rule.selector {
+                        Selector::Single(s) => vec![s.as_str()],
+                        Selector::Multiple(v) => v.iter().map(|s| s.as_str()).collect(),
+                    };
+
+                    let state = rule.state.as_deref().unwrap_or("default");
+                    let is_hover = state == "hover" || state == "container_hover";
+
+                    for selector in selectors {
+                        match selector {
+                            "*" => {
+                                // Apply to all urgency levels
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    if is_hover {
+                                        urgency_style.focused.apply(&rule.style);
+                                    } else {
+                                        urgency_style.unfocused.apply(&rule.style);
+                                    }
+                                }
+                            }
+                            "notification" | "summary" => {
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    if is_hover {
+                                        urgency_style.focused.apply(&rule.style);
+                                    } else {
+                                        urgency_style.unfocused.apply(&rule.style);
+                                    }
+                                }
+                            }
+                            "next_counter" | "prev_counter" => {
+                                if selector == "next_counter" {
+                                    styles.next.apply(&rule.style);
+                                } else {
+                                    styles.prev.apply(&rule.style);
+                                }
+                            }
+                            "hints" => {
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    if is_hover {
+                                        urgency_style.focused.hint.apply(&rule.style);
+                                    } else {
+                                        urgency_style.unfocused.hint.apply(&rule.style);
+                                    }
+                                }
+                            }
+                            "action" => {
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    if is_hover {
+                                        urgency_style
+                                            .focused
+                                            .buttons
+                                            .action
+                                            .apply_hover(&rule.style);
+                                        urgency_style
+                                            .unfocused
+                                            .buttons
+                                            .action
+                                            .apply_hover(&rule.style);
+                                    } else {
+                                        urgency_style.focused.buttons.action.apply(&rule.style);
+                                        urgency_style.unfocused.buttons.action.apply(&rule.style);
+                                    }
+                                }
+                            }
+                            "dismiss" => {
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    if is_hover {
+                                        urgency_style
+                                            .focused
+                                            .buttons
+                                            .dismiss
+                                            .apply_hover(&rule.style);
+                                        urgency_style
+                                            .unfocused
+                                            .buttons
+                                            .dismiss
+                                            .apply_hover(&rule.style);
+                                    } else {
+                                        urgency_style.focused.buttons.dismiss.apply(&rule.style);
+                                        urgency_style.unfocused.buttons.dismiss.apply(&rule.style);
+                                    }
+                                }
+                            }
+                            "progress" => {
+                                for urgency_style in [
+                                    &mut styles.urgency_low,
+                                    &mut styles.urgency_normal,
+                                    &mut styles.urgency_critical,
+                                ] {
+                                    urgency_style.focused.progress.apply(&rule.style);
+                                    urgency_style.unfocused.progress.apply(&rule.style);
+                                }
+                            }
+                            _ => {
+                                // Unknown selector, skip
+                            }
+                        }
+                    }
+                }
+
+                Ok(styles)
+            }
+
+            fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+            where
+                M: serde::de::MapAccess<'de>,
+            {
+                // Handle the old map format for backward compatibility
+                let mut styles = Styles::default();
+                while let Some(key) = map.next_key::<String>()? {
+                    match key.as_str() {
+                        "urgency_low" => {
+                            styles.urgency_low = map.next_value()?;
+                        }
+                        "urgency_normal" => {
+                            styles.urgency_normal = map.next_value()?;
+                        }
+                        "urgency_critical" => {
+                            styles.urgency_critical = map.next_value()?;
+                        }
+                        "next" => {
+                            styles.next = map.next_value()?;
+                        }
+                        "prev" => {
+                            styles.prev = map.next_value()?;
+                        }
+                        _ => {
+                            let _ = map.next_value::<serde::de::IgnoredAny>()?;
+                        }
+                    }
+                }
+                Ok(styles)
+            }
+        }
+
+        deserializer.deserialize_any(StylesVisitor)
+    }
 }
 
 pub struct UrgencyStyles {

@@ -87,7 +87,7 @@ impl<'de> Deserialize<'de> for PartialColor {
 
 #[derive(Deserialize, Clone)]
 pub struct PartialFont {
-    pub size: Option<f32>,
+    pub size: Option<u32>,
     pub family: Option<Arc<str>>,
     pub color: Option<PartialColor>,
 }

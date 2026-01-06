@@ -500,7 +500,8 @@ async fn main() -> anyhow::Result<()> {
 
     let config =
         config::Config::load(cli.config.as_ref().map(|p| p.as_ref())).unwrap_or_else(|err| {
-            log::warn!("{err}");
+            log::error!("Failed to load config, using default configuration: {err}");
+            println!("Failed to load config, using default configuration: {err}");
             config::Config::default()
         });
     env_logger::Builder::new()

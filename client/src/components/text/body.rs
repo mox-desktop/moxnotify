@@ -1,9 +1,9 @@
 use super::Text;
 use super::markup::{Parser, Tag};
-use config::client::Urgency;
 use crate::components;
 use crate::components::{Bounds, Component, Data};
 use config::client;
+use config::client::Urgency;
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use moxui::shape_renderer;
 use std::sync::Arc;
@@ -434,7 +434,8 @@ impl Component for Body {
 impl Body {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size = context.config.styles.urgency_normal.unfocused.font.size * dpi / 72.0;
+        let font_size =
+            context.config.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),
