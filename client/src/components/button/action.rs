@@ -1,8 +1,8 @@
 use super::{Button, ButtonType, Hint, State};
-use crate::components::{Bounds, Component};
-use config::client::{button::ButtonState, Urgency};
-use crate::rendering::text_renderer;
 use crate::components;
+use crate::components::{Bounds, Component};
+use crate::rendering::text::Text;
+use config::client::{Urgency, button::ButtonState};
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
@@ -18,7 +18,7 @@ pub struct ActionButton {
     pub x: f32,
     pub y: f32,
     pub hint: Hint,
-    pub text: text_renderer::Text,
+    pub text: Text,
     pub action: String,
     pub state: State,
     pub width: f32,

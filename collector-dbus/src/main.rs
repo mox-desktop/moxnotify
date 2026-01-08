@@ -8,7 +8,6 @@ pub mod moxnotify {
 }
 
 mod dbus;
-mod image_data;
 
 use clap::Parser;
 use std::path::Path;

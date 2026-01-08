@@ -22,10 +22,6 @@ message Action {
 message ImageData {
   uint32 width = 1;
   uint32 height = 2;
-  int32 rowstride = 3;
-  bool has_alpha = 4;
-  int32 bits_per_sample = 5;
-  int32 channels = 6;
   bytes data = 7;
 }
 

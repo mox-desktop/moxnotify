@@ -1,4 +1,4 @@
 pub mod animation;
 pub mod surface;
-pub mod text_renderer;
+pub mod text;
 pub mod wgpu_state;

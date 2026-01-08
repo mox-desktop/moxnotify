@@ -1,26 +1,139 @@
-use crate::image_data::ImageData;
 use crate::moxnotify::types::{
-    Action, CloseReason, Image, ImageData as ProtoImageData, NewNotification, NotificationHints,
-    Urgency,
+    Action, CloseReason, Image, ImageData, NewNotification, NotificationHints, Urgency,
 };
 use crate::{EmitEvent, Event};
 use chrono::offset::Local;
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use zbus::{fdo::RequestNameFlags, object_server::SignalEmitter, zvariant::Str};
+use zbus::{
+    fdo::RequestNameFlags,
+    object_server::SignalEmitter,
+    zvariant::{Signature, Str, Structure},
+};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-fn convert_image_data(image_data: &ImageData) -> ProtoImageData {
-    ProtoImageData {
-        width: image_data.width(),
-        height: image_data.height(),
-        rowstride: image_data.rowstride(),
-        has_alpha: image_data.has_alpha(),
-        bits_per_sample: image_data.bits_per_sample(),
-        channels: image_data.channels(),
-        data: image_data.data().to_vec(),
+impl<'a> TryFrom<Structure<'a>> for ImageData {
+    type Error = zbus::Error;
+
+    fn try_from(value: Structure<'a>) -> zbus::Result<Self> {
+        if Ok(value.signature()) != Signature::from_str("(iiibiiay)").as_ref() {
+            return Err(zbus::Error::Failure(format!(
+                "Invalid ImageData: invalid signature {}",
+                value.signature().to_string()
+            )));
+        }
+
+        let mut fields = value.into_fields();
+
+        if fields.len() != 7 {
+            return Err(zbus::Error::Failure(
+                "Invalid ImageData: missing fields".to_string(),
+            ));
+        }
+
+        let data = Vec::<u8>::try_from(fields.remove(6))
+            .map_err(|e| zbus::Error::Failure(format!("data: {e}")))?;
+        let channels = i32::try_from(fields.remove(5))
+            .map_err(|e| zbus::Error::Failure(format!("channels: {e}")))?;
+        let bits_per_sample = i32::try_from(fields.remove(4))
+            .map_err(|e| zbus::Error::Failure(format!("bits_per_sample: {e}")))?;
+        let rowstride = i32::try_from(fields.remove(2))
+            .map_err(|e| zbus::Error::Failure(format!("rowstride: {e}")))?;
+        let height = i32::try_from(fields.remove(1))
+            .map_err(|e| zbus::Error::Failure(format!("height: {e}")))?;
+        let width = i32::try_from(fields.remove(0))
+            .map_err(|e| zbus::Error::Failure(format!("width: {e}")))?;
+
+        if width <= 0 {
+            return Err(zbus::Error::Failure(
+                "Invalid ImageData: width is not positive".to_string(),
+            ));
+        }
+
+        if height <= 0 {
+            return Err(zbus::Error::Failure(
+                "Invalid ImageData: height is not positive".to_string(),
+            ));
+        }
+
+        if bits_per_sample != 8 {
+            return Err(zbus::Error::Failure(
+                "Invalid ImageData: bits_per_sample is not 8".to_string(),
+            ));
+        }
+
+        // Validate input data length
+        let expected_input_len = (rowstride * height) as usize;
+        if data.len() != expected_input_len {
+            return Err(zbus::Error::Failure(
+                "Invalid ImageData: data length does not match rowstride * height".to_string(),
+            ));
+        }
+
+        // Convert to 4-channel RGBA format
+        let width = width as u32;
+        let height = height as u32;
+        let channels = channels as usize;
+        let mut rgba_data = Vec::with_capacity((width * height * 4) as usize);
+
+        for y in 0..height {
+            let row_start = (y * rowstride as u32) as usize;
+            for x in 0..width {
+                let pixel_start = row_start + (x as usize * channels);
+
+                if pixel_start + channels > data.len() {
+                    return Err(zbus::Error::Failure(
+                        "Invalid ImageData: pixel data out of bounds".to_string(),
+                    ));
+                }
+
+                match channels {
+                    1 => {
+                        // Grayscale -> RGBA
+                        let gray = data[pixel_start];
+                        rgba_data.extend_from_slice(&[gray, gray, gray, 255]);
+                    }
+                    2 => {
+                        // Grayscale + Alpha -> RGBA
+                        let gray = data[pixel_start];
+                        let alpha = data[pixel_start + 1];
+                        rgba_data.extend_from_slice(&[gray, gray, gray, alpha]);
+                    }
+                    3 => {
+                        // RGB -> RGBA
+                        rgba_data.extend_from_slice(&[
+                            data[pixel_start],
+                            data[pixel_start + 1],
+                            data[pixel_start + 2],
+                            255,
+                        ]);
+                    }
+                    4 => {
+                        // RGBA -> RGBA (just copy)
+                        rgba_data.extend_from_slice(&[
+                            data[pixel_start],
+                            data[pixel_start + 1],
+                            data[pixel_start + 2],
+                            data[pixel_start + 3],
+                        ]);
+                    }
+                    _ => {
+                        return Err(zbus::Error::Failure(format!(
+                            "Invalid ImageData: unsupported channel count {channels}"
+                        )));
+                    }
+                }
+            }
+        }
+
+        Ok(Self {
+            width,
+            height,
+            data: rgba_data,
+        })
     }
 }
 
@@ -111,9 +224,7 @@ impl NotificationHints {
                         if let zbus::zvariant::Value::Structure(v) = v {
                             if let Ok(image) = ImageData::try_from(v) {
                                 nh.image = Some(Image {
-                                    image: Some(crate::moxnotify::types::image::Image::Data(
-                                        convert_image_data(&image),
-                                    )),
+                                    image: Some(crate::moxnotify::types::image::Image::Data(image)),
                                 });
                             } else {
                                 log::warn!("Invalid image data");

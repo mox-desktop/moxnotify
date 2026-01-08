@@ -1,11 +1,10 @@
-use config::client::ClientConfig as Config;
 use crate::{
-    rendering::text_renderer,
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,
 };
 use anyhow::Context;
-use moxui::{shape_renderer, texture_renderer};
+use config::client::ClientConfig as Config;
+use moxui::{shape_renderer, text_renderer, texture_renderer};
 use raw_window_handle::{RawWindowHandle, WaylandWindowHandle};
 
 use std::ptr::NonNull;
@@ -14,7 +13,7 @@ use wayland_client::{Proxy, protocol::wl_surface};
 pub struct WgpuSurface {
     pub texture_renderer: texture_renderer::TextureRenderer,
     pub shape_renderer: shape_renderer::ShapeRenderer,
-    pub text_ctx: text_renderer::TextContext,
+    pub text_renderer: text_renderer::TextRenderer,
     pub surface: wgpu::Surface<'static>,
     pub config: wgpu::SurfaceConfiguration,
     pub depth_buffer: buffers::DepthBuffer,
@@ -83,7 +82,7 @@ impl WgpuSurface {
         let shape_renderer =
             shape_renderer::ShapeRenderer::new(&wgpu_state.device, *surface_format);
 
-        let text_ctx = text_renderer::TextContext::new(
+        let text_ctx = text_renderer::TextRenderer::new(
             &wgpu_state.device,
             &wgpu_state.queue,
             surface_config.format,
@@ -94,7 +93,7 @@ impl WgpuSurface {
         Ok(Self {
             shape_renderer,
             texture_renderer,
-            text_ctx,
+            text_renderer: text_ctx,
             surface: wgpu_surface,
             config: surface_config,
             depth_buffer,

@@ -1,12 +1,10 @@
-use crate::components::{self, Bounds, Component};
-use crate::moxnotify::types::Image;
-use crate::utils::image_data::ImageData;
+use crate::components;
+use crate::components::{Bounds, Component};
 use config::client::StyleState;
 use config::client::Urgency;
-use moxui::{
-    shape_renderer,
-    texture_renderer::{self, Buffer, TextureArea, TextureBounds},
-};
+use moxui::image::Image;
+use moxui::texture_renderer::{Buffer, TextureArea, TextureBounds};
+use moxui::{shape_renderer, texture_renderer};
 use resvg::usvg;
 use std::{
     collections::BTreeMap,
@@ -17,13 +15,13 @@ use std::{
 use super::Data;
 
 static ICON_CACHE: LazyLock<Cache> = LazyLock::new(Cache::default);
-type IconMap = BTreeMap<Box<Path>, ImageData>;
+type IconMap = BTreeMap<Box<Path>, Image>;
 
 #[derive(Default)]
 pub struct Cache(Mutex<IconMap>);
 
 impl Cache {
-    pub fn insert<P>(&self, icon_path: &P, data: ImageData)
+    pub fn insert<P>(&self, icon_path: &P, data: Image)
     where
         P: AsRef<Path>,
     {
@@ -33,7 +31,7 @@ impl Cache {
         icon_map.insert(entry.into(), data);
     }
 
-    pub fn get<P>(&self, icon_path: P) -> Option<ImageData>
+    pub fn get<P>(&self, icon_path: P) -> Option<Image>
     where
         P: AsRef<Path>,
     {
@@ -44,8 +42,8 @@ impl Cache {
 }
 
 pub struct Icons {
-    icon: Option<ImageData>,
-    app_icon: Option<ImageData>,
+    icon: Option<Image>,
+    app_icon: Option<Image>,
     x: f32,
     y: f32,
     context: components::Context,
@@ -54,16 +52,22 @@ pub struct Icons {
 impl Icons {
     pub fn new(
         context: components::Context,
-        image: Option<&Image>,
+        image: Option<&crate::moxnotify::types::Image>,
         app_icon: Option<&str>,
     ) -> Self {
         let icon = match image.and_then(|img| img.image.as_ref()) {
             Some(crate::moxnotify::types::image::Image::Data(proto_image_data)) => {
-                // Convert ProtoImageData to ImageData
-                let image_data = ImageData::from(proto_image_data);
+                let image_data = Image::from_raw(
+                    proto_image_data.width,
+                    proto_image_data.height,
+                    proto_image_data.data.clone(),
+                )
+                .unwrap();
                 image_data
-                    .to_rgba()
-                    .resize(context.config.general.icon_size)
+                    .resize_to_fit(
+                        context.config.general.icon_size,
+                        context.config.general.icon_size,
+                    )
                     .ok()
             }
             Some(crate::moxnotify::types::image::Image::FilePath(file_path)) => {
@@ -231,7 +235,7 @@ impl Component for Icons {
     }
 }
 
-fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<ImageData>
+fn find_icon<T>(name: T, icon_size: u16, theme: Option<T>) -> Option<Image>
 where
     T: AsRef<str>,
 {
@@ -245,7 +249,7 @@ where
     get_icon(&icon_path, icon_size)
 }
 
-pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<ImageData>
+pub fn get_icon<T>(icon_path: T, icon_size: u16) -> Option<Image>
 where
     T: AsRef<Path>,
 {
@@ -290,15 +294,9 @@ where
             }
         });
 
-        ImageData::try_from(image::DynamicImage::ImageRgba8(image::RgbaImage::from_raw(
-            icon_size as u32,
-            icon_size as u32,
-            data,
-        )?))
-        .ok()
+        Image::from_raw(icon_size as u32, icon_size as u32, data)
     } else {
-        let image = image::open(icon_path.as_ref()).ok()?;
-        ImageData::try_from(image).ok()
+        Image::open(icon_path.as_ref()).ok()
     };
 
     let image_data = if icon_path
@@ -306,9 +304,9 @@ where
         .extension()
         .is_some_and(|ext| ext == "svg")
     {
-        image_data.map(|i| i.to_rgba())
+        image_data
     } else {
-        image_data.and_then(|i| i.to_rgba().resize(icon_size as u32).ok())
+        image_data.and_then(|i| i.resize_to_fit(icon_size as u32, icon_size as u32).ok())
     };
 
     if let Some(ref data) = image_data {

@@ -3,16 +3,16 @@ mod anchor;
 mod dismiss;
 
 use super::text::body;
-use config::client::Urgency;
 use crate::components::{self, Bounds, Component, Data};
 use crate::moxnotify::types::Action;
-use crate::rendering::text_renderer;
+use crate::rendering::text::Text;
+use action::ActionButton;
+use anchor::AnchorButton;
+use config::client::Urgency;
 use config::client::{
     button::ButtonState,
     keymaps::{self},
 };
-use action::ActionButton;
-use anchor::AnchorButton;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
@@ -96,7 +96,7 @@ impl ButtonManager<NotReady> {
             Urgency::Critical => &self.context.config.styles.urgency_critical,
         };
         let font = &urgency_styles.unfocused.buttons.dismiss.default.font;
-        let text = text_renderer::Text::new(font, font_system, "X");
+        let text = Text::new(font, font_system, "X");
 
         let button = DismissButton {
             hint: Hint::new(self.context.clone(), "", font_system),
@@ -318,11 +318,10 @@ impl<S> ButtonManager<S> {
             Urgency::Normal => &self.context.config.styles.urgency_normal,
             Urgency::Critical => &self.context.config.styles.urgency_critical,
         };
-        let font = &urgency_styles.unfocused.buttons.action.default
-            .font;
+        let font = &urgency_styles.unfocused.buttons.action.default.font;
 
         self.buttons.extend(anchors.iter().map(|anchor| {
-            let text = text_renderer::Text::new(font, font_system, "");
+            let text = Text::new(font, font_system, "");
             Box::new(AnchorButton {
                 context: self.context.clone(),
                 x: 0.,
@@ -358,7 +357,7 @@ impl<S> ButtonManager<S> {
                     Urgency::Critical => &self.context.config.styles.urgency_critical,
                 };
                 let font = &urgency_styles.unfocused.buttons.action.default.font;
-                let text = text_renderer::Text::new(font, font_system, &action.label);
+                let text = Text::new(font, font_system, &action.label);
 
                 Box::new(ActionButton {
                     uuid: uuid.clone(),
@@ -391,7 +390,7 @@ impl<S> ButtonManager<S> {
 
 pub struct Hint {
     combination: Box<str>,
-    text: text_renderer::Text,
+    text: Text,
     context: components::Context,
     x: f32,
     y: f32,
@@ -408,7 +407,7 @@ impl Hint {
     {
         Self {
             combination: combination.as_ref().into(),
-            text: text_renderer::Text::new(
+            text: Text::new(
                 &context.config.styles.urgency_normal.unfocused.font,
                 font_system,
                 combination.as_ref(),
@@ -443,11 +442,9 @@ impl Component for Hint {
         const HINT_WIDTH: f32 = 15.0;
         const HINT_HEIGHT: f32 = 20.0;
         const HINT_BORDER_SIZE: f32 = 0.0;
-        let width = HINT_WIDTH
-            + HINT_BORDER_SIZE * 2.0;
+        let width = HINT_WIDTH + HINT_BORDER_SIZE * 2.0;
 
-        let height = HINT_HEIGHT
-            + HINT_BORDER_SIZE * 2.0;
+        let height = HINT_HEIGHT + HINT_BORDER_SIZE * 2.0;
 
         Bounds {
             x: self.x - width / 2.,

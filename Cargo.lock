@@ -653,12 +653,10 @@ dependencies = [
  "clap",
  "config",
  "env_logger",
- "fast_image_resize",
  "freedesktop-icons",
  "freedesktop-sound",
  "futures-lite",
  "glyphon",
- "image",
  "libspa-sys",
  "log",
  "moxui",
@@ -668,7 +666,6 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
- "simplecss",
  "symphonia",
  "taffy",
  "tiny-skia",
@@ -676,7 +673,6 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
- "tvix-serde",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",
@@ -1260,13 +1256,16 @@ checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
 
 [[package]]
 name = "fast_image_resize"
-version = "5.4.0"
+version = "5.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "049915d74c5dfae375a3f5bf54f47ed593ba27b29f792617a9a987521d56d674"
+checksum = "6b6e793dfd0ee192d1999c655797ecc956c82d1f6d367be20bf6b81d6a1c87ac"
 dependencies = [
+ "bytemuck",
  "cfg-if",
  "document-features",
+ "image",
  "num-traits",
+ "rayon",
  "thiserror 2.0.17",
 ]
 
@@ -2553,9 +2552,14 @@ dependencies = [
 [[package]]
 name = "moxui"
 version = "0.1.0"
-source = "git+https://forgejo.r0chd.pl/mox-desktop/moxui.git?rev=62b8a312e13d7a6159a3cee3678b0b577cc5a910#62b8a312e13d7a6159a3cee3678b0b577cc5a910"
+source = "git+https://forgejo.r0chd.pl/mox-desktop/moxui.git?rev=ffb20cdc438c93976b54dfce1138a765f2fd8cc1#ffb20cdc438c93976b54dfce1138a765f2fd8cc1"
 dependencies = [
+ "anyhow",
  "bytemuck",
+ "fast_image_resize",
+ "glyphon",
+ "image",
+ "serde",
  "wgpu",
 ]
 

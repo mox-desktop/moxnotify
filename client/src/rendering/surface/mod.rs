@@ -189,7 +189,7 @@ impl Surface {
         self.wgpu_surface
             .texture_renderer
             .prepare(device, queue, &textures);
-        self.wgpu_surface.text_ctx.prepare(
+        self.wgpu_surface.text_renderer.prepare(
             device,
             queue,
             text_data,
@@ -199,7 +199,7 @@ impl Surface {
         self.wgpu_surface
             .shape_renderer
             .render(&mut render_pass, &self.viewport);
-        self.wgpu_surface.text_ctx.render(&mut render_pass)?;
+        self.wgpu_surface.text_renderer.render(&mut render_pass)?;
 
         drop(render_pass); // Drop renderpass and release mutable borrow on encoder
 
@@ -228,7 +228,7 @@ impl Surface {
             .surface
             .configure(device, &self.wgpu_surface.config);
         self.wgpu_surface
-            .text_ctx
+            .text_renderer
             .viewport
             .update(queue, glyphon::Resolution { width, height });
 
