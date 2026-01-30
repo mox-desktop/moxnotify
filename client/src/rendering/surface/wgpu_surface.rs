@@ -1,4 +1,5 @@
 use crate::{
+    layout,
     utils::buffers::{self, DepthBuffer},
     wgpu_state::WgpuState,
 };
@@ -23,7 +24,7 @@ impl WgpuSurface {
     pub fn new(
         wgpu_state: &WgpuState,
         surface: &wl_surface::WlSurface,
-        config: &Config,
+        _config: &Config,
     ) -> anyhow::Result<Self> {
         let raw_window_handle = RawWindowHandle::Wayland(WaylandWindowHandle::new(
             NonNull::new(surface.id().as_ptr().cast()).context("Surface id is a null ptr")?,
@@ -74,7 +75,7 @@ impl WgpuSurface {
         let texture_renderer = texture_renderer::TextureRenderer::new(
             &wgpu_state.device,
             *surface_format,
-            config.general.icon_size,
+            layout::ICON_SIZE,
             1,
             1,
         );

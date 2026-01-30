@@ -4,9 +4,10 @@ pub mod notification;
 pub mod progress;
 pub mod text;
 
-use config::client::Urgency;
-use config::client::{ClientConfig as Config, StyleState};
+use crate::css::CssStyles;
 use crate::manager::UiState;
+use config::client::Urgency;
+use config::client::ClientConfig as Config;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -18,6 +19,7 @@ pub struct Context {
     pub config: Arc<Config>,
     pub ui_state: UiState,
     pub urgency: Urgency,
+    pub css_styles: Arc<CssStyles>,
 }
 
 pub enum Data<'a> {
@@ -35,8 +37,6 @@ pub struct Bounds {
 }
 
 pub trait Component {
-    type Style;
-
     fn get_context(&self) -> &Context;
 
     fn get_config(&self) -> &Config {
@@ -55,13 +55,14 @@ pub trait Component {
         &self.get_context().ui_state
     }
 
-    fn get_notification_style(&self) -> &StyleState {
-        let focused = self.get_ui_state().selected.load(Ordering::Relaxed)
-            && self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id();
-        self.get_config().find_style(self.get_context().urgency, focused)
+    fn get_css_styles(&self) -> &CssStyles {
+        &self.get_context().css_styles
     }
 
-    fn get_style(&self) -> &Self::Style;
+    fn is_focused(&self) -> bool {
+        self.get_ui_state().selected.load(Ordering::Relaxed)
+            && self.get_ui_state().selected_id.load(Ordering::Relaxed) == self.get_id()
+    }
 
     fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance>;
 

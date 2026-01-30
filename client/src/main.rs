@@ -11,9 +11,11 @@ pub mod moxnotify {
 
 mod audio;
 pub mod components;
+pub mod css;
 mod dbus;
 mod grpc;
 mod input;
+pub mod layout;
 mod manager;
 mod rendering;
 pub mod utils;

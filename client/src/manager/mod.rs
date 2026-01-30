@@ -3,7 +3,7 @@ mod view;
 use crate::components::notification;
 use crate::components::notification::{Notification, NotificationId};
 use crate::components::{Component, Data};
-use config::client::{ClientConfig as Config, keymaps};
+use crate::css::{self, CssStyles};
 use crate::moxnotify::client::client_service_client::ClientServiceClient;
 use crate::moxnotify::client::viewport_navigation_request::Direction;
 use crate::moxnotify::client::{
@@ -14,6 +14,7 @@ use crate::moxnotify::types::{NewNotification, NotificationClosed};
 use crate::utils::wait;
 use crate::{CloseReason, Moxnotify};
 use atomic_float::AtomicF32;
+use config::client::{ClientConfig as Config, keymaps};
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
 use std::cell::RefCell;
@@ -49,6 +50,7 @@ pub struct NotificationManager {
     notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
+    css_styles: Arc<CssStyles>,
     sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     font_system: Rc<RefCell<FontSystem>>,
@@ -71,6 +73,12 @@ impl NotificationManager {
 
         let ui_state = UiState::default();
 
+        // Parse CSS from config
+        let css_styles = Arc::new(css::parse_css(&config.css));
+        if !config.css.is_empty() {
+            log::info!("Loaded CSS styles from config");
+        }
+
         Self {
             grpc_client: client,
             sender,
@@ -78,14 +86,20 @@ impl NotificationManager {
             waiting: Vec::new(),
             notification_view: NotificationView::new(
                 Arc::clone(&config),
+                Arc::clone(&css_styles),
                 ui_state.clone(),
                 Rc::clone(&font_system),
             ),
             font_system,
             notifications: VecDeque::new(),
             config,
+            css_styles,
             ui_state,
         }
+    }
+
+    pub fn css_styles(&self) -> &Arc<CssStyles> {
+        &self.css_styles
     }
 
     /// Inhibit notifications
@@ -392,6 +406,7 @@ impl NotificationManager {
                 .map(|data| {
                     Notification::new(
                         Arc::clone(&self.config),
+                        Arc::clone(&self.css_styles),
                         &mut font_system,
                         data,
                         self.ui_state.clone(),
@@ -421,6 +436,7 @@ impl NotificationManager {
         } else {
             let notification = Notification::new(
                 Arc::clone(&self.config),
+                Arc::clone(&self.css_styles),
                 &mut self.font_system.borrow_mut(),
                 data,
                 self.ui_state.clone(),

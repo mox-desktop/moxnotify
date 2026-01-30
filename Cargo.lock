@@ -666,6 +666,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "simplecss",
  "symphonia",
  "taffy",
  "tiny-skia",
@@ -2552,7 +2553,7 @@ dependencies = [
 [[package]]
 name = "moxui"
 version = "0.1.0"
-source = "git+https://forgejo.r0chd.pl/mox-desktop/moxui.git?rev=ffb20cdc438c93976b54dfce1138a765f2fd8cc1#ffb20cdc438c93976b54dfce1138a765f2fd8cc1"
+source = "git+https://forgejo.r0chd.pl/mox-desktop/moxui.git?rev=969a654c5acad925a4bc5e57a43bdcc247f64607#969a654c5acad925a4bc5e57a43bdcc247f64607"
 dependencies = [
  "anyhow",
  "bytemuck",

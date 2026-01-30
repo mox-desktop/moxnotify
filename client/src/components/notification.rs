@@ -7,9 +7,11 @@ use super::text::summary::Summary;
 use super::{Bounds, UiState};
 use crate::components;
 use crate::components::{Component, Data};
+use crate::css::CssStyles;
+use crate::layout;
 use crate::moxnotify::types::NewNotification;
 use calloop::RegistrationToken;
-use config::client::{ClientConfig as Config, StyleState, Urgency};
+use config::client::{ClientConfig as Config, Urgency};
 use glyphon::FontSystem;
 use moxui::shape_renderer;
 use moxui::texture_renderer;
@@ -17,18 +19,18 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use taffy::{TaffyTree, prelude::*};
 
-const NOTIFICATION_MARGIN_LEFT: f32 = 5.0;
-const NOTIFICATION_MARGIN_RIGHT: f32 = 5.0;
-const NOTIFICATION_MARGIN_TOP: f32 = 5.0;
-const NOTIFICATION_MARGIN_BOTTOM: f32 = 5.0;
-const NOTIFICATION_PADDING_LEFT: f32 = 10.0;
-const NOTIFICATION_PADDING_RIGHT: f32 = 10.0;
-const NOTIFICATION_PADDING_TOP: f32 = 10.0;
-const NOTIFICATION_PADDING_BOTTOM: f32 = 10.0;
-const NOTIFICATION_WIDTH: f32 = 450.0;
-const PROGRESS_HEIGHT: f32 = 20.0;
-const PROGRESS_MARGIN_TOP: f32 = 10.0;
-const NOTIFICATION_BORDER_SIZE: f32 = 1.0;
+const NOTIFICATION_MARGIN_LEFT: f32 = layout::NOTIFICATION_MARGIN;
+const NOTIFICATION_MARGIN_RIGHT: f32 = layout::NOTIFICATION_MARGIN;
+const NOTIFICATION_MARGIN_TOP: f32 = layout::NOTIFICATION_MARGIN;
+const NOTIFICATION_MARGIN_BOTTOM: f32 = layout::NOTIFICATION_MARGIN;
+const NOTIFICATION_PADDING_LEFT: f32 = layout::NOTIFICATION_PADDING;
+const NOTIFICATION_PADDING_RIGHT: f32 = layout::NOTIFICATION_PADDING;
+const NOTIFICATION_PADDING_TOP: f32 = layout::NOTIFICATION_PADDING;
+const NOTIFICATION_PADDING_BOTTOM: f32 = layout::NOTIFICATION_PADDING;
+const NOTIFICATION_WIDTH: f32 = layout::NOTIFICATION_WIDTH;
+const PROGRESS_HEIGHT: f32 = layout::PROGRESS_HEIGHT;
+const PROGRESS_MARGIN_TOP: f32 = layout::PROGRESS_MARGIN_TOP;
+const NOTIFICATION_BORDER_SIZE: f32 = layout::NOTIFICATION_BORDER_SIZE;
 
 pub type NotificationId = u32;
 
@@ -56,14 +58,8 @@ impl PartialEq for Notification {
 }
 
 impl Component for Notification {
-    type Style = StyleState;
-
     fn get_context(&self) -> &components::Context {
         &self.context
-    }
-
-    fn get_style(&self) -> &Self::Style {
-        self.get_notification_style()
     }
 
     fn get_bounds(&self) -> Bounds {
@@ -96,7 +92,36 @@ impl Component for Notification {
 
     fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let extents = self.get_render_bounds();
-        let style = self.get_style();
+        let css = self.get_css_styles();
+        let focused = self.is_focused();
+
+        // Get colors from CSS with defaults
+        let urgency_colors = match urgency {
+            Urgency::Low => &css.notification_low,
+            Urgency::Normal => &css.notification_normal,
+            Urgency::Critical => &css.notification_critical,
+        };
+        let base_colors = if focused {
+            &css.notification_hover
+        } else {
+            &css.notification
+        };
+
+        let background = urgency_colors
+            .background
+            .or(base_colors.background)
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.086, 0.106, 0.149, 1.0]); // #16161e
+
+        let border_color = urgency_colors
+            .border_color
+            .or(base_colors.border_color)
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or(match urgency {
+                Urgency::Low => [0.651, 0.890, 0.631, 1.0],      // #a6e3a1
+                Urgency::Normal => [0.796, 0.651, 0.969, 1.0],   // #cba6f7
+                Urgency::Critical => [0.953, 0.545, 0.659, 1.0], // #f38ba8
+            });
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
@@ -104,10 +129,10 @@ impl Component for Notification {
                 extents.width - NOTIFICATION_BORDER_SIZE * 2.0,
                 extents.height - NOTIFICATION_BORDER_SIZE * 2.0,
             ],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: background,
+            border_radius: layout::NOTIFICATION_BORDER_RADIUS,
             border_size: [NOTIFICATION_BORDER_SIZE; 4],
-            border_color: style.border.color.color(urgency),
+            border_color,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.9,
         }]
@@ -126,13 +151,6 @@ impl Component for Notification {
         self.y = y;
 
         let extents = self.get_render_bounds();
-        let _hovered = self.hovered();
-        let focused = self.context.ui_state.selected.load(Ordering::Relaxed)
-            && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-        let style = self
-            .context
-            .config
-            .find_style(self.context.urgency, focused);
 
         let x_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
         let y_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_TOP;
@@ -179,7 +197,7 @@ impl Component for Notification {
                 - max_action_button_height;
 
             let vertical_offset =
-                (available_height - self.context.config.general.icon_size as f32) / 2.0;
+                (available_height - layout::ICON_SIZE as f32) / 2.0;
             let icon_x = extents.x + x_offset;
             let icon_y = extents.y + y_offset + vertical_offset;
 
@@ -208,13 +226,6 @@ impl Component for Notification {
                 - NOTIFICATION_PADDING_RIGHT;
 
             progress.set_width(available_width);
-
-            let is_selected = self.context.ui_state.selected.load(Ordering::Relaxed)
-                && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
-            let _selected_style = self
-                .context
-                .config
-                .find_style(self.context.urgency, is_selected);
 
             let progress_x = extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
             let progress_y = extents.y + extents.height
@@ -254,15 +265,6 @@ impl Component for Notification {
         if let Some(buttons) = self.buttons.as_mut()
             && action_buttons_count > 0
         {
-            let _button_style = buttons
-                .buttons()
-                .iter()
-                .find(|button| button.button_type() == ButtonType::Action)
-                .map_or_else(
-                    || &style.buttons.action.default,
-                    |button| button.get_style(),
-                );
-
             let side_padding = NOTIFICATION_BORDER_SIZE * 2.0
                 + NOTIFICATION_PADDING_LEFT
                 + NOTIFICATION_PADDING_RIGHT;
@@ -379,6 +381,7 @@ impl Notification {
     #[must_use]
     pub fn counter(
         config: Arc<Config>,
+        css_styles: Arc<CssStyles>,
         font_system: &mut FontSystem,
         data: NewNotification,
         ui_state: UiState,
@@ -396,6 +399,7 @@ impl Notification {
             config,
             ui_state,
             urgency,
+            css_styles,
         };
 
         let mut tree = TaffyTree::new();
@@ -461,6 +465,7 @@ impl Notification {
     #[must_use]
     pub fn new(
         config: Arc<Config>,
+        css_styles: Arc<CssStyles>,
         font_system: &mut FontSystem,
         data: NewNotification,
         ui_state: UiState,
@@ -479,6 +484,7 @@ impl Notification {
             config,
             ui_state,
             urgency,
+            css_styles,
         };
 
         let icons = match (
@@ -508,13 +514,11 @@ impl Notification {
 
         let proto_urgency: crate::moxnotify::types::Urgency =
             data.hints.as_ref().unwrap().urgency.try_into().unwrap();
-        let urgency: Urgency = match proto_urgency {
+        let _urgency: Urgency = match proto_urgency {
             crate::moxnotify::types::Urgency::Low => Urgency::Low,
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
             crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
         };
-        let _style = context.config.find_style(urgency, false);
-
         let body = if data.body.is_empty() {
             None
         } else {

@@ -1,15 +1,14 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::components;
 use crate::components::{Bounds, Component};
+use crate::layout;
 use crate::rendering::text::Text;
 use config::client::Urgency;
-use config::client::button::ButtonState;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
-// Hardcoded layout constants (previously configurable)
-const DISMISS_BUTTON_WIDTH: f32 = 20.0;
-const DISMISS_BUTTON_HEIGHT: f32 = 20.0;
+const DISMISS_BUTTON_WIDTH: f32 = layout::DISMISS_BUTTON_WIDTH;
+const DISMISS_BUTTON_HEIGHT: f32 = layout::DISMISS_BUTTON_HEIGHT;
 
 pub struct DismissButton {
     pub context: components::Context,
@@ -22,39 +21,48 @@ pub struct DismissButton {
 }
 
 impl Component for DismissButton {
-    type Style = ButtonState;
-
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
-    fn get_style(&self) -> &Self::Style {
-        let style = self.get_notification_style();
-        match self.state() {
-            State::Unhovered => &style.buttons.dismiss.default,
-            State::Hovered => &style.buttons.dismiss.hover,
-        }
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let style = self.get_style();
+    fn get_instances(&self, _urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+        let css = self.get_css_styles();
         let bounds = self.get_render_bounds();
+        let is_hovered = matches!(self.state(), State::Hovered);
+
+        let background = if is_hovered {
+            css.button_dismiss
+                .background
+                .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+                .unwrap_or([1.0, 1.0, 1.0, 1.0])
+        } else {
+            css.button_dismiss
+                .background
+                .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+                .unwrap_or([0.0, 0.0, 0.0, 0.0])
+        };
+
+        let border_color = css
+            .button_dismiss
+            .border_color
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: background,
+            border_radius: layout::DISMISS_BUTTON_BORDER_RADIUS,
             border_size: [0.0; 4],
-            border_color: style.border.color.color(urgency),
+            border_color,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+        let css = self.get_css_styles();
         let extents = self.get_render_bounds();
-        let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
         let remaining_padding = extents.width - text_extents.width;
@@ -62,6 +70,12 @@ impl Component for DismissButton {
 
         let remaining_padding = extents.height - text_extents.height;
         let pt = remaining_padding / 2.;
+
+        let color = css
+            .button_dismiss
+            .color
+            .map(|c| glyphon::Color::rgba(c[0], c[1], c[2], c[3]))
+            .unwrap_or(glyphon::Color::rgba(255, 255, 255, 255));
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
@@ -75,7 +89,7 @@ impl Component for DismissButton {
                 bottom: (extents.y + pt + text_extents.height) as i32,
             },
             custom_glyphs: &[],
-            default_color: style.font.color.into_glyphon(urgency),
+            default_color: color,
         }]
     }
 

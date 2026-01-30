@@ -338,34 +338,6 @@ in
           WantedBy = [ "default.target" ];
         };
       };
-
-      moxnotify-webui = lib.mkIf cfg.webui.enable {
-        Unit = {
-          Description = "Run moxnotify webui";
-          After = [ "graphical-session.target" ];
-          RefuseManualStart = false;
-          PartOf = [ ];
-        };
-
-        Service = {
-          Type = "simple";
-          Restart = "on-failure";
-          Environment = [ "MOXNOTIFY_SEARCHER_ADDRESS=${cfg.webui.searcherAddress}" ];
-
-          ExecStart =
-            let
-              p = lib.makeBinPath [ pkgs.nodejs ];
-            in
-            "${pkgs.writeShellScriptBin "run-moxnotify-webui" ''
-              PATH="$PATH:${p}"
-              ${pkgs.pnpm}/bin/pnpm --dir ${cfg.webui.package}/share/moxnotify/webui start -H "${toString cfg.webui.hostname}" -p "${toString cfg.webui.port}"
-            ''}/bin/run-moxnotify-webui";
-        };
-
-        Install = {
-          WantedBy = [ "default.target" ];
-        };
-      };
     };
 
     home.packages = [ cfg.package ];

@@ -1,6 +1,6 @@
 use crate::components;
 use crate::components::{Bounds, Component};
-use config::client::StyleState;
+use crate::layout;
 use config::client::Urgency;
 use moxui::image::Image;
 use moxui::texture_renderer::{Buffer, TextureArea, TextureBounds};
@@ -65,17 +65,17 @@ impl Icons {
                 .unwrap();
                 image_data
                     .resize_to_fit(
-                        context.config.general.icon_size,
-                        context.config.general.icon_size,
+                        layout::ICON_SIZE,
+                        layout::ICON_SIZE,
                     )
                     .ok()
             }
             Some(crate::moxnotify::types::image::Image::FilePath(file_path)) => {
-                get_icon(file_path, context.config.general.icon_size as u16)
+                get_icon(file_path, layout::ICON_SIZE as u16)
             }
             Some(crate::moxnotify::types::image::Image::Name(name)) => find_icon(
                 name,
-                context.config.general.icon_size as u16,
+                layout::ICON_SIZE as u16,
                 context
                     .config
                     .general
@@ -90,7 +90,7 @@ impl Icons {
         let app_icon = app_icon.as_ref().and_then(|icon| {
             find_icon(
                 icon,
-                context.config.general.icon_size as u16,
+                layout::ICON_SIZE as u16,
                 context.config.general.theme.as_deref().as_ref(),
             )
         });
@@ -111,26 +111,14 @@ impl Icons {
 }
 
 impl Component for Icons {
-    type Style = StyleState;
-
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
-    fn get_style(&self) -> &Self::Style {
-        self.get_notification_style()
-    }
-
     fn get_bounds(&self) -> Bounds {
-        let _style = self.get_notification_style();
-
-        // Hardcoded icon layout constants
-        const ICON_MARGIN_LEFT: f32 = 5.0;
-        const ICON_MARGIN_RIGHT: f32 = 10.0;
-
         let (width, height) = self.icon.as_ref().map_or((0., 0.), |i| {
             (
-                i.width() as f32 + ICON_MARGIN_LEFT + ICON_MARGIN_RIGHT,
+                i.width() as f32 + layout::ICON_MARGIN_LEFT + layout::ICON_MARGIN_RIGHT,
                 i.height() as f32,
             )
         });
@@ -144,18 +132,13 @@ impl Component for Icons {
     }
 
     fn get_render_bounds(&self) -> Bounds {
-        let _style = self.get_notification_style();
-
-        // Hardcoded icon layout constants
-        const ICON_MARGIN_LEFT: f32 = 5.0;
-
         let (width, height) = self
             .icon
             .as_ref()
             .map_or((0., 0.), |i| (i.width() as f32, i.height() as f32));
 
         Bounds {
-            x: self.x + ICON_MARGIN_LEFT,
+            x: self.x + layout::ICON_MARGIN_LEFT,
             y: self.y,
             width,
             height,
@@ -178,8 +161,6 @@ impl Component for Icons {
     fn get_textures(&self) -> Vec<texture_renderer::TextureArea<'_>> {
         let mut texture_areas = Vec::new();
 
-        let style = self.get_notification_style();
-
         let mut bounds = self.get_render_bounds();
 
         if let Some(icon) = self.icon.as_ref() {
@@ -198,17 +179,17 @@ impl Component for Icons {
                     bottom: (bounds.y + bounds.height) as u32,
                 },
                 skew: [0., 0.],
-                radius: style.icon.border.radius.into(),
+                radius: layout::ICON_BORDER_RADIUS,
                 buffer,
                 depth: 0.9,
             });
 
-            bounds.x += bounds.height - self.get_config().general.app_icon_size as f32;
-            bounds.y += bounds.height - self.get_config().general.app_icon_size as f32;
+            bounds.x += bounds.height - layout::APP_ICON_SIZE as f32;
+            bounds.y += bounds.height - layout::APP_ICON_SIZE as f32;
         }
 
         if let Some(app_icon) = self.app_icon.as_ref() {
-            let app_icon_size = self.get_config().general.app_icon_size as f32;
+            let app_icon_size = layout::APP_ICON_SIZE as f32;
             texture_areas.push(TextureArea::simple(
                 app_icon.data(),
                 bounds.x,
@@ -221,7 +202,7 @@ impl Component for Icons {
                     right: (bounds.x + app_icon_size) as u32,
                     bottom: (bounds.y + app_icon_size) as u32,
                 },
-                style.app_icon.border.radius.into(),
+                layout::ICON_BORDER_RADIUS,
                 [0.0; 4],
                 0.8,
             ));

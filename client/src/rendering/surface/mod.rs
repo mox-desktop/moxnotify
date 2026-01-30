@@ -1,5 +1,6 @@
 pub mod wgpu_surface;
 
+use crate::layout;
 use crate::manager::NotificationManager;
 use crate::utils::buffers;
 use crate::wgpu_state;
@@ -102,13 +103,8 @@ impl Surface {
             }
             Anchor::CenterLeft => zwlr_layer_surface_v1::Anchor::Left,
         });
-        let margin = &config.general.margin;
-        layer_surface.set_margin(
-            margin.top as i32,
-            margin.right as i32,
-            margin.bottom as i32,
-            margin.left as i32,
-        );
+        let margin = layout::NOTIFICATION_MARGIN as i32;
+        layer_surface.set_margin(margin, margin, margin, margin);
         layer_surface.set_exclusive_zone(-1);
 
         log::debug!("New surface created");

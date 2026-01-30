@@ -1,17 +1,17 @@
 use super::{Button, ButtonType, Hint, State};
 use crate::components;
 use crate::components::{Bounds, Component};
+use crate::layout;
 use crate::rendering::text::Text;
-use config::client::{Urgency, button::ButtonState};
+use config::client::Urgency;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
-// Hardcoded layout constants (previously configurable)
-const ACTION_BUTTON_PADDING_TOP: f32 = 5.0;
-const ACTION_BUTTON_PADDING_BOTTOM: f32 = 5.0;
-const ACTION_BUTTON_MARGIN_LEFT: f32 = 5.0;
-const ACTION_BUTTON_MARGIN_RIGHT: f32 = 5.0;
-const ACTION_BUTTON_BORDER_SIZE: f32 = 1.0;
+const ACTION_BUTTON_PADDING_TOP: f32 = layout::ACTION_BUTTON_PADDING_TOP;
+const ACTION_BUTTON_PADDING_BOTTOM: f32 = layout::ACTION_BUTTON_PADDING_BOTTOM;
+const ACTION_BUTTON_MARGIN_LEFT: f32 = layout::ACTION_BUTTON_MARGIN_LEFT;
+const ACTION_BUTTON_MARGIN_RIGHT: f32 = layout::ACTION_BUTTON_MARGIN_RIGHT;
+const ACTION_BUTTON_BORDER_SIZE: f32 = layout::ACTION_BUTTON_BORDER_SIZE;
 
 pub struct ActionButton {
     pub context: components::Context,
@@ -27,15 +27,32 @@ pub struct ActionButton {
 }
 
 impl Component for ActionButton {
-    type Style = ButtonState;
-
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let style = self.get_style();
+    fn get_instances(&self, _urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+        let css = self.get_css_styles();
         let bounds = self.get_render_bounds();
+        let is_hovered = matches!(self.state(), State::Hovered);
+
+        let background = if is_hovered {
+            css.button_action
+                .background
+                .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+                .unwrap_or([0.969, 0.463, 0.557, 1.0]) // #f7768e
+        } else {
+            css.button_action
+                .background
+                .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+                .unwrap_or([0.753, 0.792, 0.961, 1.0]) // #c0caf5
+        };
+
+        let border_color = css
+            .button_action
+            .border_color
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.651, 0.890, 0.631, 1.0]); // #a6e3a1
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
@@ -43,24 +60,30 @@ impl Component for ActionButton {
                 bounds.width - ACTION_BUTTON_BORDER_SIZE * 2.0,
                 bounds.height - ACTION_BUTTON_BORDER_SIZE * 2.0,
             ],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: background,
+            border_radius: layout::ACTION_BUTTON_BORDER_RADIUS,
             border_size: [ACTION_BUTTON_BORDER_SIZE; 4],
-            border_color: style.border.color.color(urgency),
+            border_color,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+    fn get_text_areas(&self, _urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+        let css = self.get_css_styles();
         let extents = self.get_render_bounds();
-        let style = self.get_style();
         let text_extents = self.text.get_bounds();
 
         let remaining_padding = extents.width - text_extents.width;
         let pl = remaining_padding / 2.;
         let remaining_padding = extents.height - text_extents.height;
         let pt = remaining_padding / 2.;
+
+        let color = css
+            .button_action
+            .color
+            .map(|c| glyphon::Color::rgba(c[0], c[1], c[2], c[3]))
+            .unwrap_or(glyphon::Color::rgba(47, 53, 73, 255)); // #2f3549
 
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
@@ -74,17 +97,8 @@ impl Component for ActionButton {
                 bottom: (extents.y + ACTION_BUTTON_BORDER_SIZE + pt + text_extents.height) as i32,
             },
             custom_glyphs: &[],
-            default_color: style.font.color.into_glyphon(urgency),
+            default_color: color,
         }]
-    }
-
-    fn get_style(&self) -> &Self::Style {
-        let style = self.get_notification_style();
-
-        match self.state() {
-            State::Unhovered => &style.buttons.action.default,
-            State::Hovered => &style.buttons.action.hover,
-        }
     }
 
     fn get_bounds(&self) -> Bounds {

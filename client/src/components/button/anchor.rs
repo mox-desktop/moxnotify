@@ -2,9 +2,9 @@ use super::{Button, Component, Hint, State};
 use crate::components;
 use crate::components::Bounds;
 use crate::components::text::body::Anchor;
+use crate::layout;
 use crate::rendering::text::Text;
 use config::client::Urgency;
-use config::client::button::ButtonState;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
@@ -20,38 +20,25 @@ pub struct AnchorButton {
 }
 
 impl Component for AnchorButton {
-    type Style = ButtonState;
-
     fn get_context(&self) -> &crate::components::Context {
         &self.context
     }
 
-    fn get_style(&self) -> &Self::Style {
-        let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
-        };
-        &urgency_styles.focused.buttons.dismiss.default
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let style = self.get_style();
+    fn get_instances(&self, _urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let bounds = self.get_render_bounds();
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: [0.0, 0.0, 0.0, 0.0],
+            border_radius: layout::ACTION_BUTTON_BORDER_RADIUS,
             border_size: [0.0; 4],
-            border_color: style.border.color.color(urgency),
+            border_color: [0.0, 0.0, 0.0, 0.0],
             scale: 0.,
             depth: 0.8,
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
-        let style = self.get_style();
+    fn get_text_areas(&self, _urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
         vec![glyphon::TextArea {
             buffer: &self.text.buffer,
             left: 0.,
@@ -64,7 +51,7 @@ impl Component for AnchorButton {
                 bottom: 0,
             },
             custom_glyphs: &[],
-            default_color: style.font.color.into_glyphon(urgency),
+            default_color: glyphon::Color::rgba(255, 255, 255, 255),
         }]
     }
 

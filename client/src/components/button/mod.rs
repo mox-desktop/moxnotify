@@ -4,15 +4,13 @@ mod dismiss;
 
 use super::text::body;
 use crate::components::{self, Bounds, Component, Data};
+use crate::layout;
 use crate::moxnotify::types::Action;
 use crate::rendering::text::Text;
 use action::ActionButton;
 use anchor::AnchorButton;
 use config::client::Urgency;
-use config::client::{
-    button::ButtonState,
-    keymaps::{self},
-};
+use config::client::keymaps;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
@@ -55,7 +53,7 @@ pub struct Finished;
 
 pub struct ButtonManager<State = NotReady> {
     context: components::Context,
-    buttons: Vec<Box<dyn Button<Style = ButtonState>>>,
+    buttons: Vec<Box<dyn Button>>,
     urgency: Urgency,
     sender: Option<calloop::channel::Sender<crate::Event>>,
     _state: std::marker::PhantomData<State>,
@@ -90,13 +88,7 @@ impl ButtonManager<NotReady> {
     }
 
     pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
-        let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
-        };
-        let font = &urgency_styles.unfocused.buttons.dismiss.default.font;
-        let text = Text::new(font, font_system, "X");
+        let text = Text::new(font_system, "X");
 
         let button = DismissButton {
             hint: Hint::new(self.context.clone(), "", font_system),
@@ -313,15 +305,8 @@ impl<S> ButtonManager<S> {
             return self;
         }
 
-        let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
-        };
-        let font = &urgency_styles.unfocused.buttons.action.default.font;
-
         self.buttons.extend(anchors.iter().map(|anchor| {
-            let text = Text::new(font, font_system, "");
+            let text = Text::new(font_system, "");
             Box::new(AnchorButton {
                 context: self.context.clone(),
                 x: 0.,
@@ -331,7 +316,7 @@ impl<S> ButtonManager<S> {
                 tx: self.sender.clone(),
                 text,
                 anchor: Arc::clone(anchor),
-            }) as Box<dyn Button<Style = ButtonState>>
+            }) as Box<dyn Button>
         }));
 
         self
@@ -351,13 +336,7 @@ impl<S> ButtonManager<S> {
             .iter()
             .cloned()
             .map(|action| {
-                let urgency_styles = match self.context.urgency {
-                    Urgency::Low => &self.context.config.styles.urgency_low,
-                    Urgency::Normal => &self.context.config.styles.urgency_normal,
-                    Urgency::Critical => &self.context.config.styles.urgency_critical,
-                };
-                let font = &urgency_styles.unfocused.buttons.action.default.font;
-                let text = Text::new(font, font_system, &action.label);
+                let text = Text::new(font_system, &action.label);
 
                 Box::new(ActionButton {
                     uuid: uuid.clone(),
@@ -370,7 +349,7 @@ impl<S> ButtonManager<S> {
                     state: State::Unhovered,
                     width: 0.,
                     tx: self.sender.clone(),
-                }) as Box<dyn Button<Style = ButtonState>>
+                }) as Box<dyn Button>
             })
             .collect();
 
@@ -379,11 +358,11 @@ impl<S> ButtonManager<S> {
         self
     }
 
-    pub fn buttons(&self) -> &[Box<dyn Button<Style = ButtonState>>] {
+    pub fn buttons(&self) -> &[Box<dyn Button>] {
         &self.buttons
     }
 
-    pub fn buttons_mut(&mut self) -> &mut [Box<dyn Button<Style = ButtonState>>] {
+    pub fn buttons_mut(&mut self) -> &mut [Box<dyn Button>] {
         &mut self.buttons
     }
 }
@@ -407,11 +386,7 @@ impl Hint {
     {
         Self {
             combination: combination.as_ref().into(),
-            text: Text::new(
-                &context.config.styles.urgency_normal.unfocused.font,
-                font_system,
-                combination.as_ref(),
-            ),
+            text: Text::new(font_system, combination.as_ref()),
             context,
             x: 0.,
             y: 0.,
@@ -420,19 +395,8 @@ impl Hint {
 }
 
 impl Component for Hint {
-    type Style = config::client::Hint;
-
     fn get_context(&self) -> &components::Context {
         &self.context
-    }
-
-    fn get_style(&self) -> &Self::Style {
-        let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
-        };
-        &urgency_styles.focused.hint
     }
 
     fn get_bounds(&self) -> Bounds {
@@ -464,22 +428,29 @@ impl Component for Hint {
         }
     }
 
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
-        };
-        let style = &urgency_styles.focused.hint;
+    fn get_instances(&self, _urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+        let css = self.get_css_styles();
         let bounds = self.get_render_bounds();
+
+        let background = css
+            .hint
+            .background
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.118, 0.118, 0.180, 1.0]); // #1e1e2e
+
+        let border_color = css
+            .hint
+            .border_color
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: background,
+            border_radius: layout::ACTION_BUTTON_BORDER_RADIUS,
             border_size: [0.0; 4],
-            border_color: style.border.color.color(urgency),
+            border_color,
             scale: self.context.ui_state.scale.load(Ordering::Relaxed),
             depth: 0.7,
         }]
@@ -490,8 +461,8 @@ impl Component for Hint {
         self.y = y;
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<TextArea<'_>> {
-        let style = self.get_style();
+    fn get_text_areas(&self, _urgency: Urgency) -> Vec<TextArea<'_>> {
+        let css = self.get_css_styles();
         let text_extents = self.text.get_bounds();
         let bounds = self.get_render_bounds();
 
@@ -500,11 +471,15 @@ impl Component for Hint {
         const HINT_HEIGHT: f32 = 20.0;
         let remaining_padding = HINT_WIDTH - text_extents.width;
         let pl = remaining_padding / 2.0;
-        let _pr = remaining_padding / 2.0;
 
         let remaining_padding = HINT_HEIGHT - text_extents.height;
         let pt = remaining_padding / 2.0;
-        let _pb = remaining_padding / 2.0;
+
+        let color = css
+            .hint
+            .color
+            .map(|c| glyphon::Color::rgba(c[0], c[1], c[2], c[3]))
+            .unwrap_or(glyphon::Color::rgba(255, 255, 255, 255));
 
         vec![TextArea {
             buffer: &self.text.buffer,
@@ -517,7 +492,7 @@ impl Component for Hint {
                 right: (bounds.x + pl + bounds.width) as i32,
                 bottom: (bounds.y + pt + bounds.height) as i32,
             },
-            default_color: style.font.color.into_glyphon(urgency),
+            default_color: color,
             custom_glyphs: &[],
         }]
     }

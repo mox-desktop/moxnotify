@@ -1,10 +1,10 @@
 use crate::components::Bounds;
-use config::client::Font;
+use crate::layout;
 use glyphon::{Attrs, Buffer, FontSystem, Shaping, Weight};
 
-fn create_buffer(font: &Font, font_system: &mut FontSystem, max_width: Option<f32>) -> Buffer {
+fn create_buffer(font_system: &mut FontSystem, max_width: Option<f32>) -> Buffer {
     let dpi = 96.0;
-    let font_size = font.size as f32 * dpi / 72.0;
+    let font_size = layout::FONT_SIZE as f32 * dpi / 72.0;
     let mut buffer = Buffer::new(
         font_system,
         glyphon::Metrics::new(font_size, font_size * 1.2),
@@ -21,15 +21,15 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new<T>(font: &Font, font_system: &mut FontSystem, body: T) -> Self
+    pub fn new<T>(font_system: &mut FontSystem, body: T) -> Self
     where
         T: AsRef<str>,
     {
         let attrs = Attrs::new()
             .metadata(0.6_f32.to_bits() as usize)
-            .family(glyphon::Family::Name(&font.family))
+            .family(glyphon::Family::Name(layout::FONT_FAMILY))
             .weight(Weight::BOLD);
-        let mut buffer = create_buffer(font, font_system, None);
+        let mut buffer = create_buffer(font_system, None);
         buffer.set_text(font_system, body.as_ref(), &attrs, Shaping::Advanced, None);
 
         Self {

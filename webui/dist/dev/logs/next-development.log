@@ -1,8 +1,0 @@
-[00:00:07.540] Server  LOG     
-[00:00:07.540] Server  LOG        We detected TypeScript in your project and reconfigured your tsconfig.json file for you.
-[00:00:07.540] Server  LOG        The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
-
-[00:00:07.540] Server  LOG        	- include was updated to add 'dist/types/**/*.ts'
-[00:00:07.540] Server  LOG        	- include was updated to add 'dist/dev/types/**/*.ts'
-[00:00:07.541] Server  LOG     
-[00:00:09.108] Server  LOG      ✓ Ready in 6.1s

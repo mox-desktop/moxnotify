@@ -1,11 +1,10 @@
 use super::Text;
 use crate::components;
 use crate::components::{Bounds, Component, Data};
-use config::client;
+use crate::layout;
 use config::client::Urgency;
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 pub struct Summary {
@@ -24,12 +23,9 @@ impl Text for Summary {
     where
         T: AsRef<str>,
     {
-        let style = &self.get_style();
-        let family = Arc::clone(&style.family);
-
         let attrs = Attrs::new()
             .metadata(0.7_f32.to_bits() as usize)
-            .family(glyphon::Family::Name(&family))
+            .family(glyphon::Family::Name(layout::FONT_FAMILY))
             .weight(Weight::BOLD);
 
         self.buffer.set_text(
@@ -43,40 +39,52 @@ impl Text for Summary {
 }
 
 impl Component for Summary {
-    type Style = client::text::Summary;
-
     fn get_context(&self) -> &components::Context {
         &self.context
     }
 
-    fn get_style(&self) -> &Self::Style {
-        &self.get_notification_style().summary
-    }
-
-    fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
-        let style = self.get_style();
+    fn get_instances(&self, _urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
+        let css = self.get_css_styles();
         let bounds = self.get_render_bounds();
+
+        let background = css
+            .summary
+            .background
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.0, 0.0, 0.0, 0.0]);
+
+        let border_color = css
+            .summary
+            .border_color
+            .map(|c| [c[0] as f32 / 255.0, c[1] as f32 / 255.0, c[2] as f32 / 255.0, c[3] as f32 / 255.0])
+            .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
         vec![shape_renderer::ShapeInstance {
             rect_pos: [bounds.x, bounds.y],
             rect_size: [bounds.width, bounds.height],
-            rect_color: style.background.color(urgency),
-            border_radius: style.border.radius.into(),
+            rect_color: background,
+            border_radius: [0.0; 4],
             border_size: [0.0; 4],
-            border_color: style.border.color.color(urgency),
+            border_color,
             scale: self.get_ui_state().scale.load(Ordering::Relaxed),
             depth: 0.8,
         }]
     }
 
-    fn get_text_areas(&self, urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
-        let style = self.get_style();
+    fn get_text_areas(&self, _urgency: Urgency) -> Vec<glyphon::TextArea<'_>> {
+        let css = self.get_css_styles();
         let bounds = self.get_render_bounds();
 
         let content_width = bounds.width;
         let content_height = bounds.height;
         let left = bounds.x;
         let top = bounds.y;
+
+        let color = css
+            .summary
+            .color
+            .map(|c| glyphon::Color::rgba(c[0], c[1], c[2], c[3]))
+            .unwrap_or(glyphon::Color::rgba(255, 255, 255, 255));
 
         vec![glyphon::TextArea {
             buffer: &self.buffer,
@@ -89,7 +97,7 @@ impl Component for Summary {
                 right: (left + content_width) as i32,
                 bottom: (top + content_height) as i32,
             },
-            default_color: style.color.into_glyphon(urgency),
+            default_color: color,
             custom_glyphs: &[],
         }]
     }
@@ -150,8 +158,7 @@ impl Component for Summary {
 impl Summary {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
-        let font_size =
-            context.config.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
+        let font_size = layout::FONT_SIZE as f32 * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),

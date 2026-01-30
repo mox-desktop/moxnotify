@@ -45,7 +45,6 @@
             rustc = pkgs.rustToolchain;
           };
         };
-        moxnotify-webui = pkgs.callPackage ./nix/webui.nix { };
         default = self.packages.${pkgs.stdenv.hostPlatform.system}.moxnotify;
       });
 
@@ -61,7 +60,6 @@
         in
         {
           inherit (self.packages.${system}) moxnotify;
-          inherit (self.packages.${system}) webui;
         };
     };
 }
