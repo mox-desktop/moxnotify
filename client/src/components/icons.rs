@@ -1,6 +1,6 @@
 use crate::components;
 use crate::components::{Bounds, Component};
-use config::client::StyleState;
+use crate::styles::StyleState;
 use config::client::Urgency;
 use moxui::image::Image;
 use moxui::texture_renderer::{Buffer, TextureArea, TextureBounds};

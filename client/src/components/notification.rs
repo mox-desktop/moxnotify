@@ -9,7 +9,8 @@ use crate::components;
 use crate::components::{Component, Data};
 use crate::moxnotify::types::NewNotification;
 use calloop::RegistrationToken;
-use config::client::{ClientConfig as Config, StyleState, Urgency};
+use crate::styles::{StyleState, Styles};
+use config::client::{ClientConfig as Config, Urgency};
 use glyphon::FontSystem;
 use moxui::shape_renderer;
 use moxui::texture_renderer;
@@ -131,7 +132,7 @@ impl Component for Notification {
             && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
         let style = self
             .context
-            .config
+            .styles
             .find_style(self.context.urgency, focused);
 
         let x_offset = NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
@@ -213,7 +214,7 @@ impl Component for Notification {
                 && self.context.ui_state.selected_id.load(Ordering::Relaxed) == self.data.id;
             let _selected_style = self
                 .context
-                .config
+                .styles
                 .find_style(self.context.urgency, is_selected);
 
             let progress_x = extents.x + NOTIFICATION_BORDER_SIZE + NOTIFICATION_PADDING_LEFT;
@@ -379,6 +380,7 @@ impl Notification {
     #[must_use]
     pub fn counter(
         config: Arc<Config>,
+        styles: Arc<Styles>,
         font_system: &mut FontSystem,
         data: NewNotification,
         ui_state: UiState,
@@ -394,6 +396,7 @@ impl Notification {
             id: data.id,
             app_name: data.app_name.clone(),
             config,
+            styles,
             ui_state,
             urgency,
         };
@@ -461,6 +464,7 @@ impl Notification {
     #[must_use]
     pub fn new(
         config: Arc<Config>,
+        styles: Arc<Styles>,
         font_system: &mut FontSystem,
         data: NewNotification,
         ui_state: UiState,
@@ -477,6 +481,7 @@ impl Notification {
             id: data.id,
             app_name: data.app_name.clone(),
             config,
+            styles,
             ui_state,
             urgency,
         };
@@ -513,7 +518,7 @@ impl Notification {
             crate::moxnotify::types::Urgency::Normal => Urgency::Normal,
             crate::moxnotify::types::Urgency::Critical => Urgency::Critical,
         };
-        let _style = context.config.find_style(urgency, false);
+        let _style = context.styles.find_style(urgency, false);
 
         let body = if data.body.is_empty() {
             None

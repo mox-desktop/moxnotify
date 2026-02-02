@@ -3,6 +3,7 @@ mod view;
 use crate::components::notification;
 use crate::components::notification::{Notification, NotificationId};
 use crate::components::{Component, Data};
+use crate::styles::Styles;
 use config::client::{ClientConfig as Config, keymaps};
 use crate::moxnotify::client::client_service_client::ClientServiceClient;
 use crate::moxnotify::client::viewport_navigation_request::Direction;
@@ -49,6 +50,7 @@ pub struct NotificationManager {
     notifications: VecDeque<Notification>,
     waiting: Vec<NewNotification>,
     config: Arc<Config>,
+    styles: Arc<Styles>,
     sender: calloop::channel::Sender<crate::Event>,
     inhibited: bool,
     font_system: Rc<RefCell<FontSystem>>,
@@ -70,6 +72,7 @@ impl NotificationManager {
         let client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
 
         let ui_state = UiState::default();
+        let styles = Arc::new(Styles::default());
 
         Self {
             grpc_client: client,
@@ -78,12 +81,14 @@ impl NotificationManager {
             waiting: Vec::new(),
             notification_view: NotificationView::new(
                 Arc::clone(&config),
+                Arc::clone(&styles),
                 ui_state.clone(),
                 Rc::clone(&font_system),
             ),
             font_system,
             notifications: VecDeque::new(),
             config,
+            styles,
             ui_state,
         }
     }
@@ -392,6 +397,7 @@ impl NotificationManager {
                 .map(|data| {
                     Notification::new(
                         Arc::clone(&self.config),
+                        Arc::clone(&self.styles),
                         &mut font_system,
                         data,
                         self.ui_state.clone(),
@@ -421,6 +427,7 @@ impl NotificationManager {
         } else {
             let notification = Notification::new(
                 Arc::clone(&self.config),
+                Arc::clone(&self.styles),
                 &mut self.font_system.borrow_mut(),
                 data,
                 self.ui_state.clone(),

@@ -1,5 +1,4 @@
 use super::Urgency;
-use super::partial::PartialColor;
 use serde::de;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -11,20 +10,6 @@ pub struct Color {
     pub urgency_low: [u8; 4],
     pub urgency_normal: [u8; 4],
     pub urgency_critical: [u8; 4],
-}
-
-impl Color {
-    pub fn apply(&mut self, partial: &PartialColor) {
-        if let Some(urgency_low) = partial.urgency_low {
-            self.urgency_low = urgency_low;
-        }
-        if let Some(urgency_normal) = partial.urgency_normal {
-            self.urgency_normal = urgency_normal;
-        }
-        if let Some(urgency_critical) = partial.urgency_critical {
-            self.urgency_critical = urgency_critical;
-        }
-    }
 }
 
 impl<'de> Deserialize<'de> for Color {

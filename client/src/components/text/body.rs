@@ -2,7 +2,7 @@ use super::Text;
 use super::markup::{Parser, Tag};
 use crate::components;
 use crate::components::{Bounds, Component, Data};
-use config::client;
+use crate::styles::TextStyle;
 use config::client::Urgency;
 use glyphon::{Attrs, Buffer, Color, Family, FontSystem, Shaping, Stretch, Style, Weight};
 use moxui::shape_renderer;
@@ -336,7 +336,7 @@ impl Text for Body {
 }
 
 impl Component for Body {
-    type Style = client::text::Body;
+    type Style = TextStyle;
 
     fn get_context(&self) -> &components::Context {
         &self.context
@@ -435,7 +435,7 @@ impl Body {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
         let font_size =
-            context.config.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
+            context.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),

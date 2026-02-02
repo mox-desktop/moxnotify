@@ -3,8 +3,8 @@ use crate::components;
 use crate::components::Bounds;
 use crate::components::text::body::Anchor;
 use crate::rendering::text::Text;
+use crate::styles::ButtonState;
 use config::client::Urgency;
-use config::client::button::ButtonState;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::Arc;
 
@@ -28,9 +28,9 @@ impl Component for AnchorButton {
 
     fn get_style(&self) -> &Self::Style {
         let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
+            Urgency::Low => &self.context.styles.urgency_low,
+            Urgency::Normal => &self.context.styles.urgency_normal,
+            Urgency::Critical => &self.context.styles.urgency_critical,
         };
         &urgency_styles.focused.buttons.dismiss.default
     }

@@ -1,5 +1,5 @@
 use crate::components::Bounds;
-use config::client::Font;
+use crate::styles::Font;
 use glyphon::{Attrs, Buffer, FontSystem, Shaping, Weight};
 
 fn create_buffer(font: &Font, font_system: &mut FontSystem, max_width: Option<f32>) -> Buffer {

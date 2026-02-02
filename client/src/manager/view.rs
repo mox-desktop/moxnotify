@@ -1,6 +1,7 @@
 use super::UiState;
 use crate::components::{Component, notification::Notification, text::Text};
 use crate::moxnotify::types::{NewNotification, NotificationHints};
+use crate::styles::Styles;
 use config::client::{ClientConfig as Config, Urgency};
 use glyphon::{FontSystem, TextArea};
 use moxui::shape_renderer;
@@ -17,18 +18,20 @@ pub struct NotificationView {
     next: Notification,
     next_count: u32,
     font_system: Rc<RefCell<FontSystem>>,
-    config: Arc<Config>,
+    styles: Arc<Styles>,
     ui_state: UiState,
 }
 
 impl NotificationView {
     pub fn new(
         config: Arc<Config>,
+        styles: Arc<Styles>,
         ui_state: UiState,
         font_system: Rc<RefCell<FontSystem>>,
     ) -> Self {
         let mut prev = Notification::counter(
             Arc::clone(&config),
+            Arc::clone(&styles),
             &mut font_system.borrow_mut(),
             NewNotification {
                 summary: String::new(),
@@ -41,6 +44,7 @@ impl NotificationView {
 
         let next = Notification::counter(
             Arc::clone(&config),
+            Arc::clone(&styles),
             &mut font_system.borrow_mut(),
             NewNotification {
                 summary: String::new(),
@@ -52,7 +56,7 @@ impl NotificationView {
 
         Self {
             visible: Vec::new(),
-            config: Arc::clone(&config),
+            styles: Arc::clone(&styles),
             font_system: Rc::clone(&font_system),
             prev,
             prev_count: 0,
@@ -74,7 +78,6 @@ impl NotificationView {
 
     fn set_prev(&mut self, count: u32) {
         let summary = self
-            .config
             .styles
             .next
             .format
@@ -91,7 +94,6 @@ impl NotificationView {
 
     fn set_next(&mut self, count: u32) {
         let summary = self
-            .config
             .styles
             .prev
             .format
@@ -115,7 +117,7 @@ impl NotificationView {
         }
 
         let extents = self.prev.get_render_bounds();
-        let style = &self.config.styles.prev;
+        let style = &self.styles.prev;
         const COUNTER_BORDER_SIZE: f32 = 1.0;
         let instance = shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],
@@ -151,7 +153,7 @@ impl NotificationView {
         }
 
         let extents = self.next.get_render_bounds();
-        let style = &self.config.styles.prev;
+        let style = &self.styles.prev;
         const COUNTER_BORDER_SIZE: f32 = 1.0;
         let instance = shape_renderer::ShapeInstance {
             rect_pos: [extents.x, extents.y],

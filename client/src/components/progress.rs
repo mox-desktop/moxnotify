@@ -1,8 +1,7 @@
-use config::client::Urgency;
 use crate::components;
 use crate::components::{Bounds, Component};
-use config::client;
-use config::client::border::BorderRadius;
+use crate::styles::{BorderRadius, Progress as ProgressStyle};
+use config::client::Urgency;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 
@@ -19,7 +18,7 @@ pub struct Progress {
 }
 
 impl Component for Progress {
-    type Style = client::Progress;
+    type Style = ProgressStyle;
 
     fn get_context(&self) -> &components::Context {
         &self.context

@@ -1,7 +1,7 @@
 use super::Text;
 use crate::components;
 use crate::components::{Bounds, Component, Data};
-use config::client;
+use crate::styles::TextStyle;
 use config::client::Urgency;
 use glyphon::{Attrs, Buffer, FontSystem, Weight};
 use moxui::{shape_renderer, texture_renderer};
@@ -43,7 +43,7 @@ impl Text for Summary {
 }
 
 impl Component for Summary {
-    type Style = client::text::Summary;
+    type Style = TextStyle;
 
     fn get_context(&self) -> &components::Context {
         &self.context
@@ -151,7 +151,7 @@ impl Summary {
     pub fn new(context: components::Context, font_system: &mut FontSystem) -> Self {
         let dpi = 96.0;
         let font_size =
-            context.config.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
+            context.styles.urgency_normal.unfocused.font.size as f32 * dpi / 72.0;
         let mut buffer = Buffer::new(
             font_system,
             glyphon::Metrics::new(font_size, font_size * 1.2),

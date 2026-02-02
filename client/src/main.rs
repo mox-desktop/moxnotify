@@ -16,6 +16,7 @@ mod grpc;
 mod input;
 mod manager;
 mod rendering;
+pub mod styles;
 pub mod utils;
 mod wayland;
 

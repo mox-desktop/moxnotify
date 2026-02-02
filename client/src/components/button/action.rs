@@ -2,7 +2,8 @@ use super::{Button, ButtonType, Hint, State};
 use crate::components;
 use crate::components::{Bounds, Component};
 use crate::rendering::text::Text;
-use config::client::{Urgency, button::ButtonState};
+use crate::styles::ButtonState;
+use config::client::Urgency;
 use moxui::{shape_renderer, texture_renderer};
 use std::sync::atomic::Ordering;
 

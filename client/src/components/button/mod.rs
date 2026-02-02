@@ -8,11 +8,9 @@ use crate::moxnotify::types::Action;
 use crate::rendering::text::Text;
 use action::ActionButton;
 use anchor::AnchorButton;
+use crate::styles::{ButtonState, Hint as HintStyle};
 use config::client::Urgency;
-use config::client::{
-    button::ButtonState,
-    keymaps::{self},
-};
+use config::client::keymaps;
 use dismiss::DismissButton;
 use glyphon::{FontSystem, TextArea};
 use moxui::{shape_renderer, texture_renderer};
@@ -91,9 +89,9 @@ impl ButtonManager<NotReady> {
 
     pub fn add_dismiss(mut self, font_system: &mut FontSystem) -> ButtonManager<Ready> {
         let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
+            Urgency::Low => &self.context.styles.urgency_low,
+            Urgency::Normal => &self.context.styles.urgency_normal,
+            Urgency::Critical => &self.context.styles.urgency_critical,
         };
         let font = &urgency_styles.unfocused.buttons.dismiss.default.font;
         let text = Text::new(font, font_system, "X");
@@ -314,9 +312,9 @@ impl<S> ButtonManager<S> {
         }
 
         let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
+            Urgency::Low => &self.context.styles.urgency_low,
+            Urgency::Normal => &self.context.styles.urgency_normal,
+            Urgency::Critical => &self.context.styles.urgency_critical,
         };
         let font = &urgency_styles.unfocused.buttons.action.default.font;
 
@@ -352,9 +350,9 @@ impl<S> ButtonManager<S> {
             .cloned()
             .map(|action| {
                 let urgency_styles = match self.context.urgency {
-                    Urgency::Low => &self.context.config.styles.urgency_low,
-                    Urgency::Normal => &self.context.config.styles.urgency_normal,
-                    Urgency::Critical => &self.context.config.styles.urgency_critical,
+                    Urgency::Low => &self.context.styles.urgency_low,
+                    Urgency::Normal => &self.context.styles.urgency_normal,
+                    Urgency::Critical => &self.context.styles.urgency_critical,
                 };
                 let font = &urgency_styles.unfocused.buttons.action.default.font;
                 let text = Text::new(font, font_system, &action.label);
@@ -408,7 +406,7 @@ impl Hint {
         Self {
             combination: combination.as_ref().into(),
             text: Text::new(
-                &context.config.styles.urgency_normal.unfocused.font,
+                &context.styles.urgency_normal.unfocused.font,
                 font_system,
                 combination.as_ref(),
             ),
@@ -420,7 +418,7 @@ impl Hint {
 }
 
 impl Component for Hint {
-    type Style = config::client::Hint;
+    type Style = HintStyle;
 
     fn get_context(&self) -> &components::Context {
         &self.context
@@ -428,9 +426,9 @@ impl Component for Hint {
 
     fn get_style(&self) -> &Self::Style {
         let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
+            Urgency::Low => &self.context.styles.urgency_low,
+            Urgency::Normal => &self.context.styles.urgency_normal,
+            Urgency::Critical => &self.context.styles.urgency_critical,
         };
         &urgency_styles.focused.hint
     }
@@ -466,9 +464,9 @@ impl Component for Hint {
 
     fn get_instances(&self, urgency: Urgency) -> Vec<shape_renderer::ShapeInstance> {
         let urgency_styles = match self.context.urgency {
-            Urgency::Low => &self.context.config.styles.urgency_low,
-            Urgency::Normal => &self.context.config.styles.urgency_normal,
-            Urgency::Critical => &self.context.config.styles.urgency_critical,
+            Urgency::Low => &self.context.styles.urgency_low,
+            Urgency::Normal => &self.context.styles.urgency_normal,
+            Urgency::Critical => &self.context.styles.urgency_critical,
         };
         let style = &urgency_styles.focused.hint;
         let bounds = self.get_render_bounds();
