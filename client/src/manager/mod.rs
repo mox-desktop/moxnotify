@@ -3,6 +3,7 @@ mod view;
 use crate::components::notification;
 use crate::components::notification::{Notification, NotificationId};
 use crate::components::{Component, Data};
+use crate::css::parse_css;
 use crate::styles::Styles;
 use config::client::{ClientConfig as Config, keymaps};
 use crate::moxnotify::client::client_service_client::ClientServiceClient;
@@ -72,7 +73,7 @@ impl NotificationManager {
         let client = ClientServiceClient::connect(scheduler_addr).await.unwrap();
 
         let ui_state = UiState::default();
-        let styles = Arc::new(Styles::default());
+        let styles = Arc::new(parse_css(&config.css));
 
         Self {
             grpc_client: client,

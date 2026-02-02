@@ -1,7 +1,8 @@
 //! Minimal local styling types with hardcoded defaults.
 //! This module exists as a bridge until CSS styling (simplecss) is implemented.
 
-use config::client::{Urgency, color::Color};
+pub use config::client::color::Color;
+use config::client::Urgency;
 use std::sync::Arc;
 
 #[derive(Clone)]

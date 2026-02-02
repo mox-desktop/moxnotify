@@ -666,6 +666,7 @@ dependencies = [
  "resvg",
  "serde",
  "serde_json",
+ "simplecss",
  "symphonia",
  "taffy",
  "tiny-skia",

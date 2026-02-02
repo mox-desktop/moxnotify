@@ -50,10 +50,3 @@ local_resource(
     serve_cmd='cargo run --bin janitor',
     resource_deps=['run-indexer']
 )
-
-local_resource(
-    'run-webui',
-    cmd='pnpm --dir webui i',
-    serve_cmd='pnpm --dir webui dev',
-    resource_deps=['run-searcher']
-)
